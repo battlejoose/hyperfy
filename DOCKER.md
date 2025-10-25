@@ -12,7 +12,7 @@ docker build -t hyperfydemo . && docker run -d -p 3000:3000 \
   -e DOMAIN=demo.hyperfy.host \
   -e PORT=3000 \
   -e ASSETS_DIR=/world/assets \
-  -e PUBLIC_WS_URL=https://demo.hyperfy.host/ws \
+  -e PUBLIC_WS_URL=wss://demo.hyperfy.host/ws \
   -e PUBLIC_API_URL=https://demo.hyperfy.host/api \
   -e ASSETS_BASE_URL=https://demo.hyperfy.host/assets \
   hyperfydemo
