@@ -210,9 +210,24 @@ export class PlayerLocal extends Entity {
         }
         this.avatarUrl = avatarUrl
         this.camHeight = this.avatar.height * 0.9
+        this.applySword()
       })
       .catch(err => {
         console.error(err)
+      })
+  }
+
+  applySword() {
+    // Load and attach sword to right hand
+    this.world.loader
+      .load('model', 'asset://sword.glb')
+      .then(src => {
+        if (this.sword) this.sword.deactivate()
+        this.sword = src.toNodes()
+        this.sword.activate({ world: this.world, entity: this })
+      })
+      .catch(err => {
+        console.error('Failed to load sword:', err)
       })
   }
 
@@ -1179,6 +1194,28 @@ export class PlayerLocal extends Entity {
     if (this.avatar) {
       const matrix = this.avatar.getBoneTransform('head')
       if (matrix) this.aura.position.setFromMatrixPosition(matrix)
+    }
+    if (this.avatar && this.sword) {
+      const matrix = this.avatar.getBoneTransform('rightHand')
+      if (matrix) {
+        // Get base transform from hand bone
+        this.sword.position.setFromMatrixPosition(matrix)
+        this.sword.quaternion.setFromRotationMatrix(matrix)
+        
+        // Scale the sword down to a reasonable size (adjust as needed)
+        this.sword.scale.set(0.7, 0.7, 0.7)
+        
+        // Apply rotation offset to orient sword properly in hand
+        // Rotate 90 degrees around X axis to point sword forward
+        q4.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)
+        this.sword.quaternion.multiply(q4)
+        
+        // Apply position offset relative to hand orientation
+        // Move sword to place handle in hand
+        v5.set(0.15, -0.5, 0.0) // x, y, z offset relative to hand
+        v5.applyQuaternion(this.sword.quaternion)
+        this.sword.position.add(v5)
+      }
     }
   }
 
