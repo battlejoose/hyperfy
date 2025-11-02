@@ -13,6 +13,10 @@ export const Emotes = {
   FLY: 'asset://emote-float.glb',
   FLIP: 'asset://emote-flip.glb?s=1.1',
   TALK: 'asset://emote-talk.glb',
+  ATTACK_LEFT: 'asset://attackleft.glb',
+  ATTACK_RIGHT: 'asset://attackright.glb',
+  ATTACK_HIGH: 'asset://attackhigh.glb',
+  ATTACK_LOW: 'asset://attacklow.glb',
 }
 
 export const emoteUrls = [
@@ -30,4 +34,8 @@ export const emoteUrls = [
   Emotes.FLY,
   Emotes.FLIP,
   Emotes.TALK,
+  Emotes.ATTACK_LEFT,
+  Emotes.ATTACK_RIGHT,
+  Emotes.ATTACK_HIGH,
+  Emotes.ATTACK_LOW,
 ]

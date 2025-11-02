@@ -872,6 +872,35 @@ export class PlayerLocal extends Entity {
       this.jumpPressed = true
     }
 
+    // handle attack animations (keys 1, 2, 3, 4)
+    if (!this.data.effect && !xr) {
+      if (this.control.digit1.pressed) {
+        this.setEffect({
+          emote: Emotes.ATTACK_LEFT,
+          duration: 1.0,
+          cancellable: true,
+        })
+      } else if (this.control.digit2.pressed) {
+        this.setEffect({
+          emote: Emotes.ATTACK_RIGHT,
+          duration: 1.0,
+          cancellable: true,
+        })
+      } else if (this.control.digit3.pressed) {
+        this.setEffect({
+          emote: Emotes.ATTACK_HIGH,
+          duration: 1.0,
+          cancellable: true,
+        })
+      } else if (this.control.digit4.pressed) {
+        this.setEffect({
+          emote: Emotes.ATTACK_LOW,
+          duration: 1.0,
+          cancellable: true,
+        })
+      }
+    }
+
     // get our movement direction
     this.moveDir.set(0, 0, 0)
     if (xr) {
