@@ -888,31 +888,16 @@ export class PlayerLocal extends Entity {
     }
 
     // handle attack animations (keys 1, 2, 3, 4)
-    if (!this.data.effect && !xr) {
+    // Attacks bypass the effect system and trigger directly on avatar
+    if (!xr && this.avatar) {
       if (this.control.digit1.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_LEFT,
-          duration: 1.0,
-          cancellable: true,
-        })
+        this.avatar.setEmote(Emotes.ATTACK_LEFT)
       } else if (this.control.digit2.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_RIGHT,
-          duration: 1.0,
-          cancellable: true,
-        })
+        this.avatar.setEmote(Emotes.ATTACK_RIGHT)
       } else if (this.control.digit3.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_HIGH,
-          duration: 1.0,
-          cancellable: true,
-        })
+        this.avatar.setEmote(Emotes.ATTACK_HIGH)
       } else if (this.control.digit4.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_LOW,
-          duration: 1.0,
-          cancellable: true,
-        })
+        this.avatar.setEmote(Emotes.ATTACK_LOW)
       }
     }
 

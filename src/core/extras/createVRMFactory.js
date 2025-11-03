@@ -536,7 +536,7 @@ export function createVRMFactory(glb, setupMaterial) {
     // })
 
     const poses = {}
-    const upperBodyBones = ['spine', 'chest', 'upperChest', 'neck', 'head', 
+    const upperBodyBones = ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 
       'leftShoulder', 'leftUpperArm', 'leftLowerArm', 'leftHand',
       'rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand']
     
