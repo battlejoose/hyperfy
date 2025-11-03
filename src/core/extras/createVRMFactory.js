@@ -252,14 +252,14 @@ export function createVRMFactory(glb, setupMaterial) {
           currentAttack = attackKey
           attackEndTime = performance.now() / 1000 + 1.0 // 1 second duration
           if (poses[attackKey].action) {
-            // Reset and restart the attack animation
+            // Reset and restart the attack animation with high priority
             poses[attackKey].action.reset()
             poses[attackKey].action.time = 0
             poses[attackKey].action.enabled = true
-            poses[attackKey].action.setEffectiveWeight(1.0)
+            poses[attackKey].action.setEffectiveWeight(5.0) // Much higher weight to override locomotion
             poses[attackKey].action.play()
             poses[attackKey].active = true
-            console.log('[VRM] Attack action reset and playing')
+            console.log('[VRM] Attack action reset and playing with very high priority')
           } else {
             console.log('[VRM] Attack action not loaded yet')
           }
@@ -356,7 +356,7 @@ export function createVRMFactory(glb, setupMaterial) {
             poses[currentAttack].target = 0
             currentAttack = null
           }
-          // Update pose weights
+          // Update attack pose weights even when another emote is playing
           const lerpSpeed = 16
           for (const key in poses) {
             if (poses[key].upperBodyOnly) {
@@ -536,9 +536,6 @@ export function createVRMFactory(glb, setupMaterial) {
     // })
 
     const poses = {}
-    const upperBodyBones = ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 
-      'leftShoulder', 'leftUpperArm', 'leftLowerArm', 'leftHand',
-      'rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand']
     
     function addPose(key, url, upperBodyOnly = false) {
       const opts = getQueryParams(url)
@@ -553,8 +550,10 @@ export function createVRMFactory(glb, setupMaterial) {
         setWeight: value => {
           pose.weight = value
           if (pose.action) {
+            // Attacks get much higher effective weight to override locomotion
+            const effectiveWeight = upperBodyOnly ? value * 5.0 : value
             pose.action.weight = value
-            pose.action.setEffectiveWeight(value)
+            pose.action.setEffectiveWeight(effectiveWeight)
             if (!pose.active && value > 0) {
               if (upperBodyOnly) {
                 // For attacks, reset and play immediately
@@ -583,34 +582,8 @@ export function createVRMFactory(glb, setupMaterial) {
           getBoneName,
         })
         
-        // If upper body only, filter the animation tracks to only affect upper body bones
-        if (upperBodyOnly) {
-          const originalTrackCount = clip.tracks.length
-          const filteredTracks = clip.tracks.filter(track => {
-            // Track names are like "boneName.position" or "boneName.quaternion"
-            const trackName = track.name
-            
-            // Check each upper body bone name
-            for (const upperBoneName of upperBodyBones) {
-              const bone = findBone(upperBoneName)
-              if (bone && trackName.startsWith(bone.name + '.')) {
-                return true
-              }
-              // Also check for child bones (fingers, etc)
-              if (bone) {
-                for (const child of bone.children) {
-                  if (child.isBone && trackName.startsWith(child.name + '.')) {
-                    return true
-                  }
-                }
-              }
-            }
-            return false
-          })
-          
-          console.log('[VRM] Attack animation tracks filtered:', originalTrackCount, '->', filteredTracks.length)
-          clip.tracks = filteredTracks
-        }
+        // All animations use full body - no filtering
+        // Attacks will override locomotion via higher weight
         
         pose.action = mixer.clipAction(clip)
         pose.action.timeScale = speed
@@ -620,7 +593,9 @@ export function createVRMFactory(glb, setupMaterial) {
         if (upperBodyOnly) {
           pose.action.clampWhenFinished = true
           pose.action.setLoop(THREE.LoopOnce, 1)
-          console.log('[VRM] Attack animation loaded for:', key, 'with', clip.tracks.length, 'tracks')
+          console.log('[VRM] Attack animation loaded for:', key, 'with FULL animation -', clip.tracks.length, 'tracks')
+        } else {
+          console.log('[VRM] Locomotion animation loaded for:', key, 'with FULL body -', clip.tracks.length, 'tracks')
         }
         
         pose.action.play()
@@ -628,6 +603,7 @@ export function createVRMFactory(glb, setupMaterial) {
       })
       poses[key] = pose
     }
+    // Locomotion animations - full body (arms swing, head moves naturally)
     addPose('idle', Emotes.IDLE)
     addPose('walk', Emotes.WALK)
     addPose('walkLeft', Emotes.WALK_LEFT)
@@ -641,6 +617,7 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('fall', Emotes.FALL)
     addPose('fly', Emotes.FLY)
     addPose('talk', Emotes.TALK)
+    // Attack animations - full body, higher weight to override locomotion
     addPose('attackLeft', Emotes.ATTACK_LEFT, true)
     addPose('attackRight', Emotes.ATTACK_RIGHT, true)
     addPose('attackHigh', Emotes.ATTACK_HIGH, true)
@@ -648,7 +625,7 @@ export function createVRMFactory(glb, setupMaterial) {
     
     function clearLocomotion() {
       for (const key in poses) {
-        // Don't clear attack poses
+        // Clear locomotion poses (not attacks)
         if (!poses[key].upperBodyOnly) {
           poses[key].fadeOut()
         }
@@ -657,7 +634,7 @@ export function createVRMFactory(glb, setupMaterial) {
     function updateLocomotion(delta) {
       const { mode, axis } = loco
       
-      // Clear all pose targets except attacks
+      // Clear locomotion pose targets (keep attacks separate)
       for (const key in poses) {
         if (!poses[key].upperBodyOnly) {
           poses[key].target = 0
@@ -676,12 +653,14 @@ export function createVRMFactory(glb, setupMaterial) {
         currentAttack = null
       } else {
         // No active attack, clear all attack poses
-        if (poses.attackLeft) poses.attackLeft.target = 0
-        if (poses.attackRight) poses.attackRight.target = 0
-        if (poses.attackHigh) poses.attackHigh.target = 0
-        if (poses.attackLow) poses.attackLow.target = 0
+        for (const key in poses) {
+          if (poses[key].upperBodyOnly) {
+            poses[key].target = 0
+          }
+        }
       }
       
+      // Update locomotion (legs only)
       if (mode === Modes.IDLE) {
         poses.idle.target = 1
       } else if (mode === Modes.WALK || mode === Modes.RUN) {
@@ -736,6 +715,8 @@ export function createVRMFactory(glb, setupMaterial) {
       } else if (mode === Modes.TALK) {
         poses.talk.target = 1
       }
+      
+      // Update all pose weights (both locomotion and attacks)
       const lerpSpeed = 16
       for (const key in poses) {
         const pose = poses[key]
