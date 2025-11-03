@@ -887,7 +887,7 @@ export class PlayerLocal extends Entity {
       this.jumpPressed = true
     }
 
-    // handle attack animations (keys 1, 2, 3, 4)
+    // handle attack animations (keys 1, 2, 3, 4, 5)
     // Use effect system for network sync, but make attacks not cancellable by movement
     if (!xr) {
       if (this.control.digit1.pressed) {
@@ -911,6 +911,12 @@ export class PlayerLocal extends Entity {
       } else if (this.control.digit4.pressed) {
         this.setEffect({
           emote: Emotes.ATTACK_LOW,
+          duration: 1.0,
+          cancellable: false,
+        })
+      } else if (this.control.digit5.pressed) {
+        this.setEffect({
+          emote: Emotes.BLOCK,
           duration: 1.0,
           cancellable: false,
         })

@@ -17,6 +17,7 @@ export const Emotes = {
   ATTACK_RIGHT: 'asset://attackright.glb',
   ATTACK_HIGH: 'asset://attackhigh.glb',
   ATTACK_LOW: 'asset://attacklow.glb',
+  BLOCK: 'asset://block.glb',
 }
 
 export const emoteUrls = [
@@ -38,4 +39,5 @@ export const emoteUrls = [
   Emotes.ATTACK_RIGHT,
   Emotes.ATTACK_HIGH,
   Emotes.ATTACK_LOW,
+  Emotes.BLOCK,
 ]
