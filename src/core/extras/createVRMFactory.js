@@ -231,8 +231,44 @@ export function createVRMFactory(glb, setupMaterial) {
       //   action: AnimationAction
       // }
     }
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    const attackUrlToKey = {
+      [Emotes.ATTACK_LEFT]: 'attackLeft',
+      [Emotes.ATTACK_RIGHT]: 'attackRight',
+      [Emotes.ATTACK_HIGH]: 'attackHigh',
+      [Emotes.ATTACK_LOW]: 'attackLow',
+    }
+    
+    let currentAttack = null
+    let attackEndTime = 0
+    
     let currentEmote
     const setEmote = url => {
+      // Check if this is an attack animation
+      if (url && attackEmotes.includes(url)) {
+        const attackKey = attackUrlToKey[url]
+        console.log('[VRM] Attack detected:', attackKey, 'pose exists:', !!poses[attackKey])
+        if (poses[attackKey]) {
+          currentAttack = attackKey
+          attackEndTime = performance.now() / 1000 + 1.0 // 1 second duration
+          if (poses[attackKey].action) {
+            // Reset and restart the attack animation
+            poses[attackKey].action.reset()
+            poses[attackKey].action.time = 0
+            poses[attackKey].action.enabled = true
+            poses[attackKey].action.setEffectiveWeight(1.0)
+            poses[attackKey].action.play()
+            poses[attackKey].active = true
+            console.log('[VRM] Attack action reset and playing')
+          } else {
+            console.log('[VRM] Attack action not loaded yet')
+          }
+        } else {
+          console.log('[VRM] Attack pose not found in poses')
+        }
+        return // Don't treat as regular emote
+      }
+      
       if (currentEmote?.url === url) return
       if (currentEmote) {
         currentEmote.action?.fadeOut(0.15)
@@ -307,8 +343,28 @@ export function createVRMFactory(glb, setupMaterial) {
         mixer.update(elapsed)
         skeleton.bones.forEach(bone => bone.updateMatrixWorld())
         skeleton.update = THREE.Skeleton.prototype.update
+        // Always update locomotion (attacks blend with it)
+        // Only skip if there's a non-attack emote playing
         if (!currentEmote) {
           updateLocomotion(delta)
+        } else {
+          // Even with emote, update attacks
+          const now = performance.now() / 1000
+          if (currentAttack && now < attackEndTime) {
+            poses[currentAttack].target = 1
+          } else if (currentAttack) {
+            poses[currentAttack].target = 0
+            currentAttack = null
+          }
+          // Update pose weights
+          const lerpSpeed = 16
+          for (const key in poses) {
+            if (poses[key].upperBodyOnly) {
+              const pose = poses[key]
+              const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
+              pose.setWeight(weight)
+            }
+          }
         }
         if (loco.gazeDir && distance < MAX_GAZE_DISTANCE && (currentEmote ? currentEmote.gaze : true)) {
           // aimBone('chest', loco.gazeDir, delta, {
@@ -480,7 +536,11 @@ export function createVRMFactory(glb, setupMaterial) {
     // })
 
     const poses = {}
-    function addPose(key, url) {
+    const upperBodyBones = ['spine', 'chest', 'upperChest', 'neck', 'head', 
+      'leftShoulder', 'leftUpperArm', 'leftLowerArm', 'leftHand',
+      'rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand']
+    
+    function addPose(key, url, upperBodyOnly = false) {
       const opts = getQueryParams(url)
       const speed = parseFloat(opts.s || 1)
       const pose = {
@@ -489,13 +549,24 @@ export function createVRMFactory(glb, setupMaterial) {
         action: null,
         weight: 0,
         target: 0,
+        upperBodyOnly,
         setWeight: value => {
           pose.weight = value
           if (pose.action) {
             pose.action.weight = value
-            if (!pose.active) {
-              pose.action.reset().fadeIn(0.15).play()
+            pose.action.setEffectiveWeight(value)
+            if (!pose.active && value > 0) {
+              if (upperBodyOnly) {
+                // For attacks, reset and play immediately
+                pose.action.reset().play()
+              } else {
+                pose.action.reset().fadeIn(0.15).play()
+              }
               pose.active = true
+            }
+            // Enable the action
+            if (value > 0 && !pose.action.isRunning()) {
+              pose.action.play()
             }
           }
         },
@@ -511,10 +582,49 @@ export function createVRMFactory(glb, setupMaterial) {
           version,
           getBoneName,
         })
+        
+        // If upper body only, filter the animation tracks to only affect upper body bones
+        if (upperBodyOnly) {
+          const originalTrackCount = clip.tracks.length
+          const filteredTracks = clip.tracks.filter(track => {
+            // Track names are like "boneName.position" or "boneName.quaternion"
+            const trackName = track.name
+            
+            // Check each upper body bone name
+            for (const upperBoneName of upperBodyBones) {
+              const bone = findBone(upperBoneName)
+              if (bone && trackName.startsWith(bone.name + '.')) {
+                return true
+              }
+              // Also check for child bones (fingers, etc)
+              if (bone) {
+                for (const child of bone.children) {
+                  if (child.isBone && trackName.startsWith(child.name + '.')) {
+                    return true
+                  }
+                }
+              }
+            }
+            return false
+          })
+          
+          console.log('[VRM] Attack animation tracks filtered:', originalTrackCount, '->', filteredTracks.length)
+          clip.tracks = filteredTracks
+        }
+        
         pose.action = mixer.clipAction(clip)
         pose.action.timeScale = speed
         pose.action.weight = pose.weight
+        
+        // Configure attack animations to play once
+        if (upperBodyOnly) {
+          pose.action.clampWhenFinished = true
+          pose.action.setLoop(THREE.LoopOnce, 1)
+          console.log('[VRM] Attack animation loaded for:', key, 'with', clip.tracks.length, 'tracks')
+        }
+        
         pose.action.play()
+        pose.loading = false
       })
       poses[key] = pose
     }
@@ -531,16 +641,47 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('fall', Emotes.FALL)
     addPose('fly', Emotes.FLY)
     addPose('talk', Emotes.TALK)
+    addPose('attackLeft', Emotes.ATTACK_LEFT, true)
+    addPose('attackRight', Emotes.ATTACK_RIGHT, true)
+    addPose('attackHigh', Emotes.ATTACK_HIGH, true)
+    addPose('attackLow', Emotes.ATTACK_LOW, true)
+    
     function clearLocomotion() {
       for (const key in poses) {
-        poses[key].fadeOut()
+        // Don't clear attack poses
+        if (!poses[key].upperBodyOnly) {
+          poses[key].fadeOut()
+        }
       }
     }
     function updateLocomotion(delta) {
       const { mode, axis } = loco
+      
+      // Clear all pose targets except attacks
       for (const key in poses) {
-        poses[key].target = 0
+        if (!poses[key].upperBodyOnly) {
+          poses[key].target = 0
+        }
       }
+      
+      // Handle attacks independently
+      const now = performance.now() / 1000
+      if (currentAttack && now < attackEndTime) {
+        poses[currentAttack].target = 1
+        console.log('[VRM] Attack active:', currentAttack, 'weight:', poses[currentAttack].weight)
+      } else if (currentAttack) {
+        // Attack finished
+        console.log('[VRM] Attack finished:', currentAttack)
+        poses[currentAttack].target = 0
+        currentAttack = null
+      } else {
+        // No active attack, clear all attack poses
+        if (poses.attackLeft) poses.attackLeft.target = 0
+        if (poses.attackRight) poses.attackRight.target = 0
+        if (poses.attackHigh) poses.attackHigh.target = 0
+        if (poses.attackLow) poses.attackLow.target = 0
+      }
+      
       if (mode === Modes.IDLE) {
         poses.idle.target = 1
       } else if (mode === Modes.WALK || mode === Modes.RUN) {
@@ -681,3 +822,4 @@ function getQueryParams(url) {
   }
   return queryParams[url]
 }
+
