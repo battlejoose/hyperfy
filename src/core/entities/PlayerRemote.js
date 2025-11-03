@@ -155,7 +155,9 @@ export class PlayerRemote extends Entity {
       this.position.update(delta)
       this.quaternion.update(delta)
     }
-    this.avatar?.setEmote(this.data.emote)
+    // Check for attack emotes from effects first, otherwise use regular emote
+    const emote = this.data.effect?.emote || this.data.emote
+    this.avatar?.setEmote(emote)
     this.avatar?.instance?.setLocomotion(this.mode, this.axis, this.gaze)
   }
 

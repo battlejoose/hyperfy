@@ -888,16 +888,32 @@ export class PlayerLocal extends Entity {
     }
 
     // handle attack animations (keys 1, 2, 3, 4)
-    // Attacks bypass the effect system and trigger directly on avatar
-    if (!xr && this.avatar) {
+    // Use effect system for network sync, but make attacks not cancellable by movement
+    if (!xr) {
       if (this.control.digit1.pressed) {
-        this.avatar.setEmote(Emotes.ATTACK_LEFT)
+        this.setEffect({
+          emote: Emotes.ATTACK_LEFT,
+          duration: 1.0,
+          cancellable: false, // Don't cancel on movement
+        })
       } else if (this.control.digit2.pressed) {
-        this.avatar.setEmote(Emotes.ATTACK_RIGHT)
+        this.setEffect({
+          emote: Emotes.ATTACK_RIGHT,
+          duration: 1.0,
+          cancellable: false,
+        })
       } else if (this.control.digit3.pressed) {
-        this.avatar.setEmote(Emotes.ATTACK_HIGH)
+        this.setEffect({
+          emote: Emotes.ATTACK_HIGH,
+          duration: 1.0,
+          cancellable: false,
+        })
       } else if (this.control.digit4.pressed) {
-        this.avatar.setEmote(Emotes.ATTACK_LOW)
+        this.setEffect({
+          emote: Emotes.ATTACK_LOW,
+          duration: 1.0,
+          cancellable: false,
+        })
       }
     }
 
