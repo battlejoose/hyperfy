@@ -403,6 +403,9 @@ export class PlayerLocal extends Entity {
   }
 
   onSwordHit(otherHandle) {
+    // DEBUG: Log what we're hitting
+    console.log('[Sword] Collision detected - tag:', otherHandle.tag, 'playerId:', otherHandle.playerId)
+    
     // Only process hits when collider is active AND ready (prevents phantom hits from re-enabling)
     if (!this.swordColliderActive) {
       console.log('[Sword] Collision detected but collider is INACTIVE - ignoring')
@@ -447,7 +450,7 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisSwing.add(playerId)
     
     // Send hit notification to server (server will validate and apply damage)
-    console.log('[Sword] VALID HIT on player:', playerId, '- notifying server NOW')
+    console.log('[Sword] VALID HIT on player capsule:', playerId, '- notifying server NOW')
     this.world.network.send('playerHit', {
       attackerId: this.data.id,
       targetId: playerId,
