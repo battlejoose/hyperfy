@@ -327,9 +327,9 @@ export class PlayerLocal extends Entity {
     
     this.hitPlayersThisSwing.add(playerId)
     
-    // Deal damage
-    console.log('[Sword] Hit player:', playerId)
-    const targetPlayer = this.world.entities.getById(playerId)
+    // Send damage request to server
+    console.log('[Sword] Hit player:', playerId, '- sending damage to server')
+    const targetPlayer = this.world.entities.get(playerId)
     if (targetPlayer && targetPlayer.proxy) {
       targetPlayer.proxy.damage(10)
     }

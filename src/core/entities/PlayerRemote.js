@@ -233,8 +233,9 @@ export class PlayerRemote extends Entity {
     
     this.hitPlayersThisSwing.add(playerId)
     
+    // On server, apply damage directly
     console.log('[Sword Remote] Hit player:', playerId)
-    const targetPlayer = this.world.entities.getById(playerId)
+    const targetPlayer = this.world.entities.get(playerId)
     if (targetPlayer && targetPlayer.proxy) {
       targetPlayer.proxy.damage(10)
     }
