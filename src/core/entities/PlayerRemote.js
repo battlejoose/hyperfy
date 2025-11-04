@@ -210,13 +210,14 @@ export class PlayerRemote extends Entity {
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
     
     const material = this.world.physics.physics.createMaterial(0, 0, 0)
-    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
+    // Create as SIMULATION shape so sword triggers can detect it (trigger-to-trigger doesn't work)
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE | PHYSX.PxShapeFlagEnum.eSCENE_QUERY_SHAPE)
     
     this.blockShape = this.world.physics.physics.createShape(geometry, material, true, flags)
     
     const filterData = new PHYSX.PxFilterData(
-      Layers.block.group,  // Block has its own collision layer
-      Layers.block.mask,   // Block mask includes weapons
+      Layers.player.group,
+      Layers.weapon.mask,
       PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
       0
     )
@@ -246,7 +247,7 @@ export class PlayerRemote extends Entity {
     this.blockHeight = height
     this.blockDepth = depth
     
-    this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+    this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
     
     PHYSX.destroy(geometry)
   }
@@ -281,28 +282,15 @@ export class PlayerRemote extends Entity {
   }
 
   setBlockColliderActive(active) {
-    if (!this.blockShape) {
-      console.log('[Block Remote] ERROR: No block shape for player:', this.data.id)
-      return
-    }
+    if (!this.blockShape) return
     
     if (active) {
-      console.log('[Block Remote] Activating block collider for player:', this.data.id, '- shape exists:', !!this.blockShape, 'body exists:', !!this.blockBody)
-      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
+      console.log('[Block Remote] Activating block collider for player:', this.data.id, '(SIMULATION shape)')
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, true)
       this.isBlocking = true
-      
-      // Log position for debugging
-      if (this.blockBody) {
-        const pose = this.blockBody.getGlobalPose()
-        console.log('[Block Remote] Block collider position:', {
-          x: pose.translation.x,
-          y: pose.translation.y, 
-          z: pose.translation.z
-        })
-      }
     } else {
       console.log('[Block Remote] Deactivating block collider for player:', this.data.id)
-      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
       this.isBlocking = false
     }
   }

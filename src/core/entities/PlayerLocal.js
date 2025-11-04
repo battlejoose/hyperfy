@@ -327,15 +327,15 @@ export class PlayerLocal extends Entity {
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
     
     const material = this.world.physics.physics.createMaterial(0, 0, 0)
-    // Create as a trigger shape
-    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
+    // Create as SIMULATION shape so sword triggers can detect it (trigger-to-trigger doesn't work)
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE | PHYSX.PxShapeFlagEnum.eSCENE_QUERY_SHAPE)
     
     this.blockShape = this.world.physics.physics.createShape(geometry, material, true, flags)
     
     // Set up filter data for block layer (interacts with weapons)
     const filterData = new PHYSX.PxFilterData(
-      Layers.block.group,  // Block has its own collision layer
-      Layers.block.mask,   // Block mask includes weapons
+      Layers.player.group, // Block is part of player
+      Layers.weapon.mask,  // Only collides with weapons
       PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
       0
     )
@@ -367,8 +367,8 @@ export class PlayerLocal extends Entity {
     this.blockHeight = height
     this.blockDepth = depth
     
-    // Start with collider disabled (disable trigger flag)
-    this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+    // Start with collider disabled (disable simulation flag)
+    this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
     
     PHYSX.destroy(geometry)
   }
@@ -403,17 +403,18 @@ export class PlayerLocal extends Entity {
   }
 
   onSwordHit(otherHandle) {
-    // DEBUG: Log what we're hitting
-    console.log('[Sword] Collision detected - tag:', otherHandle.tag, 'playerId:', otherHandle.playerId)
+    // Check if it's a player first
+    const playerId = otherHandle.playerId
+    if (!playerId) return
     
     // Only process hits when collider is active AND ready (prevents phantom hits from re-enabling)
     if (!this.swordColliderActive) {
-      console.log('[Sword] Collision detected but collider is INACTIVE - ignoring')
+      console.log('[Sword] Collision detected with', playerId, 'but collider is INACTIVE - ignoring')
       return
     }
     
     if (!this.swordColliderReady) {
-      console.log('[Sword] Collision detected but collider is NOT READY (phantom hit) - ignoring')
+      console.log('[Sword] Collision detected with', playerId, 'but collider is NOT READY (phantom hit) - ignoring')
       return
     }
     
@@ -434,10 +435,6 @@ export class PlayerLocal extends Entity {
       return
     }
     
-    // Otherwise, it's a player capsule collider - process damage
-    const playerId = otherHandle.playerId
-    if (!playerId) return
-    
     // Don't hit ourselves
     if (playerId === this.data.id) return
     
@@ -450,7 +447,7 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisSwing.add(playerId)
     
     // Send hit notification to server (server will validate and apply damage)
-    console.log('[Sword] VALID HIT on player capsule:', playerId, '- notifying server NOW')
+    console.log('[Sword] VALID HIT on player:', playerId, '- notifying server NOW')
     this.world.network.send('playerHit', {
       attackerId: this.data.id,
       targetId: playerId,
@@ -565,16 +562,11 @@ export class PlayerLocal extends Entity {
     if (!this.blockShape) return
     
     if (active) {
-      console.log('[Block] Activating block collider - shape exists:', !!this.blockShape, 'body exists:', !!this.blockBody)
-      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
-      
-      // Add 16ms delay like sword to prevent phantom hits
-      setTimeout(() => {
-        console.log('[Block] Block collider now fully active')
-      }, 16)
+      console.log('[Block] Activating block collider (SIMULATION shape)')
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, true)
     } else {
       console.log('[Block] Deactivating block collider')
-      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
     }
   }
 
