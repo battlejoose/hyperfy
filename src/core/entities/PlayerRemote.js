@@ -215,8 +215,8 @@ export class PlayerRemote extends Entity {
     this.blockShape = this.world.physics.physics.createShape(geometry, material, true, flags)
     
     const filterData = new PHYSX.PxFilterData(
-      Layers.player.group, // Block is part of player
-      Layers.player.mask,  // Use player mask (which includes weapons)
+      Layers.block.group,  // Block has its own collision layer
+      Layers.block.mask,   // Block mask includes weapons
       PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
       0
     )
@@ -281,12 +281,25 @@ export class PlayerRemote extends Entity {
   }
 
   setBlockColliderActive(active) {
-    if (!this.blockShape) return
+    if (!this.blockShape) {
+      console.log('[Block Remote] ERROR: No block shape for player:', this.data.id)
+      return
+    }
     
     if (active) {
-      console.log('[Block Remote] Activating block collider for player:', this.data.id)
+      console.log('[Block Remote] Activating block collider for player:', this.data.id, '- shape exists:', !!this.blockShape, 'body exists:', !!this.blockBody)
       this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
       this.isBlocking = true
+      
+      // Log position for debugging
+      if (this.blockBody) {
+        const pose = this.blockBody.getGlobalPose()
+        console.log('[Block Remote] Block collider position:', {
+          x: pose.translation.x,
+          y: pose.translation.y, 
+          z: pose.translation.z
+        })
+      }
     } else {
       console.log('[Block Remote] Deactivating block collider for player:', this.data.id)
       this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)

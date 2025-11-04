@@ -334,8 +334,8 @@ export class PlayerLocal extends Entity {
     
     // Set up filter data for block layer (interacts with weapons)
     const filterData = new PHYSX.PxFilterData(
-      Layers.player.group, // Block is part of player
-      Layers.player.mask,  // Use player mask (which includes weapons)
+      Layers.block.group,  // Block has its own collision layer
+      Layers.block.mask,   // Block mask includes weapons
       PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
       0
     )
@@ -565,8 +565,13 @@ export class PlayerLocal extends Entity {
     if (!this.blockShape) return
     
     if (active) {
-      console.log('[Block] Activating block collider')
+      console.log('[Block] Activating block collider - shape exists:', !!this.blockShape, 'body exists:', !!this.blockBody)
       this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
+      
+      // Add 16ms delay like sword to prevent phantom hits
+      setTimeout(() => {
+        console.log('[Block] Block collider now fully active')
+      }, 16)
     } else {
       console.log('[Block] Deactivating block collider')
       this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)

@@ -31,7 +31,8 @@ add('player', ['environment', 'prop', playerCollision ? 'player' : null, 'weapon
 add('environment', ['camera', 'player', 'environment', 'prop', 'tool'])
 add('prop', ['environment', 'prop'])
 add('tool', ['environment', 'prop'])
-add('weapon', ['player'])
+add('weapon', ['player', 'block'])
+add('block', ['weapon'])
 
 for (const key in Groups) {
   Layers[key] = {
