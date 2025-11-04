@@ -190,6 +190,44 @@ export class PlayerLocal extends Entity {
 
     // Set up collider visualization listener
     this.world.on('showColliders', (show) => {
+      // Create capsule mesh if it doesn't exist and we have graphics
+      if (!this.capsuleColliderMesh && this.world.graphics && this.world.graphics.scene) {
+        const radius = this.capsuleRadius
+        const height = this.capsuleHeight
+        const capsuleGeom = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16)
+        capsuleGeom.translate(0, height / 2, 0)
+        const capsuleMat = new THREE.MeshBasicMaterial({
+          color: 0x00ff00,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
+        this.capsuleColliderMesh.visible = show
+        this.world.graphics.scene.add(this.capsuleColliderMesh)
+        console.log('[PlayerLocal] Created capsule collider mesh')
+      }
+      
+      // Create sword mesh if it doesn't exist, we have the sword, and we have graphics
+      if (!this.swordColliderMesh && this.swordShape && this.world.graphics && this.world.graphics.scene) {
+        const width = 0.1
+        const height = 1.0
+        const depth = 0.05
+        const boxGeom = new THREE.BoxGeometry(width, height, depth)
+        const boxMat = new THREE.MeshBasicMaterial({
+          color: 0xff0000,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
+        this.swordColliderMesh.visible = show
+        this.world.graphics.scene.add(this.swordColliderMesh)
+        console.log('[PlayerLocal] Created sword collider mesh')
+      }
+      
       console.log('[PlayerLocal] Show colliders:', show, 'sword:', !!this.swordColliderMesh, 'capsule:', !!this.capsuleColliderMesh)
       if (this.swordColliderMesh) this.swordColliderMesh.visible = show
       if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
@@ -252,10 +290,8 @@ export class PlayerLocal extends Entity {
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
     
     const material = this.world.physics.physics.createMaterial(0, 0, 0)
-    const flags = new PHYSX.PxShapeFlags(
-      PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE | 
-      PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE
-    )
+    // Create as a trigger shape (no SIMULATION_SHAPE flag for triggers)
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
     
     this.swordShape = this.world.physics.physics.createShape(geometry, material, true, flags)
     
@@ -289,24 +325,9 @@ export class PlayerLocal extends Entity {
       },
     })
     
-    // Start with collider disabled
-    this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+    // Start with collider disabled (disable trigger flag)
+    this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
     this.swordColliderActive = false
-    
-    // Create visualization mesh for sword collider
-    if (this.world.graphics && this.world.graphics.scene) {
-      const boxGeom = new THREE.BoxGeometry(width, height, depth)
-      const boxMat = new THREE.MeshBasicMaterial({
-        color: 0xff0000,
-        transparent: true,
-        opacity: 0.3,
-        wireframe: false,
-        depthTest: true,
-      })
-      this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
-      this.swordColliderMesh.visible = this.world.showColliders || false
-      this.world.graphics.scene.add(this.swordColliderMesh)
-    }
     
     PHYSX.destroy(geometry)
   }
@@ -339,16 +360,16 @@ export class PlayerLocal extends Entity {
     if (!this.swordShape) return
     
     if (active && !this.swordColliderActive) {
-      // Activate collider for new swing
-      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, true)
+      // Activate collider for new swing by enabling the shape
+      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
       this.swordColliderActive = true
       this.hitPlayersThisSwing.clear()
-      console.log('[Sword] Collider activated')
+      console.log('[Sword] Collider activated - ready to detect hits')
     } else if (!active && this.swordColliderActive) {
-      // Deactivate collider
-      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+      // Deactivate collider by disabling the shape
+      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
-      console.log('[Sword] Collider deactivated')
+      console.log('[Sword] Collider deactivated - hit', this.hitPlayersThisSwing.size, 'player(s) this swing')
     }
   }
 
@@ -357,22 +378,6 @@ export class PlayerLocal extends Entity {
     const height = this.capsuleHeight
     const halfHeight = (height - radius - radius) / 2
     const geometry = new PHYSX.PxCapsuleGeometry(radius, halfHeight)
-
-    // Create visualization mesh for capsule collider
-    if (this.world.graphics && this.world.graphics.scene) {
-      const capsuleGeom = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16)
-      capsuleGeom.translate(0, height / 2, 0)
-      const capsuleMat = new THREE.MeshBasicMaterial({
-        color: 0x00ff00,
-        transparent: true,
-        opacity: 0.3,
-        wireframe: false,
-        depthTest: true,
-      })
-      this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
-      this.capsuleColliderMesh.visible = this.world.showColliders || false
-      this.world.graphics.scene.add(this.capsuleColliderMesh)
-    }
     // frictionless material (the combine mode ensures we always use out min=0 instead of avging)
     // we use eMIN when in the air so that we don't stick to walls etc
     // and eMAX on the ground so that we don't constantly slip off physics objects we're pushing
