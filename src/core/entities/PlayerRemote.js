@@ -31,6 +31,9 @@ export class PlayerRemote extends Entity {
     this.swordColliderActive = false
     this.hitPlayersThisSwing = new Set()
     
+    // Block state
+    this.isBlocking = false
+    
     // Death state tracking
     this.isDead = false
     this.deathTimeout = null
@@ -139,6 +142,7 @@ export class PlayerRemote extends Entity {
         this.sword = src.toNodes()
         this.sword.activate({ world: this.world, entity: this })
         this.initSwordCollider()
+        this.initBlockCollider()
       })
       .catch(err => {
         console.error('Failed to load sword:', err)
@@ -195,6 +199,58 @@ export class PlayerRemote extends Entity {
     PHYSX.destroy(geometry)
   }
 
+  initBlockCollider() {
+    if (!PHYSX) return
+    // Create a square collider in front of the player for blocking
+    const capsuleRadius = 0.3
+    const capsuleHeight = 1.8
+    const width = capsuleRadius * 2.5
+    const height = capsuleHeight * 0.9
+    const depth = 0.3
+    const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
+    
+    const material = this.world.physics.physics.createMaterial(0, 0, 0)
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
+    
+    this.blockShape = this.world.physics.physics.createShape(geometry, material, true, flags)
+    
+    const filterData = new PHYSX.PxFilterData(
+      Layers.player.group,
+      Layers.weapon.mask,
+      PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
+      0
+    )
+    
+    this.blockShape.setQueryFilterData(filterData)
+    this.blockShape.setSimulationFilterData(filterData)
+    
+    const transform = new PHYSX.PxTransform(PHYSX.PxIDENTITYEnum.PxIdentity)
+    const v1 = new THREE.Vector3()
+    const q1 = new THREE.Quaternion()
+    v1.copy(this.base.position).toPxTransform(transform)
+    q1.set(0, 0, 0, 1).toPxTransform(transform)
+    
+    this.blockBody = this.world.physics.physics.createRigidDynamic(transform)
+    this.blockBody.setRigidBodyFlag(PHYSX.PxRigidBodyFlagEnum.eKINEMATIC, true)
+    this.blockBody.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_GRAVITY, true)
+    this.blockBody.attachShape(this.blockShape)
+    
+    // No collision callback needed for remote players' block colliders
+    this.blockHandle = this.world.physics.addActor(this.blockBody, {
+      tag: 'block',
+      playerId: this.data.id,
+    })
+    
+    // Store dimensions for visualization
+    this.blockWidth = width
+    this.blockHeight = height
+    this.blockDepth = depth
+    
+    this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+    
+    PHYSX.destroy(geometry)
+  }
+
   onSwordHit(otherHandle) {
     if (!this.swordColliderActive) return
     
@@ -221,6 +277,20 @@ export class PlayerRemote extends Entity {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
       console.log('[Sword Remote] Collider deactivated for player:', this.data.id, '- hit', this.hitPlayersThisSwing.size, 'player(s)')
+    }
+  }
+
+  setBlockColliderActive(active) {
+    if (!this.blockShape) return
+    
+    if (active) {
+      console.log('[Block Remote] Activating block collider for player:', this.data.id)
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
+      this.isBlocking = true
+    } else {
+      console.log('[Block Remote] Deactivating block collider for player:', this.data.id)
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+      this.isBlocking = false
     }
   }
 
@@ -284,6 +354,28 @@ export class PlayerRemote extends Entity {
         this.attackTimeout = null
       }
     }
+    
+    // Handle block collider activation for block animation
+    const isBlocking = this.data.effect?.emote === Emotes.BLOCK
+    
+    if (isBlocking && !this.currentlyBlocking) {
+      this.currentlyBlocking = true
+      this.setBlockColliderActive(true)
+      // Clear the flag after block duration
+      if (this.blockTimeout) clearTimeout(this.blockTimeout)
+      this.blockTimeout = setTimeout(() => {
+        this.currentlyBlocking = false
+        this.setBlockColliderActive(false)
+      }, 1000)
+    } else if (!isBlocking && this.currentlyBlocking) {
+      // Block ended early
+      this.currentlyBlocking = false
+      this.setBlockColliderActive(false)
+      if (this.blockTimeout) {
+        clearTimeout(this.blockTimeout)
+        this.blockTimeout = null
+      }
+    }
   }
 
   lateUpdate(delta) {
@@ -326,6 +418,22 @@ export class PlayerRemote extends Entity {
         this.swordColliderMesh.visible = true
         this.world.stage.scene.add(this.swordColliderMesh)
         console.log('[PlayerRemote] Created sword collider mesh (deferred) for player:', this.data.id)
+      }
+      
+      // Create block mesh if it doesn't exist and we have the block shape
+      if (!this.blockColliderMesh && this.blockShape) {
+        const blockGeom = new THREE.BoxGeometry(this.blockWidth, this.blockHeight, this.blockDepth)
+        const blockMat = new THREE.MeshBasicMaterial({
+          color: 0xffff00, // Yellow (changes to green when blocking)
+          transparent: true,
+          opacity: 0.2,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.blockColliderMesh = new THREE.Mesh(blockGeom, blockMat)
+        this.blockColliderMesh.visible = true
+        this.world.stage.scene.add(this.blockColliderMesh)
+        console.log('[PlayerRemote] Created block collider mesh (deferred) for player:', this.data.id)
       }
     }
 
@@ -381,6 +489,40 @@ export class PlayerRemote extends Entity {
             this.swordColliderMesh.position.copy(v6)
             this.swordColliderMesh.quaternion.copy(this.sword.quaternion)
           }
+        }
+      }
+    }
+
+    // Update block collider position (always positioned in front of player)
+    if (this.blockBody) {
+      const v6 = new THREE.Vector3()
+      const pose = this.blockBody.getGlobalPose()
+      // Position block collider in front of player at chest height
+      const forwardOffset = 0.5
+      const heightOffset = 1.8 * 0.6 // Upper mid-body
+      
+      v6.set(0, 0, -forwardOffset) // Negative Z is forward in Three.js
+      v6.applyQuaternion(this.base.quaternion)
+      v6.add(this.base.position)
+      v6.y += heightOffset
+      
+      v6.toPxTransform(pose)
+      this.base.quaternion.toPxTransform(pose)
+      this.blockBody.setGlobalPose(pose)
+
+      // Update block collider visualization mesh
+      if (this.blockColliderMesh) {
+        this.blockColliderMesh.position.copy(v6)
+        this.blockColliderMesh.quaternion.copy(this.base.quaternion)
+        
+        // Change color based on blocking state
+        const material = this.blockColliderMesh.material
+        if (this.isBlocking) {
+          material.color.setHex(0x00ff00) // Green when blocking
+          material.opacity = 0.5
+        } else {
+          material.color.setHex(0xffff00) // Yellow when not blocking
+          material.opacity = 0.2
         }
       }
     }

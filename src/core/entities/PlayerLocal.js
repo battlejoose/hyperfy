@@ -92,6 +92,11 @@ export class PlayerLocal extends Entity {
     this.isInWindup = false
     this.isCommitted = false
     
+    // Block state
+    this.isBlocking = false
+    this.blockTimeout = null
+    this.blockDuration = 1.0 // Block animation duration
+    
     // Death/respawn state
     this.isDead = false
     this.deathTimeout = null
@@ -255,6 +260,7 @@ export class PlayerLocal extends Entity {
         this.sword = src.toNodes()
         this.sword.activate({ world: this.world, entity: this })
         this.initSwordCollider()
+        this.initBlockCollider()
       })
       .catch(err => {
         console.error('Failed to load sword:', err)
@@ -310,6 +316,90 @@ export class PlayerLocal extends Entity {
     this.swordColliderActive = false
     
     PHYSX.destroy(geometry)
+  }
+
+  initBlockCollider() {
+    // Create a square collider in front of the player for blocking
+    // Roughly the size of the capsule collider (width and height)
+    const width = this.capsuleRadius * 2.5 // Slightly wider than capsule
+    const height = this.capsuleHeight * 0.9 // Most of the body height (taller)
+    const depth = 0.3 // Thin shield in front
+    const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
+    
+    const material = this.world.physics.physics.createMaterial(0, 0, 0)
+    // Create as a trigger shape
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
+    
+    this.blockShape = this.world.physics.physics.createShape(geometry, material, true, flags)
+    
+    // Set up filter data for block layer (interacts with weapons)
+    const filterData = new PHYSX.PxFilterData(
+      Layers.player.group, // Block is part of player
+      Layers.weapon.mask,  // Only collides with weapons
+      PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
+      0
+    )
+    
+    this.blockShape.setQueryFilterData(filterData)
+    this.blockShape.setSimulationFilterData(filterData)
+    
+    // Create kinematic rigidbody for block collider
+    const transform = new PHYSX.PxTransform(PHYSX.PxIDENTITYEnum.PxIdentity)
+    v1.copy(this.base.position).toPxTransform(transform)
+    q1.set(0, 0, 0, 1).toPxTransform(transform)
+    
+    this.blockBody = this.world.physics.physics.createRigidDynamic(transform)
+    this.blockBody.setRigidBodyFlag(PHYSX.PxRigidBodyFlagEnum.eKINEMATIC, true)
+    this.blockBody.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_GRAVITY, true)
+    this.blockBody.attachShape(this.blockShape)
+    
+    const self = this
+    this.blockHandle = this.world.physics.addActor(this.blockBody, {
+      tag: 'block',
+      playerId: this.data.id,
+      onTriggerEnter: (otherHandle) => {
+        self.onBlockHit(otherHandle)
+      },
+    })
+    
+    // Store dimensions for visualization
+    this.blockWidth = width
+    this.blockHeight = height
+    this.blockDepth = depth
+    
+    // Start with collider disabled (disable trigger flag)
+    this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+    
+    PHYSX.destroy(geometry)
+  }
+
+  onBlockHit(otherHandle) {
+    // Only process hits when actively blocking
+    if (!this.isBlocking) return
+    
+    // Check if it's a sword
+    if (otherHandle.tag !== 'sword') return
+    
+    const attackerId = otherHandle.playerId
+    if (!attackerId) return
+    
+    // Don't block our own sword
+    if (attackerId === this.data.id) return
+    
+    console.log('[Block] Blocked attack from player:', attackerId, '- disabling their sword')
+    
+    // Notify the server that we blocked this attack
+    // The server will tell the attacker to disable their sword collider
+    this.world.network.send('blockHit', {
+      blockerId: this.data.id,
+      attackerId: attackerId,
+    })
+  }
+
+  onSwordBlocked(blockerId) {
+    // Our attack was blocked! Disable sword collider immediately
+    console.log('[Sword] Attack blocked by player:', blockerId, '- disabling sword collider')
+    this.setSwordColliderActive(false)
   }
 
   onSwordHit(otherHandle) {
@@ -395,6 +485,34 @@ export class PlayerLocal extends Entity {
     }, this.attackDuration * 1000)
   }
 
+  startBlock() {
+    // Can't block while dead
+    if (this.isDead) return
+    
+    // If already blocking, ignore
+    if (this.isBlocking) return
+    
+    console.log('[Block] Starting block')
+    this.isBlocking = true
+    
+    // Activate block collider
+    this.setBlockColliderActive(true)
+    
+    // Play block animation
+    this.setEffect({
+      emote: Emotes.BLOCK,
+      duration: this.blockDuration,
+      cancellable: false,
+    })
+    
+    // After block duration, deactivate
+    this.blockTimeout = setTimeout(() => {
+      this.setBlockColliderActive(false)
+      this.isBlocking = false
+      console.log('[Block] Block ended')
+    }, this.blockDuration * 1000)
+  }
+
   setSwordColliderActive(active) {
     if (!this.swordShape) return
     
@@ -420,6 +538,18 @@ export class PlayerLocal extends Entity {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
       this.swordColliderReady = false
+    }
+  }
+
+  setBlockColliderActive(active) {
+    if (!this.blockShape) return
+    
+    if (active) {
+      console.log('[Block] Activating block collider')
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
+    } else {
+      console.log('[Block] Deactivating block collider')
+      this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
     }
   }
 
@@ -1091,7 +1221,7 @@ export class PlayerLocal extends Entity {
       } else if (this.control.digit4.pressed) {
         this.startAttack(Emotes.ATTACK_LOW)
       } else if (this.control.digit5.pressed) {
-        this.startAttack(Emotes.BLOCK)
+        this.startBlock()
       }
     }
 
@@ -1376,6 +1506,22 @@ export class PlayerLocal extends Entity {
         this.world.stage.scene.add(this.swordColliderMesh)
         console.log('[PlayerLocal] Created sword collider mesh (deferred)')
       }
+      
+      // Create block mesh if it doesn't exist and we have the block shape
+      if (!this.blockColliderMesh && this.blockShape) {
+        const blockGeom = new THREE.BoxGeometry(this.blockWidth, this.blockHeight, this.blockDepth)
+        const blockMat = new THREE.MeshBasicMaterial({
+          color: 0xffff00, // Yellow (changes to green when blocking)
+          transparent: true,
+          opacity: 0.2,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.blockColliderMesh = new THREE.Mesh(blockGeom, blockMat)
+        this.blockColliderMesh.visible = true
+        this.world.stage.scene.add(this.blockColliderMesh)
+        console.log('[PlayerLocal] Created block collider mesh (deferred)')
+      }
     }
 
     // if (xr) return
@@ -1452,6 +1598,39 @@ export class PlayerLocal extends Entity {
             this.swordColliderMesh.position.copy(v6)
             this.swordColliderMesh.quaternion.copy(this.sword.quaternion)
           }
+        }
+      }
+    }
+
+    // Update block collider position (always positioned in front of player)
+    if (this.blockBody) {
+      const pose = this.blockBody.getGlobalPose()
+      // Position block collider in front of player at chest height
+      const forwardOffset = 0.5 // Distance in front of player
+      const heightOffset = this.capsuleHeight * 0.6 // Upper mid-body
+      
+      v6.set(0, 0, -forwardOffset) // Negative Z is forward in Three.js
+      v6.applyQuaternion(this.base.quaternion)
+      v6.add(this.base.position)
+      v6.y += heightOffset
+      
+      v6.toPxTransform(pose)
+      this.base.quaternion.toPxTransform(pose)
+      this.blockBody.setGlobalPose(pose)
+
+      // Update block collider visualization mesh
+      if (this.blockColliderMesh) {
+        this.blockColliderMesh.position.copy(v6)
+        this.blockColliderMesh.quaternion.copy(this.base.quaternion)
+        
+        // Change color based on blocking state
+        const material = this.blockColliderMesh.material
+        if (this.isBlocking) {
+          material.color.setHex(0x00ff00) // Green when blocking
+          material.opacity = 0.5
+        } else {
+          material.color.setHex(0xffff00) // Yellow when not blocking
+          material.opacity = 0.2
         }
       }
     }
@@ -1561,6 +1740,11 @@ export class PlayerLocal extends Entity {
     this.isCommitted = false
     this.currentAttackEmote = null
     this.hitPlayersThisSwing.clear()
+    
+    // Cancel any active block
+    if (this.blockTimeout) clearTimeout(this.blockTimeout)
+    this.setBlockColliderActive(false)
+    this.isBlocking = false
     
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
