@@ -809,6 +809,7 @@ export function createVRMFactory(glb, setupMaterial) {
 
     return {
       raw: vrm,
+      mixer, // Expose mixer for direct animation control
       height,
       headToHeight,
       setEmote,

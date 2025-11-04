@@ -89,8 +89,10 @@ export class PlayerLocal extends Entity {
     this.currentAttackEmote = null
     this.attackWindupTimeout = null
     this.attackEndTimeout = null
+    this.attackFreezeTimeout = null
     this.isInWindup = false
     this.isCommitted = false
+    this.attackAnimationPaused = false
     
     // Block state
     this.isBlocking = false
@@ -109,6 +111,8 @@ export class PlayerLocal extends Entity {
     this.mouseDragAccumulated = null // { x, y } - accumulated delta from start
     this.isDragging = false
     this.dragThreshold = 30 // pixels to move before it's considered a drag
+    this.isChargingAttack = false // holding at backswing, waiting for release
+    this.chargedAttackEmote = null // which attack is being charged
 
     this.pushForce = null
     this.pushForceInit = false
@@ -632,7 +636,10 @@ export class PlayerLocal extends Entity {
     })
   }
 
-  startAttack(emote) {
+  startAttack(emote, chargeMode = false) {
+    // If already charging, ignore
+    if (this.isChargingAttack) return
+    
     // If we're already committed to an attack (past windup), ignore new input
     if (this.isCommitted) {
       return
@@ -643,40 +650,137 @@ export class PlayerLocal extends Entity {
       // Cancel previous attack timers
       if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
       if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+      if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+      if (this.attackAnimationPaused) this.resumeAttackAnimation()
       this.setSwordColliderActive(false)
     }
-    
-    // Start new attack
-    console.log('[Attack] Starting new attack:', emote)
-    this.currentAttackEmote = emote
-    this.isInWindup = true
-    this.isCommitted = false
     
     // IMPORTANT: Clear hit tracking NOW, before any collider activation
     this.hitPlayersThisSwing.clear()
     console.log('[Attack] Cleared hit tracking for new attack')
     
-    // Play attack animation
-    this.setEffect({
-      emote: emote,
-      duration: this.attackDuration,
-      cancellable: false,
-    })
+    if (chargeMode) {
+      // Charge mode: play backswing and hold
+      console.log('[Attack] CHARGING attack - playing backswing:', emote)
+      this.isChargingAttack = true
+      this.chargedAttackEmote = emote
+      this.currentAttackEmote = emote
+      this.isInWindup = true
+      this.isCommitted = false
+      this.attackAnimationPaused = false
+      
+      // Play the full attack animation
+      this.setEffect({
+        emote: emote,
+        duration: this.attackDuration,
+        cancellable: false,
+      })
+      
+      // After 0.5s, pause the animation by setting timeScale to 0
+      this.attackFreezeTimeout = setTimeout(() => {
+        if (this.isChargingAttack && this.chargedAttackEmote === emote) {
+          console.log('[Attack] Pausing animation at backswing pose')
+          this.attackAnimationPaused = true
+          // Try to access and pause the animation mixer
+          this.pauseAttackAnimation()
+        }
+      }, this.attackWindupTime * 1000)
+    } else {
+      // Normal mode: full attack
+      console.log('[Attack] Starting FULL attack:', emote)
+      this.currentAttackEmote = emote
+      this.isInWindup = true
+      this.isCommitted = false
+      
+      // Play full attack animation
+      this.setEffect({
+        emote: emote,
+        duration: this.attackDuration,
+        cancellable: false,
+      })
+      
+      // After windup time, activate sword collider and commit to attack
+      this.attackWindupTimeout = setTimeout(() => {
+        this.isInWindup = false
+        this.isCommitted = true
+        this.setSwordColliderActive(true)
+      }, this.attackWindupTime * 1000)
+      
+      // After full attack duration, deactivate and reset
+      this.attackEndTimeout = setTimeout(() => {
+        this.setSwordColliderActive(false)
+        this.currentAttackEmote = null
+        this.isInWindup = false
+        this.isCommitted = false
+      }, this.attackDuration * 1000)
+    }
+  }
+  
+  pauseAttackAnimation() {
+    try {
+      // Access the mixer through the avatar's instance
+      if (this.avatar && this.avatar.instance && this.avatar.instance.mixer) {
+        const mixer = this.avatar.instance.mixer
+        // Pause the mixer itself
+        mixer.timeScale = 0
+        console.log('[Attack] Animation mixer paused (timeScale = 0)')
+      } else {
+        console.warn('[Attack] Could not access animation mixer to pause')
+      }
+    } catch (err) {
+      console.error('[Attack] Error pausing animation:', err)
+    }
+  }
+
+  resumeAttackAnimation() {
+    try {
+      // Access the mixer through the avatar's instance
+      if (this.avatar && this.avatar.instance && this.avatar.instance.mixer) {
+        const mixer = this.avatar.instance.mixer
+        // Resume the mixer
+        mixer.timeScale = 1
+        console.log('[Attack] Animation mixer resumed (timeScale = 1)')
+      } else {
+        console.warn('[Attack] Could not access animation mixer to resume')
+      }
+    } catch (err) {
+      console.error('[Attack] Error resuming animation:', err)
+    }
+  }
+
+  completeChargedAttack() {
+    if (!this.isChargingAttack || !this.chargedAttackEmote) return
     
-    // After windup time, activate sword collider and commit to attack
-    this.attackWindupTimeout = setTimeout(() => {
-      this.isInWindup = false
-      this.isCommitted = true
-      this.setSwordColliderActive(true)
-    }, this.attackWindupTime * 1000)
+    console.log('[Attack] RELEASING charged attack - resuming animation:', this.chargedAttackEmote)
     
-    // After full attack duration, deactivate and reset
+    // Clear any pending freeze timeout
+    if (this.attackFreezeTimeout) {
+      clearTimeout(this.attackFreezeTimeout)
+      this.attackFreezeTimeout = null
+    }
+    
+    const emote = this.chargedAttackEmote
+    this.isChargingAttack = false
+    this.chargedAttackEmote = null
+    this.isCommitted = true
+    
+    // Resume the animation if it was paused
+    if (this.attackAnimationPaused) {
+      this.attackAnimationPaused = false
+      this.resumeAttackAnimation()
+    }
+    
+    // Activate sword collider immediately (we've already played the backswing)
+    this.setSwordColliderActive(true)
+    
+    // After remaining attack duration (minus the backswing we already played), deactivate and reset
     this.attackEndTimeout = setTimeout(() => {
       this.setSwordColliderActive(false)
       this.currentAttackEmote = null
       this.isInWindup = false
       this.isCommitted = false
-    }, this.attackDuration * 1000)
+      console.log('[Attack] Charged attack complete')
+    }, (this.attackDuration - this.attackWindupTime) * 1000)
   }
 
   startBlock() {
@@ -1453,50 +1557,50 @@ export class PlayerLocal extends Entity {
           this.mouseDragAccumulated.y * this.mouseDragAccumulated.y
         )
         
-        if (distance > this.dragThreshold) {
+        // Once we've dragged enough and not already charging, start charged attack
+        if (distance > this.dragThreshold && !this.isChargingAttack && !this.isDragging) {
           this.isDragging = true
-        }
-      }
-      
-      // Left mouse released: determine attack direction
-      if (this.control.mouseLeft.released && this.mouseDragStart && this.control.pointer.locked) {
-        const dx = this.mouseDragAccumulated.x
-        const dy = this.mouseDragAccumulated.y
-        const distance = Math.sqrt(dx * dx + dy * dy)
-        
-        console.log('[Mouse Attack] Mouse released - Accumulated delta dx:', dx.toFixed(1), 'dy:', dy.toFixed(1), 'distance:', distance.toFixed(1), 'threshold:', this.dragThreshold)
-        
-        // Only trigger attack if dragged enough
-        if (distance > this.dragThreshold) {
-          // Determine dominant direction
+          
+          // Determine direction and start charged attack
+          const dx = this.mouseDragAccumulated.x
+          const dy = this.mouseDragAccumulated.y
           const absX = Math.abs(dx)
           const absY = Math.abs(dy)
           
+          let attackEmote
           if (absX > absY) {
             // Horizontal drag
             if (dx > 0) {
-              // Dragged right
-              console.log('[Mouse Attack] RIGHT attack')
-              this.startAttack(Emotes.ATTACK_RIGHT)
+              attackEmote = Emotes.ATTACK_RIGHT
+              console.log('[Mouse Attack] CHARGING RIGHT attack')
             } else {
-              // Dragged left
-              console.log('[Mouse Attack] LEFT attack')
-              this.startAttack(Emotes.ATTACK_LEFT)
+              attackEmote = Emotes.ATTACK_LEFT
+              console.log('[Mouse Attack] CHARGING LEFT attack')
             }
           } else {
             // Vertical drag
             if (dy > 0) {
-              // Dragged down
-              console.log('[Mouse Attack] LOW attack')
-              this.startAttack(Emotes.ATTACK_LOW)
+              attackEmote = Emotes.ATTACK_LOW
+              console.log('[Mouse Attack] CHARGING LOW attack')
             } else {
-              // Dragged up
-              console.log('[Mouse Attack] HIGH attack')
-              this.startAttack(Emotes.ATTACK_HIGH)
+              attackEmote = Emotes.ATTACK_HIGH
+              console.log('[Mouse Attack] CHARGING HIGH attack')
             }
           }
+          
+          // Start charged attack (plays backswing and holds)
+          this.startAttack(attackEmote, true)
+        }
+      }
+      
+      // Left mouse released: complete charged attack if charging
+      if (this.control.mouseLeft.released && this.mouseDragStart && this.control.pointer.locked) {
+        if (this.isChargingAttack) {
+          // Complete the charged attack (plays full swing with collider)
+          console.log('[Mouse Attack] Mouse released - completing charged attack')
+          this.completeChargedAttack()
         } else {
-          console.log('[Mouse Attack] Drag too short - no attack triggered')
+          console.log('[Mouse Attack] Mouse released - no charged attack (drag too short)')
         }
         
         // Reset drag tracking
