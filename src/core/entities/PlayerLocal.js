@@ -403,20 +403,37 @@ export class PlayerLocal extends Entity {
   }
 
   onSwordHit(otherHandle) {
-    // Check if it's a player first
-    const playerId = otherHandle.playerId
-    if (!playerId) return
-    
     // Only process hits when collider is active AND ready (prevents phantom hits from re-enabling)
     if (!this.swordColliderActive) {
-      console.log('[Sword] Collision detected with', playerId, 'but collider is INACTIVE - ignoring')
+      console.log('[Sword] Collision detected but collider is INACTIVE - ignoring')
       return
     }
     
     if (!this.swordColliderReady) {
-      console.log('[Sword] Collision detected with', playerId, 'but collider is NOT READY (phantom hit) - ignoring')
+      console.log('[Sword] Collision detected but collider is NOT READY (phantom hit) - ignoring')
       return
     }
+    
+    // Check if we hit a BLOCK collider (active blocks disable the sword!)
+    if (otherHandle.tag === 'block') {
+      const blockerId = otherHandle.playerId
+      if (!blockerId) return
+      if (blockerId === this.data.id) return // Don't block our own sword
+      
+      console.log('[Sword] Hit ACTIVE BLOCK from player:', blockerId, '- SWORD BLOCKED! Disabling sword for rest of swing')
+      this.setSwordColliderActive(false)
+      
+      // Notify server for logging
+      this.world.network.send('blockHit', {
+        blockerId: blockerId,
+        attackerId: this.data.id,
+      })
+      return
+    }
+    
+    // Otherwise, it's a player capsule collider - process damage
+    const playerId = otherHandle.playerId
+    if (!playerId) return
     
     // Don't hit ourselves
     if (playerId === this.data.id) return
