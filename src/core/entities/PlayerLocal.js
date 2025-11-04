@@ -391,11 +391,12 @@ export class PlayerLocal extends Entity {
     
     console.log('[Block] Blocked attack from player:', attackerId, '- disabling their sword')
     
-    // Spawn spark particles at block position (chest area)
+    // Spawn spark particles and play block audio at block position (chest area)
     const blockPos = new THREE.Vector3()
     blockPos.copy(this.base.position)
     blockPos.y += this.capsuleHeight * 0.6 // Match block collider height
     this.spawnSparkParticles(blockPos)
+    this.playBlockAudio(blockPos)
     
     // Notify the server that we blocked this attack
     // The server will tell the attacker to disable their sword collider
@@ -498,6 +499,54 @@ export class PlayerLocal extends Entity {
     }
   }
 
+  playHitAudio(position) {
+    if (!this.world.audio) {
+      console.log('[Audio] Audio system not available')
+      return
+    }
+    
+    console.log('[Audio Local] Playing hit sound at position:', position)
+    const audio = createNode('audio', {
+      src: 'asset://audiohit.mp3',
+      volume: 0.5,
+      loop: false,
+      group: 'sfx',
+      spatial: true,
+      refDistance: 1,
+      maxDistance: 20,
+      rolloffFactor: 2,
+    })
+    
+    audio.position.copy(position)
+    audio.activate({ world: this.world, entity: this })
+    audio.play()
+    // Audio will automatically stop and clean up when finished (loop: false)
+  }
+
+  playBlockAudio(position) {
+    if (!this.world.audio) {
+      console.log('[Audio] Audio system not available')
+      return
+    }
+    
+    console.log('[Audio Local] Playing block sound at position:', position)
+    const audio = createNode('audio', {
+      src: 'asset://audioblock.mp3',
+      volume: 0.5,
+      loop: false,
+      group: 'sfx',
+      spatial: true,
+      refDistance: 1,
+      maxDistance: 20,
+      rolloffFactor: 2,
+    })
+    
+    audio.position.copy(position)
+    audio.activate({ world: this.world, entity: this })
+    audio.play()
+    // Audio will automatically stop and clean up when finished (loop: false)
+  }
+
   onSwordBlocked(blockerId) {
     // Our attack was blocked! Disable sword collider immediately
     console.log('[Sword] Attack blocked by player:', blockerId, '- disabling sword collider')
@@ -529,13 +578,16 @@ export class PlayerLocal extends Entity {
       console.log('[Sword] Hit ACTIVE BLOCK from player:', blockerId, '- SWORD BLOCKED! Disabling sword for rest of swing')
       this.setSwordColliderActive(false)
       
-      // Spawn spark particles at block position
+      // Play block sound and spawn spark particles at block position
       const blocker = this.world.entities.get(blockerId)
       if (blocker && blocker.base) {
         const blockPos = new THREE.Vector3()
         blockPos.copy(blocker.base.position)
         blockPos.y += 1.8 * 0.6 // Match block collider height
         this.spawnSparkParticles(blockPos)
+        
+        // Play block audio
+        this.playBlockAudio(blockPos)
       }
       
       // Notify server for logging
@@ -557,11 +609,12 @@ export class PlayerLocal extends Entity {
     
     this.hitPlayersThisSwing.add(playerId)
     
-    // Spawn blood particles at hit location (use sword mesh position)
+    // Spawn blood particles and play hit audio at hit location (use sword mesh position)
     if (this.sword) {
       const hitPos = new THREE.Vector3()
       this.sword.getWorldPosition(hitPos)
       this.spawnBloodParticles(hitPos)
+      this.playHitAudio(hitPos)
     }
     
     // Send hit notification to server (server will validate and apply damage)

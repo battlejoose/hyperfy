@@ -269,19 +269,21 @@ export class PlayerRemote extends Entity {
     if (otherHandle.tag === 'block') {
       console.log('[Sword Remote] Hit BLOCK from player:', playerId)
       
-      // Spawn spark particles at block position (chest area)
+      // Spawn spark particles and play block audio at block position (chest area)
       const blockPos = new THREE.Vector3()
       blockPos.copy(this.base.position)
       blockPos.y += 1.8 * 0.6 // Match block collider height
       this.spawnSparkParticles(blockPos)
+      this.playBlockAudio(blockPos)
       return
     }
     
-    // Spawn blood particles at hit location (use sword mesh position)
+    // Spawn blood particles and play hit audio at hit location (use sword mesh position)
     if (this.sword) {
       const hitPos = new THREE.Vector3()
       this.sword.getWorldPosition(hitPos)
       this.spawnBloodParticles(hitPos)
+      this.playHitAudio(hitPos)
     }
     
     // Log collision for debugging (damage is handled by server via playerHit message)
@@ -379,6 +381,54 @@ export class PlayerRemote extends Entity {
         this.activeParticles.splice(i, 1)
       }
     }
+  }
+
+  playHitAudio(position) {
+    if (!this.world.audio) {
+      console.log('[Audio] Audio system not available')
+      return
+    }
+    
+    console.log('[Audio Remote] Playing hit sound at position:', position)
+    const audio = createNode('audio', {
+      src: 'asset://audiohit.mp3',
+      volume: 0.5,
+      loop: false,
+      group: 'sfx',
+      spatial: true,
+      refDistance: 1,
+      maxDistance: 20,
+      rolloffFactor: 2,
+    })
+    
+    audio.position.copy(position)
+    audio.activate({ world: this.world, entity: this })
+    audio.play()
+    // Audio will automatically stop and clean up when finished (loop: false)
+  }
+
+  playBlockAudio(position) {
+    if (!this.world.audio) {
+      console.log('[Audio] Audio system not available')
+      return
+    }
+    
+    console.log('[Audio Remote] Playing block sound at position:', position)
+    const audio = createNode('audio', {
+      src: 'asset://audioblock.mp3',
+      volume: 0.5,
+      loop: false,
+      group: 'sfx',
+      spatial: true,
+      refDistance: 1,
+      maxDistance: 20,
+      rolloffFactor: 2,
+    })
+    
+    audio.position.copy(position)
+    audio.activate({ world: this.world, entity: this })
+    audio.play()
+    // Audio will automatically stop and clean up when finished (loop: false)
   }
 
   setSwordColliderActive(active) {
