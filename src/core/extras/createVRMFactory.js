@@ -256,10 +256,6 @@ export function createVRMFactory(glb, setupMaterial) {
     
     const setDeathState = (isDead) => {
       isInDeathState = isDead
-      console.log('[VRM] Death state set to:', isDead, '- dead pose exists:', !!poses.dead, '- isInDeathState now:', isInDeathState)
-      if (isDead && !poses.dead) {
-        console.error('[VRM] CRITICAL: Trying to set death state but dead pose does not exist!')
-      }
     }
     
     const setEmote = url => {
@@ -396,7 +392,6 @@ export function createVRMFactory(glb, setupMaterial) {
         
         if (isDeathEffect) {
           // Death effects completely override locomotion - turn off all locomotion
-          console.log('[VRM] Death effect active, turning off locomotion')
           for (const key in poses) {
             if (!poses[key].upperBodyOnly && key !== 'deathFall' && key !== 'getup') {
               poses[key].target = 0
@@ -404,7 +399,6 @@ export function createVRMFactory(glb, setupMaterial) {
           }
         } else if (!currentEmote) {
           // No emote playing - update normal locomotion
-          console.log('[VRM] No emote, updating locomotion - isInDeathState:', isInDeathState)
           updateLocomotion(delta)
         }
         // If there's a non-death emote playing, skip locomotion updates
@@ -736,7 +730,6 @@ export function createVRMFactory(glb, setupMaterial) {
       // Update locomotion (legs only)
       // If in death state, use dead animation as locomotion
       if (isInDeathState) {
-        console.log('[VRM] Using dead locomotion - target set to 1')
         poses.dead.target = 1
       } else if (mode === Modes.IDLE) {
         poses.idle.target = 1
