@@ -258,7 +258,7 @@ export function createVRMFactory(glb, setupMaterial) {
       isInDeathState = isDead
     }
     
-    const setEmote = url => {
+    const setEmote = (url, duration) => {
       // Check if this is a death effect (fall or getup) - treat like attacks
       if (url && (url === Emotes.DEATH_FALL || url === Emotes.GETUP)) {
         const deathKey = deathUrlToKey[url]
@@ -291,10 +291,22 @@ export function createVRMFactory(glb, setupMaterial) {
       // Check if this is an attack animation
       if (url && attackEmotes.includes(url)) {
         const attackKey = attackUrlToKey[url]
-        console.log('[VRM] Attack detected:', attackKey, 'pose exists:', !!poses[attackKey])
+        const attackDuration = duration || 1.0 // Use provided duration or default to 1 second
+        
+        // Skip if same attack is already playing with same duration
+        if (currentAttack === attackKey) {
+          // Update duration if it's different (for example, when charging then releasing)
+          const remainingTime = attackEndTime - (performance.now() / 1000)
+          if (Math.abs(remainingTime - attackDuration) > 0.1) {
+            attackEndTime = performance.now() / 1000 + attackDuration
+          }
+          return // Don't reset animation if same attack is playing
+        }
+        
+        console.log('[VRM] Attack detected:', attackKey, 'duration:', attackDuration, 'pose exists:', !!poses[attackKey])
         if (poses[attackKey]) {
           currentAttack = attackKey
-          attackEndTime = performance.now() / 1000 + 1.0 // 1 second duration
+          attackEndTime = performance.now() / 1000 + attackDuration // Use configurable duration
           if (poses[attackKey].action) {
             // Reset and restart the attack animation with high priority
             poses[attackKey].action.reset()

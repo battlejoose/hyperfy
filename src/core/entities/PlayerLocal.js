@@ -669,17 +669,17 @@ export class PlayerLocal extends Entity {
       this.isCommitted = false
       this.attackAnimationPaused = false
       
-      // Play the full attack animation
+      // Play the full attack animation with very long duration (so it doesn't expire while holding)
       this.setEffect({
         emote: emote,
-        duration: this.attackDuration,
+        duration: 999, // Very long so player can hold as long as they want
         cancellable: false,
       })
       
       // After 0.5s, pause the animation by setting timeScale to 0
       this.attackFreezeTimeout = setTimeout(() => {
         if (this.isChargingAttack && this.chargedAttackEmote === emote) {
-          console.log('[Attack] Pausing animation at backswing pose')
+          console.log('[Attack] Pausing animation at backswing pose - hold as long as you want!')
           this.attackAnimationPaused = true
           // Try to access and pause the animation mixer
           this.pauseAttackAnimation()
@@ -769,6 +769,13 @@ export class PlayerLocal extends Entity {
       this.attackAnimationPaused = false
       this.resumeAttackAnimation()
     }
+    
+    // Restart the effect with proper duration so it ends at the right time
+    this.setEffect({
+      emote: emote,
+      duration: this.attackDuration - this.attackWindupTime, // Remaining time
+      cancellable: false,
+    })
     
     // Activate sword collider immediately (we've already played the backswing)
     this.setSwordColliderActive(true)
@@ -1742,7 +1749,13 @@ export class PlayerLocal extends Entity {
     if (this.emote !== emote) {
       this.emote = emote
     }
-    this.avatar?.setEmote(this.emote)
+    // Pass effect duration if available (important for charged attacks)
+    // NOTE: Must call .instance.setEmote() directly to pass duration parameter
+    // because the Avatar Node wrapper only accepts one parameter
+    const duration = this.data.effect?.duration
+    if (this.avatar?.instance) {
+      this.avatar.instance.setEmote(this.emote, duration)
+    }
 
     // get locomotion mode
     let mode

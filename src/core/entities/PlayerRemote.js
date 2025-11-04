@@ -497,7 +497,13 @@ export class PlayerRemote extends Entity {
     }
     // Check for attack emotes from effects first, otherwise use regular emote
     const emote = this.data.effect?.emote || this.data.emote
-    this.avatar?.setEmote(emote)
+    // Pass effect duration if available (important for charged attacks)
+    // NOTE: Must call .instance.setEmote() directly to pass duration parameter
+    // because the Avatar Node wrapper only accepts one parameter
+    const duration = this.data.effect?.duration
+    if (this.avatar?.instance) {
+      this.avatar.instance.setEmote(emote, duration)
+    }
     this.avatar?.instance?.setLocomotion(this.mode, this.axis, this.gaze)
 
     // Handle sword collider activation for attack animations
