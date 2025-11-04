@@ -82,6 +82,15 @@ export class PlayerLocal extends Entity {
     this.swordColliderActive = false
     this.hitPlayersThisSwing = new Set()
     
+    // Attack timing
+    this.attackWindupTime = 0.5 // 500ms windup before collider activates
+    this.attackDuration = 1.0 // Total attack duration
+    this.currentAttackEmote = null
+    this.attackWindupTimeout = null
+    this.attackEndTimeout = null
+    this.isInWindup = false
+    this.isCommitted = false
+    
     // Death/respawn state
     this.isDead = false
     this.deathTimeout = null
@@ -327,6 +336,48 @@ export class PlayerLocal extends Entity {
     })
   }
 
+  startAttack(emote) {
+    // If we're already committed to an attack (past windup), ignore new input
+    if (this.isCommitted) {
+      return
+    }
+    
+    // If we're in windup, this is a cancel + new attack
+    if (this.isInWindup) {
+      // Cancel previous attack timers
+      if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
+      if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+      this.setSwordColliderActive(false)
+    }
+    
+    // Start new attack
+    this.currentAttackEmote = emote
+    this.isInWindup = true
+    this.isCommitted = false
+    
+    // Play attack animation
+    this.setEffect({
+      emote: emote,
+      duration: this.attackDuration,
+      cancellable: false,
+    })
+    
+    // After windup time, activate sword collider and commit to attack
+    this.attackWindupTimeout = setTimeout(() => {
+      this.isInWindup = false
+      this.isCommitted = true
+      this.setSwordColliderActive(true)
+    }, this.attackWindupTime * 1000)
+    
+    // After full attack duration, deactivate and reset
+    this.attackEndTimeout = setTimeout(() => {
+      this.setSwordColliderActive(false)
+      this.currentAttackEmote = null
+      this.isInWindup = false
+      this.isCommitted = false
+    }, this.attackDuration * 1000)
+  }
+
   setSwordColliderActive(active) {
     if (!this.swordShape) return
     
@@ -335,12 +386,10 @@ export class PlayerLocal extends Entity {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
       this.swordColliderActive = true
       this.hitPlayersThisSwing.clear()
-      console.log('[Sword] Collider activated - ready to detect hits')
     } else if (!active && this.swordColliderActive) {
       // Deactivate collider by disabling the shape
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
-      console.log('[Sword] Collider deactivated - hit', this.hitPlayersThisSwing.size, 'player(s) this swing')
     }
   }
 
@@ -1001,47 +1050,18 @@ export class PlayerLocal extends Entity {
     }
 
     // handle attack animations (keys 1, 2, 3, 4, 5)
-    // Use effect system for network sync, but make attacks not cancellable by movement
+    // Use proper attack timing with windup, commit, and canceling
     if (!xr && !this.isDead) {
       if (this.control.digit1.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_LEFT,
-          duration: 1.0,
-          cancellable: false, // Don't cancel on movement
-        })
-        this.setSwordColliderActive(true)
-        setTimeout(() => this.setSwordColliderActive(false), 1000)
+        this.startAttack(Emotes.ATTACK_LEFT)
       } else if (this.control.digit2.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_RIGHT,
-          duration: 1.0,
-          cancellable: false,
-        })
-        this.setSwordColliderActive(true)
-        setTimeout(() => this.setSwordColliderActive(false), 1000)
+        this.startAttack(Emotes.ATTACK_RIGHT)
       } else if (this.control.digit3.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_HIGH,
-          duration: 1.0,
-          cancellable: false,
-        })
-        this.setSwordColliderActive(true)
-        setTimeout(() => this.setSwordColliderActive(false), 1000)
+        this.startAttack(Emotes.ATTACK_HIGH)
       } else if (this.control.digit4.pressed) {
-        this.setEffect({
-          emote: Emotes.ATTACK_LOW,
-          duration: 1.0,
-          cancellable: false,
-        })
-        this.setSwordColliderActive(true)
-        setTimeout(() => this.setSwordColliderActive(false), 1000)
+        this.startAttack(Emotes.ATTACK_LOW)
       } else if (this.control.digit5.pressed) {
-        this.setEffect({
-          emote: Emotes.BLOCK,
-          duration: 1.0,
-          cancellable: false,
-        })
-        // Block doesn't need sword collider
+        this.startAttack(Emotes.BLOCK)
       }
     }
 
@@ -1502,6 +1522,14 @@ export class PlayerLocal extends Entity {
   onDeath() {
     console.log('[Death] Player died - starting death sequence')
     this.isDead = true
+    
+    // Cancel any active attacks
+    if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
+    if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+    this.setSwordColliderActive(false)
+    this.isInWindup = false
+    this.isCommitted = false
+    this.currentAttackEmote = null
     
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
