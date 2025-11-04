@@ -103,6 +103,12 @@ export class PlayerLocal extends Entity {
     
     // Particle system
     this.activeParticles = []
+    
+    // Mouse drag attack tracking
+    this.mouseDragStart = null // { time }
+    this.mouseDragAccumulated = null // { x, y } - accumulated delta from start
+    this.isDragging = false
+    this.dragThreshold = 30 // pixels to move before it's considered a drag
 
     this.pushForce = null
     this.pushForceInit = false
@@ -1413,6 +1419,90 @@ export class PlayerLocal extends Entity {
         this.startAttack(Emotes.ATTACK_LOW)
       } else if (this.control.digit5.pressed) {
         this.startBlock()
+      }
+      
+      // Mouse drag attack system
+      // Left mouse: drag direction determines attack
+      // Right mouse: block
+      
+      // Right click for block
+      if (this.control.mouseRight.pressed) {
+        console.log('[Mouse Attack] RIGHT CLICK - BLOCK')
+        this.startBlock()
+      }
+      
+      // Left mouse down: start tracking drag
+      if (this.control.mouseLeft.pressed && this.control.pointer.locked) {
+        this.mouseDragStart = {
+          time: Date.now()
+        }
+        this.mouseDragAccumulated = { x: 0, y: 0 }
+        this.isDragging = false
+        console.log('[Mouse Attack] Mouse down - starting drag tracking')
+      }
+      
+      // Track mouse movement while dragging (accumulate deltas)
+      if (this.control.mouseLeft.down && this.mouseDragStart && this.control.pointer.locked) {
+        const delta = this.control.pointer.delta
+        this.mouseDragAccumulated.x += delta.x
+        this.mouseDragAccumulated.y += delta.y
+        
+        // Check if we've moved enough to be considered a drag
+        const distance = Math.sqrt(
+          this.mouseDragAccumulated.x * this.mouseDragAccumulated.x + 
+          this.mouseDragAccumulated.y * this.mouseDragAccumulated.y
+        )
+        
+        if (distance > this.dragThreshold) {
+          this.isDragging = true
+        }
+      }
+      
+      // Left mouse released: determine attack direction
+      if (this.control.mouseLeft.released && this.mouseDragStart && this.control.pointer.locked) {
+        const dx = this.mouseDragAccumulated.x
+        const dy = this.mouseDragAccumulated.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+        
+        console.log('[Mouse Attack] Mouse released - Accumulated delta dx:', dx.toFixed(1), 'dy:', dy.toFixed(1), 'distance:', distance.toFixed(1), 'threshold:', this.dragThreshold)
+        
+        // Only trigger attack if dragged enough
+        if (distance > this.dragThreshold) {
+          // Determine dominant direction
+          const absX = Math.abs(dx)
+          const absY = Math.abs(dy)
+          
+          if (absX > absY) {
+            // Horizontal drag
+            if (dx > 0) {
+              // Dragged right
+              console.log('[Mouse Attack] RIGHT attack')
+              this.startAttack(Emotes.ATTACK_RIGHT)
+            } else {
+              // Dragged left
+              console.log('[Mouse Attack] LEFT attack')
+              this.startAttack(Emotes.ATTACK_LEFT)
+            }
+          } else {
+            // Vertical drag
+            if (dy > 0) {
+              // Dragged down
+              console.log('[Mouse Attack] LOW attack')
+              this.startAttack(Emotes.ATTACK_LOW)
+            } else {
+              // Dragged up
+              console.log('[Mouse Attack] HIGH attack')
+              this.startAttack(Emotes.ATTACK_HIGH)
+            }
+          }
+        } else {
+          console.log('[Mouse Attack] Drag too short - no attack triggered')
+        }
+        
+        // Reset drag tracking
+        this.mouseDragStart = null
+        this.mouseDragAccumulated = null
+        this.isDragging = false
       }
     }
 
