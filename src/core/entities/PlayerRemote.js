@@ -6,6 +6,8 @@ import { LerpVector3 } from '../extras/LerpVector3'
 import { hasRank, Ranks } from '../extras/ranks'
 import { BufferedLerpVector3 } from '../extras/BufferedLerpVector3'
 import { BufferedLerpQuaternion } from '../extras/BufferedLerpQuaternion'
+import { Layers } from '../extras/Layers'
+import { Emotes } from '../extras/playerEmotes'
 
 let capsuleGeometry
 {
@@ -25,6 +27,10 @@ export class PlayerRemote extends Entity {
   }
 
   async init() {
+    // Sword collision tracking
+    this.swordColliderActive = false
+    this.hitPlayersThisSwing = new Set()
+
     this.base = createNode('group')
     this.base.position.fromArray(this.data.position)
     this.base.quaternion.fromArray(this.data.quaternion)
@@ -39,6 +45,25 @@ export class PlayerRemote extends Entity {
       layer: 'player',
     })
     this.body.add(this.collider)
+
+    // Create visualization mesh for capsule collider (client only)
+    if (this.world.graphics && this.world.graphics.scene) {
+      const radius = 0.3
+      const inner = 1.2
+      const height = radius + inner + radius
+      const capsuleGeom = new THREE.CapsuleGeometry(radius, inner, 8, 16)
+      capsuleGeom.translate(0, height / 2, 0)
+      const capsuleMat = new THREE.MeshBasicMaterial({
+        color: 0x0000ff,
+        transparent: true,
+        opacity: 0.3,
+        wireframe: false,
+        depthTest: true,
+      })
+      this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
+      this.capsuleColliderMesh.visible = this.world.showColliders || false
+      this.world.graphics.scene.add(this.capsuleColliderMesh)
+    }
 
     // this.caps = createNode('mesh', {
     //   type: 'geometry',
@@ -89,6 +114,13 @@ export class PlayerRemote extends Entity {
     this.axis = new THREE.Vector3()
     this.gaze = new THREE.Vector3()
 
+    // Set up collider visualization listener
+    this.world.on('showColliders', (show) => {
+      console.log('[PlayerRemote] Show colliders:', show, 'player:', this.data.id, 'sword:', !!this.swordColliderMesh, 'capsule:', !!this.capsuleColliderMesh)
+      if (this.swordColliderMesh) this.swordColliderMesh.visible = show
+      if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
+    })
+
     this.world.setHot(this, true)
   }
 
@@ -117,10 +149,110 @@ export class PlayerRemote extends Entity {
         if (this.sword) this.sword.deactivate()
         this.sword = src.toNodes()
         this.sword.activate({ world: this.world, entity: this })
+        this.initSwordCollider()
       })
       .catch(err => {
         console.error('Failed to load sword:', err)
       })
+  }
+
+  initSwordCollider() {
+    if (!PHYSX) return
+    // Create a box collider for the sword blade
+    const width = 0.1
+    const height = 1.0
+    const depth = 0.05
+    const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
+    
+    const material = this.world.physics.physics.createMaterial(0, 0, 0)
+    const flags = new PHYSX.PxShapeFlags(
+      PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE | 
+      PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE
+    )
+    
+    this.swordShape = this.world.physics.physics.createShape(geometry, material, true, flags)
+    
+    const filterData = new PHYSX.PxFilterData(
+      Layers.weapon.group,
+      Layers.weapon.mask,
+      PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND | PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_LOST,
+      0
+    )
+    
+    this.swordShape.setQueryFilterData(filterData)
+    this.swordShape.setSimulationFilterData(filterData)
+    
+    const transform = new PHYSX.PxTransform(PHYSX.PxIDENTITYEnum.PxIdentity)
+    const v1 = new THREE.Vector3()
+    const q1 = new THREE.Quaternion()
+    v1.copy(this.base.position).toPxTransform(transform)
+    q1.set(0, 0, 0, 1).toPxTransform(transform)
+    
+    this.swordBody = this.world.physics.physics.createRigidDynamic(transform)
+    this.swordBody.setRigidBodyFlag(PHYSX.PxRigidBodyFlagEnum.eKINEMATIC, true)
+    this.swordBody.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_GRAVITY, true)
+    this.swordBody.attachShape(this.swordShape)
+    
+    const self = this
+    this.swordHandle = this.world.physics.addActor(this.swordBody, {
+      tag: 'sword',
+      playerId: this.data.id,
+      onTriggerEnter: (otherHandle) => {
+        self.onSwordHit(otherHandle)
+      },
+    })
+    
+    this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+    this.swordColliderActive = false
+    
+    // Create visualization mesh for sword collider (client only)
+    if (this.world.graphics && this.world.graphics.scene) {
+      const boxGeom = new THREE.BoxGeometry(width, height, depth)
+      const boxMat = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 0.3,
+        wireframe: false,
+        depthTest: true,
+      })
+      this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
+      this.swordColliderMesh.visible = this.world.showColliders || false
+      this.world.graphics.scene.add(this.swordColliderMesh)
+    }
+    
+    PHYSX.destroy(geometry)
+  }
+
+  onSwordHit(otherHandle) {
+    if (!this.swordColliderActive) return
+    
+    const playerId = otherHandle.playerId
+    if (!playerId) return
+    if (playerId === this.data.id) return
+    if (this.hitPlayersThisSwing.has(playerId)) return
+    
+    this.hitPlayersThisSwing.add(playerId)
+    
+    console.log('[Sword Remote] Hit player:', playerId)
+    const targetPlayer = this.world.entities.getById(playerId)
+    if (targetPlayer && targetPlayer.proxy) {
+      targetPlayer.proxy.damage(10)
+    }
+  }
+
+  setSwordColliderActive(active) {
+    if (!this.swordShape) return
+    
+    if (active && !this.swordColliderActive) {
+      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, true)
+      this.swordColliderActive = true
+      this.hitPlayersThisSwing.clear()
+      console.log('[Sword Remote] Collider activated for player:', this.data.id)
+    } else if (!active && this.swordColliderActive) {
+      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+      this.swordColliderActive = false
+      console.log('[Sword Remote] Collider deactivated for player:', this.data.id)
+    }
   }
 
   getAnchorMatrix() {
@@ -159,6 +291,30 @@ export class PlayerRemote extends Entity {
     const emote = this.data.effect?.emote || this.data.emote
     this.avatar?.setEmote(emote)
     this.avatar?.instance?.setLocomotion(this.mode, this.axis, this.gaze)
+
+    // Handle sword collider activation for attack animations
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    const isAttacking = this.data.effect?.emote && attackEmotes.includes(this.data.effect.emote)
+    
+    // Track if we just started an attack
+    if (isAttacking && !this.currentlyAttacking) {
+      this.currentlyAttacking = true
+      this.setSwordColliderActive(true)
+      // Clear the flag after attack duration
+      if (this.attackTimeout) clearTimeout(this.attackTimeout)
+      this.attackTimeout = setTimeout(() => {
+        this.currentlyAttacking = false
+        this.setSwordColliderActive(false)
+      }, 1000)
+    } else if (!isAttacking && this.currentlyAttacking) {
+      // Attack ended early
+      this.currentlyAttacking = false
+      this.setSwordColliderActive(false)
+      if (this.attackTimeout) {
+        clearTimeout(this.attackTimeout)
+        this.attackTimeout = null
+      }
+    }
   }
 
   lateUpdate(delta) {
@@ -180,6 +336,7 @@ export class PlayerRemote extends Entity {
       const matrix = this.avatar.getBoneTransform('rightHand')
       if (matrix) {
         const v5 = new THREE.Vector3()
+        const v6 = new THREE.Vector3()
         const q4 = new THREE.Quaternion()
         
         // Get base transform from hand bone
@@ -197,7 +354,30 @@ export class PlayerRemote extends Entity {
         v5.set(0.15, -0.5, 0.0)
         v5.applyQuaternion(this.sword.quaternion)
         this.sword.position.add(v5)
+
+        // Update sword collider position to match sword mesh
+        if (this.swordBody) {
+          const pose = this.swordBody.getGlobalPose()
+          v6.set(0, 0.5, 0) // Move collider to middle of blade
+          v6.applyQuaternion(this.sword.quaternion)
+          v6.add(this.sword.position)
+          v6.toPxTransform(pose)
+          this.sword.quaternion.toPxTransform(pose)
+          this.swordBody.setGlobalPose(pose)
+
+          // Update sword collider visualization mesh
+          if (this.swordColliderMesh) {
+            this.swordColliderMesh.position.copy(v6)
+            this.swordColliderMesh.quaternion.copy(this.sword.quaternion)
+          }
+        }
       }
+    }
+
+    // Update capsule collider visualization mesh
+    if (this.capsuleColliderMesh) {
+      this.capsuleColliderMesh.position.copy(this.base.position)
+      this.capsuleColliderMesh.quaternion.copy(this.base.quaternion)
     }
   }
 
@@ -294,10 +474,36 @@ export class PlayerRemote extends Entity {
     this.destroyed = true
 
     clearTimeout(this.chatTimer)
+    clearTimeout(this.attackTimeout)
     this.base.deactivate()
     this.avatar = null
     if (this.sword) this.sword.deactivate()
     this.sword = null
+
+    // Clean up sword collider
+    if (this.swordHandle) {
+      this.swordHandle.destroy()
+      this.swordHandle = null
+    }
+    if (this.swordBody) {
+      this.swordBody = null
+    }
+    if (this.swordShape) {
+      this.swordShape = null
+    }
+
+    // Clean up visualization meshes (client only)
+    if (this.world.graphics && this.world.graphics.scene) {
+      if (this.swordColliderMesh) {
+        this.world.graphics.scene.remove(this.swordColliderMesh)
+        this.swordColliderMesh = null
+      }
+      if (this.capsuleColliderMesh) {
+        this.world.graphics.scene.remove(this.capsuleColliderMesh)
+        this.capsuleColliderMesh = null
+      }
+    }
+
     this.world.setHot(this, false)
     this.world.events.emit('leave', { playerId: this.data.id })
     this.aura.deactivate()

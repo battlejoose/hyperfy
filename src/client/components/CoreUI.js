@@ -97,6 +97,7 @@ export function CoreUI({ world }) {
       {ready && <ActionsBlock world={world} />}
       {ready && <Sidebar world={world} ui={ui} />}
       {ready && <Chat world={world} />}
+      {ready && <ColliderDebug world={world} />}
       {/* {ready && <Side world={world} player={player} menu={menu} />} */}
       {avatar && <AvatarPane key={avatar.hash} world={world} info={avatar} />}
       {/* {apps && <AppsPane world={world} close={() => world.ui.toggleApps()} />} */}
@@ -1243,6 +1244,61 @@ function TouchStick({ world }) {
         </div> */}
       </div>
       <div className='stick-inner' ref={innerRef} />
+    </div>
+  )
+}
+
+function ColliderDebug({ world }) {
+  const [showColliders, setShowColliders] = useState(false)
+
+  useEffect(() => {
+    // Notify world of collider visualization state
+    world.showColliders = showColliders
+    world.emit('showColliders', showColliders)
+    console.log('[Colliders] Visibility set to:', showColliders)
+  }, [showColliders, world])
+
+  return (
+    <div
+      css={css`
+        position: absolute;
+        bottom: 1rem;
+        left: 1rem;
+        pointer-events: auto;
+        background: rgba(11, 10, 21, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        backdrop-filter: blur(5px);
+        z-index: 10;
+        &:hover {
+          background: rgba(11, 10, 21, 0.9);
+        }
+      `}
+    >
+      <label
+        css={css`
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          cursor: pointer;
+          user-select: none;
+          font-size: 0.875rem;
+          color: rgba(255, 255, 255, 0.9);
+          input[type='checkbox'] {
+            cursor: pointer;
+            width: 1rem;
+            height: 1rem;
+          }
+        `}
+      >
+        <input
+          type='checkbox'
+          checked={showColliders}
+          onChange={e => setShowColliders(e.target.checked)}
+        />
+        <span>Show Colliders</span>
+      </label>
     </div>
   )
 }

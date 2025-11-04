@@ -78,6 +78,10 @@ export class PlayerLocal extends Entity {
     this.groundSweepRadius = this.capsuleRadius - 0.01 // slighty smaller than player
     this.groundSweepGeometry = new PHYSX.PxSphereGeometry(this.groundSweepRadius)
 
+    // Sword collision tracking
+    this.swordColliderActive = false
+    this.hitPlayersThisSwing = new Set()
+
     this.pushForce = null
     this.pushForceInit = false
 
@@ -184,6 +188,13 @@ export class PlayerLocal extends Entity {
     this.initCapsule()
     this.initControl()
 
+    // Set up collider visualization listener
+    this.world.on('showColliders', (show) => {
+      console.log('[PlayerLocal] Show colliders:', show, 'sword:', !!this.swordColliderMesh, 'capsule:', !!this.capsuleColliderMesh)
+      if (this.swordColliderMesh) this.swordColliderMesh.visible = show
+      if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
+    })
+
     this.world.setHot(this, true)
     this.world.on('xrSession', this.onXRSession)
     this.world.emit('ready', true)
@@ -225,10 +236,120 @@ export class PlayerLocal extends Entity {
         if (this.sword) this.sword.deactivate()
         this.sword = src.toNodes()
         this.sword.activate({ world: this.world, entity: this })
+        this.initSwordCollider()
       })
       .catch(err => {
         console.error('Failed to load sword:', err)
       })
+  }
+
+  initSwordCollider() {
+    // Create a box collider for the sword blade
+    // Sword is about 1.0 units long, 0.1 wide, 0.05 thick
+    const width = 0.1
+    const height = 1.0
+    const depth = 0.05
+    const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
+    
+    const material = this.world.physics.physics.createMaterial(0, 0, 0)
+    const flags = new PHYSX.PxShapeFlags(
+      PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE | 
+      PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE
+    )
+    
+    this.swordShape = this.world.physics.physics.createShape(geometry, material, true, flags)
+    
+    // Set up filter data for weapon layer
+    const filterData = new PHYSX.PxFilterData(
+      Layers.weapon.group,
+      Layers.weapon.mask,
+      PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND | PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_LOST,
+      0
+    )
+    
+    this.swordShape.setQueryFilterData(filterData)
+    this.swordShape.setSimulationFilterData(filterData)
+    
+    // Create kinematic rigidbody for sword
+    const transform = new PHYSX.PxTransform(PHYSX.PxIDENTITYEnum.PxIdentity)
+    v1.copy(this.base.position).toPxTransform(transform)
+    q1.set(0, 0, 0, 1).toPxTransform(transform)
+    
+    this.swordBody = this.world.physics.physics.createRigidDynamic(transform)
+    this.swordBody.setRigidBodyFlag(PHYSX.PxRigidBodyFlagEnum.eKINEMATIC, true)
+    this.swordBody.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_GRAVITY, true)
+    this.swordBody.attachShape(this.swordShape)
+    
+    const self = this
+    this.swordHandle = this.world.physics.addActor(this.swordBody, {
+      tag: 'sword',
+      playerId: this.data.id,
+      onTriggerEnter: (otherHandle) => {
+        self.onSwordHit(otherHandle)
+      },
+    })
+    
+    // Start with collider disabled
+    this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+    this.swordColliderActive = false
+    
+    // Create visualization mesh for sword collider
+    if (this.world.graphics && this.world.graphics.scene) {
+      const boxGeom = new THREE.BoxGeometry(width, height, depth)
+      const boxMat = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 0.3,
+        wireframe: false,
+        depthTest: true,
+      })
+      this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
+      this.swordColliderMesh.visible = this.world.showColliders || false
+      this.world.graphics.scene.add(this.swordColliderMesh)
+    }
+    
+    PHYSX.destroy(geometry)
+  }
+
+  onSwordHit(otherHandle) {
+    // Only process hits when collider is active
+    if (!this.swordColliderActive) return
+    
+    // Check if it's a player
+    const playerId = otherHandle.playerId
+    if (!playerId) return
+    
+    // Don't hit ourselves
+    if (playerId === this.data.id) return
+    
+    // Only hit each player once per swing
+    if (this.hitPlayersThisSwing.has(playerId)) return
+    
+    this.hitPlayersThisSwing.add(playerId)
+    
+    // Deal damage
+    console.log('[Sword] Hit player:', playerId)
+    const targetPlayer = this.world.entities.getById(playerId)
+    if (targetPlayer && targetPlayer.proxy) {
+      targetPlayer.proxy.damage(10)
+    }
+  }
+
+  setSwordColliderActive(active) {
+    if (!this.swordShape) return
+    
+    if (active && !this.swordColliderActive) {
+      // Activate collider for new swing
+      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, true)
+      this.swordColliderActive = true
+      this.hitPlayersThisSwing.clear()
+      console.log('[Sword] Collider activated')
+    } else if (!active && this.swordColliderActive) {
+      // Deactivate collider
+      this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+      this.swordColliderActive = false
+      console.log('[Sword] Collider deactivated')
+    }
   }
 
   initCapsule() {
@@ -236,6 +357,22 @@ export class PlayerLocal extends Entity {
     const height = this.capsuleHeight
     const halfHeight = (height - radius - radius) / 2
     const geometry = new PHYSX.PxCapsuleGeometry(radius, halfHeight)
+
+    // Create visualization mesh for capsule collider
+    if (this.world.graphics && this.world.graphics.scene) {
+      const capsuleGeom = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16)
+      capsuleGeom.translate(0, height / 2, 0)
+      const capsuleMat = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 0.3,
+        wireframe: false,
+        depthTest: true,
+      })
+      this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
+      this.capsuleColliderMesh.visible = this.world.showColliders || false
+      this.world.graphics.scene.add(this.capsuleColliderMesh)
+    }
     // frictionless material (the combine mode ensures we always use out min=0 instead of avging)
     // we use eMIN when in the air so that we don't stick to walls etc
     // and eMAX on the ground so that we don't constantly slip off physics objects we're pushing
@@ -896,30 +1033,39 @@ export class PlayerLocal extends Entity {
           duration: 1.0,
           cancellable: false, // Don't cancel on movement
         })
+        this.setSwordColliderActive(true)
+        setTimeout(() => this.setSwordColliderActive(false), 1000)
       } else if (this.control.digit2.pressed) {
         this.setEffect({
           emote: Emotes.ATTACK_RIGHT,
           duration: 1.0,
           cancellable: false,
         })
+        this.setSwordColliderActive(true)
+        setTimeout(() => this.setSwordColliderActive(false), 1000)
       } else if (this.control.digit3.pressed) {
         this.setEffect({
           emote: Emotes.ATTACK_HIGH,
           duration: 1.0,
           cancellable: false,
         })
+        this.setSwordColliderActive(true)
+        setTimeout(() => this.setSwordColliderActive(false), 1000)
       } else if (this.control.digit4.pressed) {
         this.setEffect({
           emote: Emotes.ATTACK_LOW,
           duration: 1.0,
           cancellable: false,
         })
+        this.setSwordColliderActive(true)
+        setTimeout(() => this.setSwordColliderActive(false), 1000)
       } else if (this.control.digit5.pressed) {
         this.setEffect({
           emote: Emotes.BLOCK,
           duration: 1.0,
           cancellable: false,
         })
+        // Block doesn't need sword collider
       }
     }
 
@@ -1222,7 +1368,31 @@ export class PlayerLocal extends Entity {
         v5.set(0.15, -0.5, 0.0) // x, y, z offset relative to hand
         v5.applyQuaternion(this.sword.quaternion)
         this.sword.position.add(v5)
+
+        // Update sword collider position to match sword mesh
+        if (this.swordBody) {
+          const pose = this.swordBody.getGlobalPose()
+          // Position collider at sword blade (offset forward from handle)
+          v6.set(0, 0.5, 0) // Move collider to middle of blade
+          v6.applyQuaternion(this.sword.quaternion)
+          v6.add(this.sword.position)
+          v6.toPxTransform(pose)
+          this.sword.quaternion.toPxTransform(pose)
+          this.swordBody.setGlobalPose(pose)
+
+          // Update sword collider visualization mesh
+          if (this.swordColliderMesh) {
+            this.swordColliderMesh.position.copy(v6)
+            this.swordColliderMesh.quaternion.copy(this.sword.quaternion)
+          }
+        }
       }
+    }
+
+    // Update capsule collider visualization mesh
+    if (this.capsuleColliderMesh) {
+      this.capsuleColliderMesh.position.copy(this.base.position)
+      this.capsuleColliderMesh.quaternion.copy(this.base.quaternion)
     }
   }
 

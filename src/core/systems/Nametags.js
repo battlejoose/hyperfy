@@ -306,8 +306,8 @@ export class Nametags extends System {
     this.ctx.strokeText(text, x + NAMETAG_WIDTH / 2, y + 2 + 2) // extra 2 on y to prevent bleeding into nametag above it
     this.ctx.restore()
     this.ctx.fillText(text, x + NAMETAG_WIDTH / 2, y + 2 + 2)
-    // draw health
-    if (nametag.health < HEALTH_MAX) {
+    // draw health (always show)
+    if (nametag.health !== undefined) {
       // bar
       {
         const fillStyle = 'rgba(0, 0, 0, 0.6)'

@@ -27,10 +27,11 @@ function add(group, hits) {
 const playerCollision = (process?.env.PUBLIC_PLAYER_COLLISION || globalThis.env?.PUBLIC_PLAYER_COLLISION) === 'true'
 
 add('camera', ['environment'])
-add('player', ['environment', 'prop', playerCollision ? 'player' : null])
+add('player', ['environment', 'prop', playerCollision ? 'player' : null, 'weapon'])
 add('environment', ['camera', 'player', 'environment', 'prop', 'tool'])
 add('prop', ['environment', 'prop'])
 add('tool', ['environment', 'prop'])
+add('weapon', ['player'])
 
 for (const key in Groups) {
   Layers[key] = {
