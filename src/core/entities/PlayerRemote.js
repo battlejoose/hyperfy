@@ -215,8 +215,8 @@ export class PlayerRemote extends Entity {
     this.blockShape = this.world.physics.physics.createShape(geometry, material, true, flags)
     
     const filterData = new PHYSX.PxFilterData(
-      Layers.player.group,
-      Layers.weapon.mask,
+      Layers.player.group, // Block is part of player
+      Layers.player.mask,  // Use player mask (which includes weapons)
       PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
       0
     )

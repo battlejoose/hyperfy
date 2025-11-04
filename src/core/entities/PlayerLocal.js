@@ -335,7 +335,7 @@ export class PlayerLocal extends Entity {
     // Set up filter data for block layer (interacts with weapons)
     const filterData = new PHYSX.PxFilterData(
       Layers.player.group, // Block is part of player
-      Layers.weapon.mask,  // Only collides with weapons
+      Layers.player.mask,  // Use player mask (which includes weapons)
       PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND,
       0
     )
