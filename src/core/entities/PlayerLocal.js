@@ -1503,14 +1503,19 @@ export class PlayerLocal extends Entity {
     console.log('[Death] Player died - starting death sequence')
     this.isDead = true
     
-    // Play fall animation (networked via effect system)
+    // Tell avatar to use dead animation as locomotion
+    if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
+      this.avatar.instance.setDeathState(true)
+    }
+    
+    // Play fall animation (will transition to dead locomotion when finished)
     this.setEffect({
       emote: Emotes.DEATH_FALL,
-      duration: 1.0,
+      duration: 1.5,
       cancellable: false,
     })
     
-    // After 5 seconds, play getup and respawn
+    // After 5 seconds total, play getup
     this.deathTimeout = setTimeout(() => {
       this.onRespawn()
     }, 5000)
@@ -1519,17 +1524,22 @@ export class PlayerLocal extends Entity {
   onRespawn() {
     console.log('[Respawn] Starting getup sequence')
     
-    // Play getup animation (networked via effect system)
+    // Play getup animation (will transition back to normal locomotion when finished)
     this.setEffect({
       emote: Emotes.GETUP,
       duration: 2.0,
       cancellable: false,
     })
     
-    // Wait for getup animation to finish (estimate ~2 seconds)
+    // Wait for getup animation to finish
     setTimeout(() => {
       console.log('[Respawn] Respawn complete - re-enabling movement and attacks')
       this.isDead = false
+      
+      // Restore normal locomotion
+      if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
+        this.avatar.instance.setDeathState(false)
+      }
       
       // Clear effect to return to normal movement
       this.setEffect(null)

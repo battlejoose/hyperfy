@@ -30,6 +30,10 @@ export class PlayerRemote extends Entity {
     // Sword collision tracking
     this.swordColliderActive = false
     this.hitPlayersThisSwing = new Set()
+    
+    // Death state tracking
+    this.isDead = false
+    this.deathTimeout = null
 
     this.base = createNode('group')
     this.base.position.fromArray(this.data.position)
@@ -444,10 +448,23 @@ export class PlayerRemote extends Entity {
       this.world.emit('name', { playerId: this.data.id, name: this.data.name })
     }
     if (data.hasOwnProperty('health')) {
+      const previousHealth = this.data.health
       this.data.health = data.health
       this.nametag.health = data.health
       console.log('[Health] Remote player', this.data.id, 'health updated to:', data.health)
       this.world.events.emit('health', { playerId: this.data.id, health: data.health })
+      
+      // Handle death and respawn
+      if (data.health <= 0 && (previousHealth === undefined || previousHealth > 0)) {
+        this.onDeath()
+      } else if (data.health > 0 && this.isDead) {
+        // Healing while dead = respawn
+        if (this.deathTimeout) {
+          clearTimeout(this.deathTimeout)
+          this.deathTimeout = null
+        }
+        this.onRespawn()
+      }
     }
     if (data.hasOwnProperty('avatar')) {
       this.data.avatar = data.avatar
@@ -477,12 +494,41 @@ export class PlayerRemote extends Entity {
     }, 5000)
   }
 
+  onDeath() {
+    console.log('[Death] Remote player', this.data.id, 'died - starting death sequence')
+    this.isDead = true
+    
+    // Tell avatar to use dead animation as locomotion
+    if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
+      this.avatar.instance.setDeathState(true)
+    }
+    
+    // The fall effect will be triggered via setEffect from the network
+    // After 5 seconds, the getup effect will also come via network
+    // We just need to handle the respawn timing locally for UI purposes
+    this.deathTimeout = setTimeout(() => {
+      // Remote respawn doesn't restore health locally - that comes from server
+      console.log('[Respawn] Remote player', this.data.id, 'respawn timing complete')
+    }, 7000) // Fall (1.5s) + wait (5s) + getup (2s) - but effects come from network
+  }
+  
+  onRespawn() {
+    console.log('[Respawn] Remote player', this.data.id, 'respawning')
+    this.isDead = false
+    
+    // Restore normal locomotion
+    if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
+      this.avatar.instance.setDeathState(false)
+    }
+  }
+
   destroy(local) {
     if (this.destroyed) return
     this.destroyed = true
 
     clearTimeout(this.chatTimer)
     clearTimeout(this.attackTimeout)
+    clearTimeout(this.deathTimeout)
     this.base.deactivate()
     this.avatar = null
     if (this.sword) this.sword.deactivate()

@@ -19,6 +19,7 @@ export const Emotes = {
   ATTACK_LOW: 'asset://attacklow.glb',
   BLOCK: 'asset://block.glb',
   DEATH_FALL: 'asset://fall.glb',
+  DEAD: 'asset://dead.glb',
   GETUP: 'asset://getup.glb',
 }
 
@@ -43,5 +44,6 @@ export const emoteUrls = [
   Emotes.ATTACK_LOW,
   Emotes.BLOCK,
   Emotes.DEATH_FALL,
+  Emotes.DEAD,
   Emotes.GETUP,
 ]

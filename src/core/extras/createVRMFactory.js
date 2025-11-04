@@ -231,22 +231,67 @@ export function createVRMFactory(glb, setupMaterial) {
       //   action: AnimationAction
       // }
     }
-    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW, Emotes.BLOCK, Emotes.DEATH_FALL, Emotes.GETUP]
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW, Emotes.BLOCK]
     const attackUrlToKey = {
       [Emotes.ATTACK_LEFT]: 'attackLeft',
       [Emotes.ATTACK_RIGHT]: 'attackRight',
       [Emotes.ATTACK_HIGH]: 'attackHigh',
       [Emotes.ATTACK_LOW]: 'attackLow',
-      [Emotes.DEATH_FALL]: 'deathFall',
-      [Emotes.GETUP]: 'getup',
       [Emotes.BLOCK]: 'block',
+    }
+    
+    // Death emotes should be treated specially - full body animations
+    const deathEmotes = [Emotes.DEATH_FALL, Emotes.DEAD, Emotes.GETUP]
+    const deathUrlToKey = {
+      [Emotes.DEATH_FALL]: 'deathFall',
+      [Emotes.DEAD]: 'dead',
+      [Emotes.GETUP]: 'getup',
     }
     
     let currentAttack = null
     let attackEndTime = 0
     
     let currentEmote
+    let isInDeathState = false // Track if player is dead (affects locomotion)
+    
+    const setDeathState = (isDead) => {
+      isInDeathState = isDead
+      console.log('[VRM] Death state set to:', isDead, '- dead pose exists:', !!poses.dead, '- isInDeathState now:', isInDeathState)
+      if (isDead && !poses.dead) {
+        console.error('[VRM] CRITICAL: Trying to set death state but dead pose does not exist!')
+      }
+    }
+    
     const setEmote = url => {
+      // Check if this is a death effect (fall or getup) - treat like attacks
+      if (url && (url === Emotes.DEATH_FALL || url === Emotes.GETUP)) {
+        const deathKey = deathUrlToKey[url]
+        console.log('[VRM] Death effect detected:', deathKey)
+        
+        // Treat death effects like attack animations - set as current emote to block other emotes
+        currentEmote = url
+        
+        if (poses[deathKey]) {
+          if (poses[deathKey].action) {
+            poses[deathKey].action.reset()
+            poses[deathKey].action.time = 0
+            poses[deathKey].action.enabled = true
+            poses[deathKey].action.setEffectiveWeight(10.0)
+            poses[deathKey].action.play()
+          }
+          poses[deathKey].target = 1
+          poses[deathKey].weight = 1
+          poses[deathKey].setWeight(1)
+        }
+        return
+      } else if (!url) {
+        // Clear emote
+        currentEmote = null
+        // Clear any death effect animations
+        if (poses.deathFall) poses.deathFall.target = 0
+        if (poses.getup) poses.getup.target = 0
+      }
+      
       // Check if this is an attack animation
       if (url && attackEmotes.includes(url)) {
         const attackKey = attackUrlToKey[url]
@@ -346,28 +391,39 @@ export function createVRMFactory(glb, setupMaterial) {
         mixer.update(elapsed)
         skeleton.bones.forEach(bone => bone.updateMatrixWorld())
         skeleton.update = THREE.Skeleton.prototype.update
-        // Always update locomotion (attacks blend with it)
-        // Only skip if there's a non-attack emote playing
-        if (!currentEmote) {
-          updateLocomotion(delta)
-        } else {
-          // Even with emote, update attacks
-          const now = performance.now() / 1000
-          if (currentAttack && now < attackEndTime) {
-            poses[currentAttack].target = 1
-          } else if (currentAttack) {
-            poses[currentAttack].target = 0
-            currentAttack = null
-          }
-          // Update attack pose weights even when another emote is playing
-          const lerpSpeed = 16
+        // Check if current emote is a death effect (full body animations that override everything)
+        const isDeathEffect = currentEmote === Emotes.DEATH_FALL || currentEmote === Emotes.GETUP
+        
+        if (isDeathEffect) {
+          // Death effects completely override locomotion - turn off all locomotion
+          console.log('[VRM] Death effect active, turning off locomotion')
           for (const key in poses) {
-            if (poses[key].upperBodyOnly) {
-              const pose = poses[key]
-              const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
-              pose.setWeight(weight)
+            if (!poses[key].upperBodyOnly && key !== 'deathFall' && key !== 'getup') {
+              poses[key].target = 0
             }
           }
+        } else if (!currentEmote) {
+          // No emote playing - update normal locomotion
+          console.log('[VRM] No emote, updating locomotion - isInDeathState:', isInDeathState)
+          updateLocomotion(delta)
+        }
+        // If there's a non-death emote playing, skip locomotion updates
+        
+        // Update attack and death effect weights (they play on top of or replace locomotion)
+        const now = performance.now() / 1000
+        if (currentAttack && now < attackEndTime) {
+          poses[currentAttack].target = 1
+        } else if (currentAttack) {
+          poses[currentAttack].target = 0
+          currentAttack = null
+        }
+        
+        // Update ALL pose weights
+        const lerpSpeed = 16
+        for (const key in poses) {
+          const pose = poses[key]
+          const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
+          pose.setWeight(weight)
         }
         if (loco.gazeDir && distance < MAX_GAZE_DISTANCE && (currentEmote ? currentEmote.gaze : true)) {
           // aimBone('chest', loco.gazeDir, delta, {
@@ -597,6 +653,16 @@ export function createVRMFactory(glb, setupMaterial) {
           pose.action.clampWhenFinished = true
           pose.action.setLoop(THREE.LoopOnce, 1)
           console.log('[VRM] Attack animation loaded for:', key, 'with FULL animation -', clip.tracks.length, 'tracks')
+        } else if (key === 'deathFall' || key === 'getup') {
+          // Death fall and getup animations should clamp at end
+          pose.action.clampWhenFinished = true
+          pose.action.setLoop(THREE.LoopOnce, 1)
+          console.log('[VRM] Death animation loaded for:', key, 'with FULL body (clamped) -', clip.tracks.length, 'tracks')
+        } else if (key === 'dead') {
+          // Dead animation should loop
+          pose.action.clampWhenFinished = false
+          pose.action.setLoop(THREE.LoopRepeat)
+          console.log('[VRM] Dead animation loaded for:', key, 'with FULL body (looping) -', clip.tracks.length, 'tracks')
         } else {
           console.log('[VRM] Locomotion animation loaded for:', key, 'with FULL body -', clip.tracks.length, 'tracks')
         }
@@ -626,8 +692,9 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('attackHigh', Emotes.ATTACK_HIGH, true)
     addPose('attackLow', Emotes.ATTACK_LOW, true)
     addPose('block', Emotes.BLOCK, true)
-    addPose('deathFall', Emotes.DEATH_FALL, true)
-    addPose('getup', Emotes.GETUP, true)
+    addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
+    addPose('dead', Emotes.DEAD, false) // Full body looping animation
+    addPose('getup', Emotes.GETUP, false) // Full body animation
     
     function clearLocomotion() {
       for (const key in poses) {
@@ -667,7 +734,11 @@ export function createVRMFactory(glb, setupMaterial) {
       }
       
       // Update locomotion (legs only)
-      if (mode === Modes.IDLE) {
+      // If in death state, use dead animation as locomotion
+      if (isInDeathState) {
+        console.log('[VRM] Using dead locomotion - target set to 1')
+        poses.dead.target = 1
+      } else if (mode === Modes.IDLE) {
         poses.idle.target = 1
       } else if (mode === Modes.WALK || mode === Modes.RUN) {
         const angle = Math.atan2(axis.x, -axis.z)
@@ -748,6 +819,7 @@ export function createVRMFactory(glb, setupMaterial) {
       height,
       headToHeight,
       setEmote,
+      setDeathState,
       setFirstPerson,
       update,
       updateRate,
