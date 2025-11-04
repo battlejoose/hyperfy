@@ -530,7 +530,7 @@ export class PlayerLocal extends Entity {
       this.setSwordColliderActive(false)
       
       // Spawn spark particles at block position
-      const blocker = this.world.entities.list.find(e => e.data && e.data.id === blockerId)
+      const blocker = this.world.entities.get(blockerId)
       if (blocker && blocker.base) {
         const blockPos = new THREE.Vector3()
         blockPos.copy(blocker.base.position)
