@@ -1397,7 +1397,7 @@ export class PlayerLocal extends Entity {
         if (this.swordBody) {
           const pose = this.swordBody.getGlobalPose()
           // Position collider at sword blade (offset forward from handle)
-          v6.set(0, 0.5, 0) // Move collider to middle of blade
+          v6.set(0, -0.1, 0) // Move collider to middle of blade
           v6.applyQuaternion(this.sword.quaternion)
           v6.add(this.sword.position)
           v6.toPxTransform(pose)

@@ -381,7 +381,7 @@ export class PlayerRemote extends Entity {
         // Update sword collider position to match sword mesh
         if (this.swordBody) {
           const pose = this.swordBody.getGlobalPose()
-          v6.set(0, 0.5, 0) // Move collider to middle of blade
+          v6.set(0, -0.1, 0) // Move collider to middle of blade
           v6.applyQuaternion(this.sword.quaternion)
           v6.add(this.sword.position)
           v6.toPxTransform(pose)
