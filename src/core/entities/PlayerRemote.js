@@ -37,6 +37,9 @@ export class PlayerRemote extends Entity {
     // Death state tracking
     this.isDead = false
     this.deathTimeout = null
+    
+    // Particle system
+    this.activeParticles = []
 
     this.base = createNode('group')
     this.base.position.fromArray(this.data.position)
@@ -262,8 +265,119 @@ export class PlayerRemote extends Entity {
     
     this.hitPlayersThisSwing.add(playerId)
     
+    // Check if we hit a BLOCK collider
+    if (otherHandle.tag === 'block') {
+      console.log('[Sword Remote] Hit BLOCK from player:', playerId)
+      
+      // Spawn spark particles at block position (chest area)
+      const blockPos = new THREE.Vector3()
+      blockPos.copy(this.base.position)
+      blockPos.y += 1.8 * 0.6 // Match block collider height
+      this.spawnSparkParticles(blockPos)
+      return
+    }
+    
+    // Spawn blood particles at hit location (use sword mesh position)
+    if (this.sword) {
+      const hitPos = new THREE.Vector3()
+      this.sword.getWorldPosition(hitPos)
+      this.spawnBloodParticles(hitPos)
+    }
+    
     // Log collision for debugging (damage is handled by server via playerHit message)
     console.log('[Sword Remote] Collision detected between', this.data.id, 'and', playerId)
+  }
+
+  spawnBloodParticles(position) {
+    // Create red blood particles
+    const particleCount = 50
+    for (let i = 0; i < particleCount; i++) {
+      const particle = createNode('prim', {
+        type: 'box',
+        scale: [0.03, 0.03, 0.03], // Much smaller
+        color: '#aa0000',
+        emissive: '#cc0000',
+        emissiveIntensity: 2,
+        opacity: 0.9,
+        transparent: true,
+      })
+      
+      particle.position.set(position.x, position.y, position.z)
+      particle.activate({ world: this.world, entity: this })
+      this.world.stage.scene.add(particle)
+      
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 4,
+        Math.random() * 3 + 1,
+        (Math.random() - 0.5) * 4
+      )
+      
+      this.addParticle(particle, velocity, 0.6, 2)
+    }
+  }
+
+  spawnSparkParticles(position) {
+    // Create yellow spark particles
+    const particleCount = 10
+    for (let i = 0; i < particleCount; i++) {
+      const particle = createNode('prim', {
+        type: 'box',
+        scale: [0.02, 0.02, 0.02], // Tiny
+        color: '#ffff00',
+        emissive: '#ffff00',
+        emissiveIntensity: 4,
+        opacity: 1,
+        transparent: true,
+      })
+      
+      particle.position.set(position.x, position.y, position.z)
+      particle.activate({ world: this.world, entity: this })
+      this.world.stage.scene.add(particle)
+      
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 6,
+        Math.random() * 4 + 2,
+        (Math.random() - 0.5) * 6
+      )
+      
+      this.addParticle(particle, velocity, 0.5, 4)
+    }
+  }
+
+  addParticle(particle, velocity, lifetime, initialEmissive) {
+    const particleData = {
+      node: particle,
+      velocity: velocity,
+      lifetime: lifetime,
+      elapsed: 0,
+      initialEmissive: initialEmissive,
+      gravity: 9.8,
+    }
+    this.activeParticles.push(particleData)
+  }
+
+  updateParticles(delta) {
+    for (let i = this.activeParticles.length - 1; i >= 0; i--) {
+      const p = this.activeParticles[i]
+      p.elapsed += delta
+      
+      // Apply velocity with gravity
+      p.node.position.x += p.velocity.x * delta
+      p.node.position.y += p.velocity.y * delta - p.gravity * p.elapsed * delta
+      p.node.position.z += p.velocity.z * delta
+      
+      // Fade out
+      const alpha = Math.max(0, 1 - p.elapsed / p.lifetime)
+      p.node.opacity = alpha
+      p.node.emissiveIntensity = p.initialEmissive * alpha
+      
+      // Remove if expired
+      if (p.elapsed >= p.lifetime) {
+        p.node.deactivate()
+        this.world.stage.scene.remove(p.node)
+        this.activeParticles.splice(i, 1)
+      }
+    }
   }
 
   setSwordColliderActive(active) {
@@ -322,6 +436,9 @@ export class PlayerRemote extends Entity {
   }
 
   update(delta) {
+    // Update particles
+    this.updateParticles(delta)
+    
     const anchor = this.getAnchorMatrix()
     if (!anchor) {
       this.position.update(delta)
