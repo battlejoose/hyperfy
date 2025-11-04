@@ -189,46 +189,12 @@ export class PlayerLocal extends Entity {
     this.initControl()
 
     // Set up collider visualization listener
+    this.showColliders = false
     this.world.on('showColliders', (show) => {
-      // Create capsule mesh if it doesn't exist and we have graphics
-      if (!this.capsuleColliderMesh && this.world.graphics && this.world.graphics.scene) {
-        const radius = this.capsuleRadius
-        const height = this.capsuleHeight
-        const capsuleGeom = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16)
-        capsuleGeom.translate(0, height / 2, 0)
-        const capsuleMat = new THREE.MeshBasicMaterial({
-          color: 0x00ff00,
-          transparent: true,
-          opacity: 0.3,
-          wireframe: false,
-          depthTest: true,
-        })
-        this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
-        this.capsuleColliderMesh.visible = show
-        this.world.graphics.scene.add(this.capsuleColliderMesh)
-        console.log('[PlayerLocal] Created capsule collider mesh')
-      }
+      this.showColliders = show
+      console.log('[PlayerLocal] Show colliders state changed to:', show)
       
-      // Create sword mesh if it doesn't exist, we have the sword, and we have graphics
-      if (!this.swordColliderMesh && this.swordShape && this.world.graphics && this.world.graphics.scene) {
-        const width = 0.1
-        const height = 1.0
-        const depth = 0.05
-        const boxGeom = new THREE.BoxGeometry(width, height, depth)
-        const boxMat = new THREE.MeshBasicMaterial({
-          color: 0xff0000,
-          transparent: true,
-          opacity: 0.3,
-          wireframe: false,
-          depthTest: true,
-        })
-        this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
-        this.swordColliderMesh.visible = show
-        this.world.graphics.scene.add(this.swordColliderMesh)
-        console.log('[PlayerLocal] Created sword collider mesh')
-      }
-      
-      console.log('[PlayerLocal] Show colliders:', show, 'sword:', !!this.swordColliderMesh, 'capsule:', !!this.capsuleColliderMesh)
+      // Update visibility if meshes already exist
       if (this.swordColliderMesh) this.swordColliderMesh.visible = show
       if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
     })
@@ -1316,6 +1282,47 @@ export class PlayerLocal extends Entity {
     const xr = this.isXR
     const anchor = this.getAnchorMatrix()
 
+    // Create collider meshes if needed (deferred until scene is ready)
+    if (this.showColliders && this.world.stage && this.world.stage.scene) {
+      // Create capsule mesh if it doesn't exist
+      if (!this.capsuleColliderMesh) {
+        const radius = this.capsuleRadius
+        const height = this.capsuleHeight
+        const capsuleGeom = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16)
+        capsuleGeom.translate(0, height / 2, 0)
+        const capsuleMat = new THREE.MeshBasicMaterial({
+          color: 0x00ff00,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
+        this.capsuleColliderMesh.visible = true
+        this.world.stage.scene.add(this.capsuleColliderMesh)
+        console.log('[PlayerLocal] Created capsule collider mesh (deferred)')
+      }
+      
+      // Create sword mesh if it doesn't exist and we have the sword shape
+      if (!this.swordColliderMesh && this.swordShape) {
+        const width = 0.1
+        const height = 1.0
+        const depth = 0.05
+        const boxGeom = new THREE.BoxGeometry(width, height, depth)
+        const boxMat = new THREE.MeshBasicMaterial({
+          color: 0xff0000,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
+        this.swordColliderMesh.visible = true
+        this.world.stage.scene.add(this.swordColliderMesh)
+        console.log('[PlayerLocal] Created sword collider mesh (deferred)')
+      }
+    }
+
     // if (xr) return
     // console.log('lateUpdate')
 
@@ -1498,8 +1505,8 @@ export class PlayerLocal extends Entity {
     if (data.hasOwnProperty('health')) {
       this.data.health = data.health
       this.nametag.health = data.health
+      console.log('[Health] Local player health updated to:', data.health)
       this.world.events.emit('health', { playerId: this.data.id, health: data.health })
-      console.log('modify', data.health)
       // changed = true
     }
     if (data.hasOwnProperty('avatar')) {

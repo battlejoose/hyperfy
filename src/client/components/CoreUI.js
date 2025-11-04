@@ -1254,8 +1254,8 @@ function ColliderDebug({ world }) {
   useEffect(() => {
     // Notify world of collider visualization state
     world.showColliders = showColliders
+    console.log('[Colliders] Emitting showColliders event:', showColliders, 'stage ready:', !!world.stage, 'scene ready:', !!(world.stage && world.stage.scene))
     world.emit('showColliders', showColliders)
-    console.log('[Colliders] Visibility set to:', showColliders)
   }, [showColliders, world])
 
   return (

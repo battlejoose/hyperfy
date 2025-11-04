@@ -647,7 +647,7 @@ export function createVRMFactory(glb, setupMaterial) {
       const now = performance.now() / 1000
       if (currentAttack && now < attackEndTime) {
         poses[currentAttack].target = 1
-        console.log('[VRM] Attack active:', currentAttack, 'weight:', poses[currentAttack].weight)
+        // Removed verbose per-frame logging
       } else if (currentAttack) {
         // Attack finished
         console.log('[VRM] Attack finished:', currentAttack)

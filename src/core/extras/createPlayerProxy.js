@@ -88,7 +88,9 @@ export function createPlayerProxy(entity, player) {
     damage(amount) {
       const health = clamp(player.data.health - amount, 0, HEALTH_MAX)
       if (player.data.health === health) return
+      console.log('[Damage] Player', player.data.id, 'took', amount, 'damage:', player.data.health, '->', health)
       if (world.network.isServer) {
+        console.log('[Damage] Server broadcasting health update')
         world.network.send('entityModified', { id: player.data.id, health })
       }
       player.modify({ health })

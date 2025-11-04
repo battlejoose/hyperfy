@@ -96,47 +96,12 @@ export class PlayerRemote extends Entity {
     this.gaze = new THREE.Vector3()
 
     // Set up collider visualization listener
+    this.showColliders = false
     this.world.on('showColliders', (show) => {
-      // Create capsule mesh if it doesn't exist and we have graphics
-      if (!this.capsuleColliderMesh && this.world.graphics && this.world.graphics.scene) {
-        const radius = 0.3
-        const inner = 1.2
-        const height = radius + inner + radius
-        const capsuleGeom = new THREE.CapsuleGeometry(radius, inner, 8, 16)
-        capsuleGeom.translate(0, height / 2, 0)
-        const capsuleMat = new THREE.MeshBasicMaterial({
-          color: 0x0000ff,
-          transparent: true,
-          opacity: 0.3,
-          wireframe: false,
-          depthTest: true,
-        })
-        this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
-        this.capsuleColliderMesh.visible = show
-        this.world.graphics.scene.add(this.capsuleColliderMesh)
-        console.log('[PlayerRemote] Created capsule collider mesh for player:', this.data.id)
-      }
+      this.showColliders = show
+      console.log('[PlayerRemote] Show colliders state changed to:', show, 'player:', this.data.id)
       
-      // Create sword mesh if it doesn't exist, we have the sword, and we have graphics
-      if (!this.swordColliderMesh && this.swordShape && this.world.graphics && this.world.graphics.scene) {
-        const width = 0.1
-        const height = 1.0
-        const depth = 0.05
-        const boxGeom = new THREE.BoxGeometry(width, height, depth)
-        const boxMat = new THREE.MeshBasicMaterial({
-          color: 0xff0000,
-          transparent: true,
-          opacity: 0.3,
-          wireframe: false,
-          depthTest: true,
-        })
-        this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
-        this.swordColliderMesh.visible = show
-        this.world.graphics.scene.add(this.swordColliderMesh)
-        console.log('[PlayerRemote] Created sword collider mesh for player:', this.data.id)
-      }
-      
-      console.log('[PlayerRemote] Show colliders:', show, 'player:', this.data.id, 'sword:', !!this.swordColliderMesh, 'capsule:', !!this.capsuleColliderMesh)
+      // Update visibility if meshes already exist
       if (this.swordColliderMesh) this.swordColliderMesh.visible = show
       if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
     })
@@ -322,6 +287,48 @@ export class PlayerRemote extends Entity {
   }
 
   lateUpdate(delta) {
+    // Create collider meshes if needed (deferred until scene is ready)
+    if (this.showColliders && this.world.stage && this.world.stage.scene) {
+      // Create capsule mesh if it doesn't exist
+      if (!this.capsuleColliderMesh) {
+        const radius = 0.3
+        const inner = 1.2
+        const height = radius + inner + radius
+        const capsuleGeom = new THREE.CapsuleGeometry(radius, inner, 8, 16)
+        capsuleGeom.translate(0, height / 2, 0)
+        const capsuleMat = new THREE.MeshBasicMaterial({
+          color: 0x0000ff,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.capsuleColliderMesh = new THREE.Mesh(capsuleGeom, capsuleMat)
+        this.capsuleColliderMesh.visible = true
+        this.world.stage.scene.add(this.capsuleColliderMesh)
+        console.log('[PlayerRemote] Created capsule collider mesh (deferred) for player:', this.data.id)
+      }
+      
+      // Create sword mesh if it doesn't exist and we have the sword shape
+      if (!this.swordColliderMesh && this.swordShape) {
+        const width = 0.1
+        const height = 1.0
+        const depth = 0.05
+        const boxGeom = new THREE.BoxGeometry(width, height, depth)
+        const boxMat = new THREE.MeshBasicMaterial({
+          color: 0xff0000,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.swordColliderMesh = new THREE.Mesh(boxGeom, boxMat)
+        this.swordColliderMesh.visible = true
+        this.world.stage.scene.add(this.swordColliderMesh)
+        console.log('[PlayerRemote] Created sword collider mesh (deferred) for player:', this.data.id)
+      }
+    }
+
     const anchor = this.getAnchorMatrix()
     if (anchor) {
       this.position.snap()
@@ -443,6 +450,7 @@ export class PlayerRemote extends Entity {
     if (data.hasOwnProperty('health')) {
       this.data.health = data.health
       this.nametag.health = data.health
+      console.log('[Health] Remote player', this.data.id, 'health updated to:', data.health)
       this.world.events.emit('health', { playerId: this.data.id, health: data.health })
     }
     if (data.hasOwnProperty('avatar')) {
@@ -497,13 +505,13 @@ export class PlayerRemote extends Entity {
     }
 
     // Clean up visualization meshes (client only)
-    if (this.world.graphics && this.world.graphics.scene) {
+    if (this.world.stage && this.world.stage.scene) {
       if (this.swordColliderMesh) {
-        this.world.graphics.scene.remove(this.swordColliderMesh)
+        this.world.stage.scene.remove(this.swordColliderMesh)
         this.swordColliderMesh = null
       }
       if (this.capsuleColliderMesh) {
-        this.world.graphics.scene.remove(this.capsuleColliderMesh)
+        this.world.stage.scene.remove(this.capsuleColliderMesh)
         this.capsuleColliderMesh = null
       }
     }
