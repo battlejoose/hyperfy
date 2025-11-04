@@ -529,6 +529,15 @@ export class PlayerLocal extends Entity {
       console.log('[Sword] Hit ACTIVE BLOCK from player:', blockerId, '- SWORD BLOCKED! Disabling sword for rest of swing')
       this.setSwordColliderActive(false)
       
+      // Spawn spark particles at block position
+      const blocker = this.world.entities.list.find(e => e.data && e.data.id === blockerId)
+      if (blocker && blocker.base) {
+        const blockPos = new THREE.Vector3()
+        blockPos.copy(blocker.base.position)
+        blockPos.y += 1.8 * 0.6 // Match block collider height
+        this.spawnSparkParticles(blockPos)
+      }
+      
       // Notify server for logging
       this.world.network.send('blockHit', {
         blockerId: blockerId,
