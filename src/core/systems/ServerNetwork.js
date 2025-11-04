@@ -310,6 +310,36 @@ export class ServerNetwork extends System {
     this.send('chatAdded', msg, socket.id)
   }
 
+  onPlayerHit = async (socket, data) => {
+    const { attackerId, targetId, damage } = data
+    
+    // Validate attacker is the socket's player
+    if (socket.player.data.id !== attackerId) {
+      console.warn('[Server] Player', socket.player.data.id, 'tried to claim hit as', attackerId)
+      return
+    }
+    
+    // Get target player
+    const targetPlayer = this.world.entities.get(targetId)
+    if (!targetPlayer || !targetPlayer.isPlayer) {
+      console.warn('[Server] Invalid target player:', targetId)
+      return
+    }
+    
+    // Apply damage
+    const HEALTH_MAX = 100
+    const currentHealth = targetPlayer.data.health !== undefined ? targetPlayer.data.health : HEALTH_MAX
+    const newHealth = Math.max(0, Math.min(HEALTH_MAX, currentHealth - damage))
+    
+    console.log('[Server] Player', attackerId, 'hit player', targetId, 'for', damage, 'damage:', currentHealth, '->', newHealth)
+    
+    // Update target player's health
+    targetPlayer.modify({ health: newHealth })
+    
+    // Broadcast health update to ALL clients (including attacker)
+    this.send('entityModified', { id: targetId, health: newHealth })
+  }
+
   onCommand = async (socket, data) => {
     const { args } = data
     // handle slash commands

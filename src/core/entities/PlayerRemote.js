@@ -201,24 +201,8 @@ export class PlayerRemote extends Entity {
     
     this.hitPlayersThisSwing.add(playerId)
     
-    // On server, apply damage directly
-    console.log('[Sword Remote] Hit player:', playerId, '- dealing damage')
-    const targetPlayer = this.world.entities.get(playerId)
-    if (targetPlayer) {
-      const HEALTH_MAX = 100
-      const currentHealth = targetPlayer.data.health !== undefined ? targetPlayer.data.health : HEALTH_MAX
-      const newHealth = Math.max(0, Math.min(HEALTH_MAX, currentHealth - 10))
-      console.log('[Damage] Player', playerId, 'took 10 damage:', currentHealth, '->', newHealth)
-      
-      // Send health update through network (server authoritative)
-      if (this.world.network.isServer) {
-        console.log('[Damage] Server broadcasting health update')
-        this.world.network.send('entityModified', { id: playerId, health: newHealth })
-      }
-      
-      // Apply damage locally
-      targetPlayer.modify({ health: newHealth })
-    }
+    // Log collision for debugging (damage is handled by server via playerHit message)
+    console.log('[Sword Remote] Collision detected between', this.data.id, 'and', playerId)
   }
 
   setSwordColliderActive(active) {

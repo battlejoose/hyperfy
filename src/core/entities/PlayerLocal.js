@@ -314,24 +314,13 @@ export class PlayerLocal extends Entity {
     
     this.hitPlayersThisSwing.add(playerId)
     
-    // Send damage request to server
-    console.log('[Sword] Hit player:', playerId, '- dealing damage')
-    const targetPlayer = this.world.entities.get(playerId)
-    if (targetPlayer) {
-      const HEALTH_MAX = 100
-      const currentHealth = targetPlayer.data.health !== undefined ? targetPlayer.data.health : HEALTH_MAX
-      const newHealth = Math.max(0, Math.min(HEALTH_MAX, currentHealth - 10))
-      console.log('[Damage] Player', playerId, 'took 10 damage:', currentHealth, '->', newHealth)
-      
-      // Send health update through network (server authoritative)
-      if (this.world.network.isServer) {
-        console.log('[Damage] Server broadcasting health update')
-        this.world.network.send('entityModified', { id: playerId, health: newHealth })
-      }
-      
-      // Apply damage locally
-      targetPlayer.modify({ health: newHealth })
-    }
+    // Send hit notification to server (server will validate and apply damage)
+    console.log('[Sword] Hit player:', playerId, '- notifying server')
+    this.world.network.send('playerHit', {
+      attackerId: this.data.id,
+      targetId: playerId,
+      damage: 10,
+    })
   }
 
   setSwordColliderActive(active) {
