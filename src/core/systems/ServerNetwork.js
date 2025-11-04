@@ -326,12 +326,16 @@ export class ServerNetwork extends System {
       return
     }
     
-    // Apply damage
+    // Apply damage (negative damage = healing)
     const HEALTH_MAX = 100
     const currentHealth = targetPlayer.data.health !== undefined ? targetPlayer.data.health : HEALTH_MAX
     const newHealth = Math.max(0, Math.min(HEALTH_MAX, currentHealth - damage))
     
-    console.log('[Server] Player', attackerId, 'hit player', targetId, 'for', damage, 'damage:', currentHealth, '->', newHealth)
+    if (damage < 0) {
+      console.log('[Server] Player', attackerId, 'healing player', targetId, 'for', Math.abs(damage), 'health:', currentHealth, '->', newHealth)
+    } else {
+      console.log('[Server] Player', attackerId, 'hit player', targetId, 'for', damage, 'damage:', currentHealth, '->', newHealth)
+    }
     
     // Update target player's health
     targetPlayer.modify({ health: newHealth })

@@ -81,6 +81,10 @@ export class PlayerLocal extends Entity {
     // Sword collision tracking
     this.swordColliderActive = false
     this.hitPlayersThisSwing = new Set()
+    
+    // Death/respawn state
+    this.isDead = false
+    this.deathTimeout = null
 
     this.pushForce = null
     this.pushForceInit = false
@@ -998,7 +1002,7 @@ export class PlayerLocal extends Entity {
 
     // handle attack animations (keys 1, 2, 3, 4, 5)
     // Use effect system for network sync, but make attacks not cancellable by movement
-    if (!xr) {
+    if (!xr && !this.isDead) {
       if (this.control.digit1.pressed) {
         this.setEffect({
           emote: Emotes.ATTACK_LEFT,
@@ -1082,8 +1086,8 @@ export class PlayerLocal extends Entity {
       this.setEffect(null)
     }
 
-    if (freeze || anchor) {
-      // cancel movement
+    if (freeze || anchor || this.isDead) {
+      // cancel movement (freeze, anchor, or dead)
       this.moveDir.set(0, 0, 0)
       this.moving = false
     }
@@ -1495,6 +1499,50 @@ export class PlayerLocal extends Entity {
     }, 5000)
   }
 
+  onDeath() {
+    console.log('[Death] Player died - starting death sequence')
+    this.isDead = true
+    
+    // Play fall animation (networked via effect system)
+    this.setEffect({
+      emote: Emotes.DEATH_FALL,
+      duration: 1.0,
+      cancellable: false,
+    })
+    
+    // After 5 seconds, play getup and respawn
+    this.deathTimeout = setTimeout(() => {
+      this.onRespawn()
+    }, 5000)
+  }
+  
+  onRespawn() {
+    console.log('[Respawn] Starting getup sequence')
+    
+    // Play getup animation (networked via effect system)
+    this.setEffect({
+      emote: Emotes.GETUP,
+      duration: 2.0,
+      cancellable: false,
+    })
+    
+    // Wait for getup animation to finish (estimate ~2 seconds)
+    setTimeout(() => {
+      console.log('[Respawn] Respawn complete - re-enabling movement and attacks')
+      this.isDead = false
+      
+      // Clear effect to return to normal movement
+      this.setEffect(null)
+      
+      // Request health restoration from server
+      this.world.network.send('playerHit', {
+        attackerId: this.data.id,
+        targetId: this.data.id,
+        damage: -100, // Negative damage = healing
+      })
+    }, 2000)
+  }
+
   modify(data) {
     let avatarChanged
     let changed
@@ -1508,6 +1556,20 @@ export class PlayerLocal extends Entity {
       this.nametag.health = data.health
       console.log('[Health] Local player health updated to:', data.health)
       this.world.events.emit('health', { playerId: this.data.id, health: data.health })
+      
+      // Check for death
+      if (data.health <= 0 && !this.isDead) {
+        this.onDeath()
+      } else if (data.health > 0 && this.isDead) {
+        // If we got healed while dead, cancel death sequence
+        if (this.deathTimeout) {
+          clearTimeout(this.deathTimeout)
+          this.deathTimeout = null
+        }
+        this.isDead = false
+        this.setEffect(null)
+        console.log('[Respawn] Death cancelled - player healed')
+      }
       // changed = true
     }
     if (data.hasOwnProperty('avatar')) {

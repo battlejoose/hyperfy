@@ -231,12 +231,14 @@ export function createVRMFactory(glb, setupMaterial) {
       //   action: AnimationAction
       // }
     }
-    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW, Emotes.BLOCK]
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW, Emotes.BLOCK, Emotes.DEATH_FALL, Emotes.GETUP]
     const attackUrlToKey = {
       [Emotes.ATTACK_LEFT]: 'attackLeft',
       [Emotes.ATTACK_RIGHT]: 'attackRight',
       [Emotes.ATTACK_HIGH]: 'attackHigh',
       [Emotes.ATTACK_LOW]: 'attackLow',
+      [Emotes.DEATH_FALL]: 'deathFall',
+      [Emotes.GETUP]: 'getup',
       [Emotes.BLOCK]: 'block',
     }
     
@@ -624,6 +626,8 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('attackHigh', Emotes.ATTACK_HIGH, true)
     addPose('attackLow', Emotes.ATTACK_LOW, true)
     addPose('block', Emotes.BLOCK, true)
+    addPose('deathFall', Emotes.DEATH_FALL, true)
+    addPose('getup', Emotes.GETUP, true)
     
     function clearLocomotion() {
       for (const key in poses) {
