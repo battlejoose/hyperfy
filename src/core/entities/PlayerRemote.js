@@ -291,19 +291,19 @@ export class PlayerRemote extends Entity {
   spawnBloodParticles(position) {
     // Create red blood particles
     const particleCount = 50
+    const geometry = new THREE.BoxGeometry(0.03, 0.03, 0.03)
+    
     for (let i = 0; i < particleCount; i++) {
-      const particle = createNode('prim', {
-        type: 'box',
-        scale: [0.03, 0.03, 0.03], // Much smaller
-        color: '#aa0000',
-        emissive: '#cc0000',
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xaa0000,
+        emissive: 0xcc0000,
         emissiveIntensity: 2,
         opacity: 0.9,
         transparent: true,
       })
       
+      const particle = new THREE.Mesh(geometry, material)
       particle.position.set(position.x, position.y, position.z)
-      particle.activate({ world: this.world, entity: this })
       this.world.stage.scene.add(particle)
       
       const velocity = new THREE.Vector3(
@@ -312,26 +312,26 @@ export class PlayerRemote extends Entity {
         (Math.random() - 0.5) * 4
       )
       
-      this.addParticle(particle, velocity, 0.6, 2)
+      this.addParticle(particle, velocity, 0.6, 2, material)
     }
   }
 
   spawnSparkParticles(position) {
     // Create yellow spark particles
     const particleCount = 10
+    const geometry = new THREE.BoxGeometry(0.02, 0.02, 0.02)
+    
     for (let i = 0; i < particleCount; i++) {
-      const particle = createNode('prim', {
-        type: 'box',
-        scale: [0.02, 0.02, 0.02], // Tiny
-        color: '#ffff00',
-        emissive: '#ffff00',
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xffff00,
+        emissive: 0xffff00,
         emissiveIntensity: 4,
         opacity: 1,
         transparent: true,
       })
       
+      const particle = new THREE.Mesh(geometry, material)
       particle.position.set(position.x, position.y, position.z)
-      particle.activate({ world: this.world, entity: this })
       this.world.stage.scene.add(particle)
       
       const velocity = new THREE.Vector3(
@@ -340,13 +340,14 @@ export class PlayerRemote extends Entity {
         (Math.random() - 0.5) * 6
       )
       
-      this.addParticle(particle, velocity, 0.5, 4)
+      this.addParticle(particle, velocity, 0.5, 4, material)
     }
   }
 
-  addParticle(particle, velocity, lifetime, initialEmissive) {
+  addParticle(particle, velocity, lifetime, initialEmissive, material) {
     const particleData = {
-      node: particle,
+      mesh: particle,
+      material: material,
       velocity: velocity,
       lifetime: lifetime,
       elapsed: 0,
@@ -362,19 +363,19 @@ export class PlayerRemote extends Entity {
       p.elapsed += delta
       
       // Apply velocity with gravity
-      p.node.position.x += p.velocity.x * delta
-      p.node.position.y += p.velocity.y * delta - p.gravity * p.elapsed * delta
-      p.node.position.z += p.velocity.z * delta
+      p.mesh.position.x += p.velocity.x * delta
+      p.mesh.position.y += p.velocity.y * delta - p.gravity * p.elapsed * delta
+      p.mesh.position.z += p.velocity.z * delta
       
       // Fade out
       const alpha = Math.max(0, 1 - p.elapsed / p.lifetime)
-      p.node.opacity = alpha
-      p.node.emissiveIntensity = p.initialEmissive * alpha
+      p.material.opacity = alpha
+      p.material.emissiveIntensity = p.initialEmissive * alpha
       
       // Remove if expired
       if (p.elapsed >= p.lifetime) {
-        p.node.deactivate()
-        this.world.stage.scene.remove(p.node)
+        this.world.stage.scene.remove(p.mesh)
+        p.material.dispose()
         this.activeParticles.splice(i, 1)
       }
     }
