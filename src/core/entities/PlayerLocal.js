@@ -80,6 +80,7 @@ export class PlayerLocal extends Entity {
 
     // Sword collision tracking
     this.swordColliderActive = false
+    this.swordColliderReady = false // Prevents phantom hits from re-enabling collider
     this.hitPlayersThisSwing = new Set()
     
     // Attack timing
@@ -312,23 +313,34 @@ export class PlayerLocal extends Entity {
   }
 
   onSwordHit(otherHandle) {
-    // Only process hits when collider is active
-    if (!this.swordColliderActive) return
-    
-    // Check if it's a player
+    // Check if it's a player first
     const playerId = otherHandle.playerId
     if (!playerId) return
+    
+    // Only process hits when collider is active AND ready (prevents phantom hits from re-enabling)
+    if (!this.swordColliderActive) {
+      console.log('[Sword] Collision detected with', playerId, 'but collider is INACTIVE - ignoring')
+      return
+    }
+    
+    if (!this.swordColliderReady) {
+      console.log('[Sword] Collision detected with', playerId, 'but collider is NOT READY (phantom hit) - ignoring')
+      return
+    }
     
     // Don't hit ourselves
     if (playerId === this.data.id) return
     
     // Only hit each player once per swing
-    if (this.hitPlayersThisSwing.has(playerId)) return
+    if (this.hitPlayersThisSwing.has(playerId)) {
+      console.log('[Sword] Already hit', playerId, 'this swing - ignoring')
+      return
+    }
     
     this.hitPlayersThisSwing.add(playerId)
     
     // Send hit notification to server (server will validate and apply damage)
-    console.log('[Sword] Hit player:', playerId, '- notifying server')
+    console.log('[Sword] VALID HIT on player:', playerId, '- notifying server NOW')
     this.world.network.send('playerHit', {
       attackerId: this.data.id,
       targetId: playerId,
@@ -351,9 +363,14 @@ export class PlayerLocal extends Entity {
     }
     
     // Start new attack
+    console.log('[Attack] Starting new attack:', emote)
     this.currentAttackEmote = emote
     this.isInWindup = true
     this.isCommitted = false
+    
+    // IMPORTANT: Clear hit tracking NOW, before any collider activation
+    this.hitPlayersThisSwing.clear()
+    console.log('[Attack] Cleared hit tracking for new attack')
     
     // Play attack animation
     this.setEffect({
@@ -383,13 +400,26 @@ export class PlayerLocal extends Entity {
     
     if (active && !this.swordColliderActive) {
       // Activate collider for new swing by enabling the shape
+      // Note: hitPlayersThisSwing is cleared in startAttack() BEFORE this is called
+      console.log('[Sword] Activating collider shape')
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
       this.swordColliderActive = true
-      this.hitPlayersThisSwing.clear()
+      this.swordColliderReady = false // Not ready yet - prevents phantom hits
+      
+      // Wait 1 physics frame (16ms) before accepting hits
+      // This prevents PhysX from reporting stale collisions from before the collider was disabled
+      setTimeout(() => {
+        if (this.swordColliderActive) { // Only set ready if still active
+          this.swordColliderReady = true
+          console.log('[Sword] Collider now READY to detect hits')
+        }
+      }, 16)
     } else if (!active && this.swordColliderActive) {
       // Deactivate collider by disabling the shape
+      console.log('[Sword] Deactivating collider - hit', this.hitPlayersThisSwing.size, 'player(s)')
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
+      this.swordColliderReady = false
     }
   }
 
@@ -1526,10 +1556,11 @@ export class PlayerLocal extends Entity {
     // Cancel any active attacks
     if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
     if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-    this.setSwordColliderActive(false)
+    this.setSwordColliderActive(false) // This also sets swordColliderReady to false
     this.isInWindup = false
     this.isCommitted = false
     this.currentAttackEmote = null
+    this.hitPlayersThisSwing.clear()
     
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
