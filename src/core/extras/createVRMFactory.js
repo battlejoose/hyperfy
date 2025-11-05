@@ -303,6 +303,16 @@ export function createVRMFactory(glb, setupMaterial) {
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
         if (poses.getup) poses.getup.target = 0
+        // Clear any active attack
+        if (currentAttack) {
+          const attackKey = currentAttack
+          currentAttack = null
+          attackEndTime = 0
+          if (poses[attackKey]?.action) {
+            poses[attackKey].action.fadeOut(0.1)
+            poses[attackKey].active = false
+          }
+        }
       }
       
       // Check if this is an attack animation

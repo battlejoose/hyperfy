@@ -795,6 +795,14 @@ export class PlayerRemote extends Entity {
       this.attackAnimationPaused = false
     }
     
+    // Force switch back to locomotion by clearing the emote
+    if (this.avatar?.instance) {
+      this.avatar.instance.setEmote(null)
+    }
+    
+    // Clear the effect data
+    this.data.effect = null
+    
     // Immediately end the attack
     this.currentlyAttacking = false
     this.setSwordColliderActive(false)
