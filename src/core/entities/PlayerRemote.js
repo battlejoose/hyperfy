@@ -536,18 +536,20 @@ export class PlayerRemote extends Entity {
         if (this.attackColliderDelayTimeout) clearTimeout(this.attackColliderDelayTimeout)
         this.attackColliderDelayTimeout = setTimeout(() => {
           if (this.currentlyAttacking) {
+            console.log('[Sword Remote] Activating sword collider after windup')
             this.setSwordColliderActive(true)
           }
           this.attackColliderDelayTimeout = null
         }, 500)
       }
       
-      // Clear the flag after attack duration
+      // Clear the flag after attack duration (use actual duration, not hardcoded 1s)
       if (this.attackTimeout) clearTimeout(this.attackTimeout)
       this.attackTimeout = setTimeout(() => {
+        console.log('[Sword Remote] Attack timeout reached, deactivating collider')
         this.currentlyAttacking = false
         this.setSwordColliderActive(false)
-      }, 1000)
+      }, attackDuration * 1000)
     } else if (isAttacking && this.currentlyAttacking) {
       // Check if duration changed (from charging to release)
       if (this.lastAttackDuration > 10 && attackDuration <= 10) {

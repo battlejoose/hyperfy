@@ -632,7 +632,7 @@ export class PlayerLocal extends Entity {
     this.world.network.send('playerHit', {
       attackerId: this.data.id,
       targetId: playerId,
-      damage: 10,
+      damage: 25,
     })
   }
 
