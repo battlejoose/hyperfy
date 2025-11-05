@@ -258,8 +258,18 @@ export class PlayerRemote extends Entity {
   onSwordHit(otherHandle) {
     if (!this.swordColliderActive) return
     
+    console.log('[Sword Remote Debug] onSwordHit called, otherHandle:', {
+      tag: otherHandle.tag,
+      playerId: otherHandle.playerId,
+      hasPlayerId: !!otherHandle.playerId,
+      node: otherHandle.node?.name,
+    })
+    
     const playerId = otherHandle.playerId
-    if (!playerId) return
+    if (!playerId) {
+      console.log('[Sword Remote Debug] No playerId on otherHandle, skipping')
+      return
+    }
     if (playerId === this.data.id) return
     if (this.hitPlayersThisSwing.has(playerId)) return
     
