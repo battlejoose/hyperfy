@@ -2153,11 +2153,22 @@ export class PlayerLocal extends Entity {
     // Cancel any active attacks
     if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
     if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+    if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
     this.setSwordColliderActive(false) // This also sets swordColliderReady to false
     this.isInWindup = false
     this.isCommitted = false
     this.currentAttackEmote = null
     this.hitPlayersThisSwing.clear()
+    
+    // Cancel any charged attack state and resume animation mixer BEFORE death animation starts
+    if (this.isChargingAttack) {
+      this.isChargingAttack = false
+      this.chargedAttackEmote = null
+    }
+    if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+      this.attackAnimationPaused = false
+    }
     
     // Cancel any active block
     if (this.blockTimeout) clearTimeout(this.blockTimeout)

@@ -262,24 +262,17 @@ export function createVRMFactory(glb, setupMaterial) {
       // Check if this is a death effect (fall or getup) - treat like attacks
       if (url && (url === Emotes.DEATH_FALL || url === Emotes.GETUP)) {
         const deathKey = deathUrlToKey[url]
-        console.log('[VRM] Death effect detected:', deathKey)
         
-        // Check if already playing this death animation
+        // Check if already playing this death animation - DON'T restart it!
         if (currentEmote?.url === url) {
-          console.log('[VRM] Death animation already playing, skipping')
           return
         }
         
-        // Clear any previous emote first
-        if (currentEmote?.action) {
-          currentEmote.action.fadeOut(0.1)
-        }
+        // CRITICAL: Ensure mixer is running at normal speed (charged attack may have paused it)
+        mixer.timeScale = 1
         
-        // Set as current emote to block other emotes (use proper object structure)
-        currentEmote = {
-          url,
-          action: poses[deathKey]?.action,
-        }
+        // Simple handling like old version - just set currentEmote and play
+        currentEmote = { url }
         
         if (poses[deathKey]) {
           if (poses[deathKey].action) {
@@ -296,9 +289,6 @@ export function createVRMFactory(glb, setupMaterial) {
         return
       } else if (!url) {
         // Clear emote
-        if (currentEmote?.action) {
-          currentEmote.action.fadeOut(0.1)
-        }
         currentEmote = null
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
@@ -427,7 +417,7 @@ export function createVRMFactory(glb, setupMaterial) {
         skeleton.bones.forEach(bone => bone.updateMatrixWorld())
         skeleton.update = THREE.Skeleton.prototype.update
         // Check if current emote is a death effect (full body animations that override everything)
-        const isDeathEffect = currentEmote === Emotes.DEATH_FALL || currentEmote === Emotes.GETUP
+        const isDeathEffect = currentEmote?.url === Emotes.DEATH_FALL || currentEmote?.url === Emotes.GETUP
         
         if (isDeathEffect) {
           // Death effects completely override locomotion - turn off all locomotion

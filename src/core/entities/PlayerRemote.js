@@ -918,6 +918,25 @@ export class PlayerRemote extends Entity {
     console.log('[Death] Remote player', this.data.id, 'died - starting death sequence')
     this.isDead = true
     
+    // Cancel any charged attack state and resume animation mixer BEFORE death animation starts
+    if (this.attackFreezeTimeout) {
+      clearTimeout(this.attackFreezeTimeout)
+      this.attackFreezeTimeout = null
+    }
+    if (this.attackColliderDelayTimeout) {
+      clearTimeout(this.attackColliderDelayTimeout)
+      this.attackColliderDelayTimeout = null
+    }
+    if (this.attackTimeout) {
+      clearTimeout(this.attackTimeout)
+      this.attackTimeout = null
+    }
+    if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+      this.attackAnimationPaused = false
+    }
+    this.setSwordColliderActive(false)
+    
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
       this.avatar.instance.setDeathState(true)
