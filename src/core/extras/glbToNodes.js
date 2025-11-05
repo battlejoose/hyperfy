@@ -325,8 +325,8 @@ function setupSandyDesert(mesh) {
       varying vec3 vPos;
       
       void main() {
-        // Base yellow sand color - more vibrant yellow
-        vec3 sandColor = vec3(0.95, 0.80, 0.35); // RGB(242, 204, 89)
+        // Base orange sand color
+        vec3 sandColor = vec3(1.0, 0.68, 0.25); // RGB(255, 173, 64)
         
         // Add subtle noise variation for sandy texture
         float noise1 = snoise(vPos * 2.0) * 0.5 + 0.5;
