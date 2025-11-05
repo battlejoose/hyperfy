@@ -91,6 +91,16 @@ export function glbToNodes(glb, world) {
       }
       // Mesh
       else if (object3d.type === 'Mesh') {
+        // Change ground color to light sand desert color
+        const meshName = object3d.name.toLowerCase()
+        const isGround = meshName.includes('ground') || meshName.includes('terrain') || meshName.includes('floor')
+        
+        if (isGround) {
+          console.log('[GLB] Changing ground to sandy desert')
+          // Create sandy desert material with procedural noise
+          setupSandyDesert(object3d)
+        }
+        
         // experimental splatmaps
         if (props.exp_splatmap && !world.network.isServer) {
           setupSplatmap(object3d)
@@ -105,7 +115,8 @@ export function glbToNodes(glb, world) {
           type: 'geometry',
           geometry: object3d.geometry,
           material: object3d.material,
-          linked: !hasMorphTargets && !object3d.material.transparent,
+          // Don't link ground materials - they need individual colors
+          linked: !isGround && !hasMorphTargets && !object3d.material.transparent,
           castShadow: props.castShadow,
           receiveShadow: props.receiveShadow,
           visible: props.visible, // DEPRECATED: use Node.active
@@ -296,6 +307,45 @@ const snoise = `
                                 dot(p2,x2), dot(p3,x3) ) );
   }
 `
+
+function setupSandyDesert(mesh) {
+  const material = new CustomShaderMaterial({
+    baseMaterial: THREE.MeshStandardMaterial,
+    roughness: 1,
+    metalness: 0,
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+      }
+    `,
+    fragmentShader: `
+      ${snoise}
+      
+      varying vec3 vPos;
+      
+      void main() {
+        // Base yellow sand color - more vibrant yellow
+        vec3 sandColor = vec3(0.95, 0.80, 0.35); // RGB(242, 204, 89)
+        
+        // Add subtle noise variation for sandy texture
+        float noise1 = snoise(vPos * 2.0) * 0.5 + 0.5;
+        float noise2 = snoise(vPos * 8.0) * 0.5 + 0.5;
+        float noise3 = snoise(vPos * 20.0) * 0.5 + 0.5;
+        
+        // Combine noise layers for sandy detail
+        float sandNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+        
+        // Apply noise to create sandy variation
+        vec3 finalColor = sandColor * (0.85 + sandNoise * 0.3);
+        
+        csm_DiffuseColor = vec4(finalColor, 1.0);
+      }
+    `,
+  })
+  
+  mesh.material = material
+}
 
 function setupSplatmap(mesh) {
   /**
