@@ -258,18 +258,8 @@ export class PlayerRemote extends Entity {
   onSwordHit(otherHandle) {
     if (!this.swordColliderActive) return
     
-    console.log('[Sword Remote Debug] onSwordHit called, otherHandle:', {
-      tag: otherHandle.tag,
-      playerId: otherHandle.playerId,
-      hasPlayerId: !!otherHandle.playerId,
-      node: otherHandle.node?.name,
-    })
-    
     const playerId = otherHandle.playerId
-    if (!playerId) {
-      console.log('[Sword Remote Debug] No playerId on otherHandle, skipping')
-      return
-    }
+    if (!playerId) return
     if (playerId === this.data.id) return
     if (this.hitPlayersThisSwing.has(playerId)) return
     
@@ -546,7 +536,6 @@ export class PlayerRemote extends Entity {
         if (this.attackColliderDelayTimeout) clearTimeout(this.attackColliderDelayTimeout)
         this.attackColliderDelayTimeout = setTimeout(() => {
           if (this.currentlyAttacking) {
-            console.log('[Sword Remote] Activating sword collider after windup')
             this.setSwordColliderActive(true)
           }
           this.attackColliderDelayTimeout = null
@@ -556,7 +545,6 @@ export class PlayerRemote extends Entity {
       // Clear the flag after attack duration (use actual duration, not hardcoded 1s)
       if (this.attackTimeout) clearTimeout(this.attackTimeout)
       this.attackTimeout = setTimeout(() => {
-        console.log('[Sword Remote] Attack timeout reached, deactivating collider')
         this.currentlyAttacking = false
         this.setSwordColliderActive(false)
       }, attackDuration * 1000)
