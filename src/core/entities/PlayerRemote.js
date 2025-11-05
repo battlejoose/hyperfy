@@ -509,21 +509,38 @@ export class PlayerRemote extends Entity {
     // Handle sword collider activation for attack animations
     const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
     const isAttacking = this.data.effect?.emote && attackEmotes.includes(this.data.effect.emote)
+    const attackDuration = this.data.effect?.duration || 0
+    
+    // Detect charged attack (duration > 10 means player is holding)
+    const isChargingAttack = isAttacking && attackDuration > 10
     
     // Track if we just started an attack
     if (isAttacking && !this.currentlyAttacking) {
       this.currentlyAttacking = true
       this.attackStartTime = Date.now()
+      this.currentAttackEmote = this.data.effect.emote
+      this.lastAttackDuration = attackDuration
       
-      // Wait 0.5 seconds before activating collider (same as local player minimum hold time)
-      if (this.attackColliderDelayTimeout) clearTimeout(this.attackColliderDelayTimeout)
-      this.attackColliderDelayTimeout = setTimeout(() => {
-        // Only activate if still attacking after 0.5 seconds
-        if (this.currentlyAttacking) {
-          this.setSwordColliderActive(true)
-        }
-        this.attackColliderDelayTimeout = null
-      }, 500)
+      // If it's a charged attack, pause animation after 0.5s (same as local player)
+      if (isChargingAttack) {
+        if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+        this.attackFreezeTimeout = setTimeout(() => {
+          // Pause the animation mixer
+          if (this.avatar?.instance?.mixer) {
+            this.avatar.instance.mixer.timeScale = 0
+            this.attackAnimationPaused = true
+          }
+        }, 500)
+      } else {
+        // Normal attack - activate collider after 0.5s
+        if (this.attackColliderDelayTimeout) clearTimeout(this.attackColliderDelayTimeout)
+        this.attackColliderDelayTimeout = setTimeout(() => {
+          if (this.currentlyAttacking) {
+            this.setSwordColliderActive(true)
+          }
+          this.attackColliderDelayTimeout = null
+        }, 500)
+      }
       
       // Clear the flag after attack duration
       if (this.attackTimeout) clearTimeout(this.attackTimeout)
@@ -531,6 +548,26 @@ export class PlayerRemote extends Entity {
         this.currentlyAttacking = false
         this.setSwordColliderActive(false)
       }, 1000)
+    } else if (isAttacking && this.currentlyAttacking) {
+      // Check if duration changed (from charging to release)
+      if (this.lastAttackDuration > 10 && attackDuration <= 10) {
+        // Player released! Resume animation and activate collider
+        if (this.attackFreezeTimeout) {
+          clearTimeout(this.attackFreezeTimeout)
+          this.attackFreezeTimeout = null
+        }
+        
+        // Resume animation mixer
+        if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
+          this.avatar.instance.mixer.timeScale = 1
+          this.attackAnimationPaused = false
+        }
+        
+        // Activate sword collider immediately on release
+        this.setSwordColliderActive(true)
+      }
+      
+      this.lastAttackDuration = attackDuration
     } else if (!isAttacking && this.currentlyAttacking) {
       // Attack ended early - check if it was held for at least 0.5 seconds
       const holdDuration = Date.now() - this.attackStartTime
@@ -540,6 +577,16 @@ export class PlayerRemote extends Entity {
           clearTimeout(this.attackColliderDelayTimeout)
           this.attackColliderDelayTimeout = null
         }
+        if (this.attackFreezeTimeout) {
+          clearTimeout(this.attackFreezeTimeout)
+          this.attackFreezeTimeout = null
+        }
+      }
+      
+      // Resume animation if it was paused
+      if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
+        this.avatar.instance.mixer.timeScale = 1
+        this.attackAnimationPaused = false
       }
       
       this.currentlyAttacking = false
