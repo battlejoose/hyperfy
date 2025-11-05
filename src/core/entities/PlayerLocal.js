@@ -669,6 +669,9 @@ export class PlayerLocal extends Entity {
       this.isCommitted = false
       this.attackAnimationPaused = false
       
+      // Ensure sword collider is OFF during charge
+      this.setSwordColliderActive(false)
+      
       // Play the full attack animation with very long duration (so it doesn't expire while holding)
       this.setEffect({
         emote: emote,
@@ -777,7 +780,9 @@ export class PlayerLocal extends Entity {
       cancellable: false,
     })
     
-    // Activate sword collider immediately (we've already played the backswing)
+    // Activate sword collider IMMEDIATELY on release
+    // We've already played the backswing (0-0.5s), now resuming from 0.5s onwards
+    // So collider is active for the entire release/forward swing phase
     this.setSwordColliderActive(true)
     
     // After remaining attack duration (minus the backswing we already played), deactivate and reset

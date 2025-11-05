@@ -264,8 +264,22 @@ export function createVRMFactory(glb, setupMaterial) {
         const deathKey = deathUrlToKey[url]
         console.log('[VRM] Death effect detected:', deathKey)
         
-        // Treat death effects like attack animations - set as current emote to block other emotes
-        currentEmote = url
+        // Check if already playing this death animation
+        if (currentEmote?.url === url) {
+          console.log('[VRM] Death animation already playing, skipping')
+          return
+        }
+        
+        // Clear any previous emote first
+        if (currentEmote?.action) {
+          currentEmote.action.fadeOut(0.1)
+        }
+        
+        // Set as current emote to block other emotes (use proper object structure)
+        currentEmote = {
+          url,
+          action: poses[deathKey]?.action,
+        }
         
         if (poses[deathKey]) {
           if (poses[deathKey].action) {
@@ -282,6 +296,9 @@ export function createVRMFactory(glb, setupMaterial) {
         return
       } else if (!url) {
         // Clear emote
+        if (currentEmote?.action) {
+          currentEmote.action.fadeOut(0.1)
+        }
         currentEmote = null
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
