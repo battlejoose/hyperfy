@@ -754,6 +754,16 @@ export class PlayerLocal extends Entity {
   completeChargedAttack() {
     if (!this.isChargingAttack || !this.chargedAttackEmote) return
     
+    // Check if mouse was held for at least 0.5 seconds
+    let canActivateCollider = true
+    if (this.mouseDragStart && this.mouseDragStart.time) {
+      const holdDuration = (Date.now() - this.mouseDragStart.time) / 1000
+      if (holdDuration < 0.5) {
+        console.log('[Attack] Released too early - held for only', holdDuration.toFixed(3), 'seconds - no collider activation')
+        canActivateCollider = false
+      }
+    }
+    
     console.log('[Attack] RELEASING charged attack - resuming animation:', this.chargedAttackEmote)
     
     // Clear any pending freeze timeout
@@ -780,10 +790,10 @@ export class PlayerLocal extends Entity {
       cancellable: false,
     })
     
-    // Activate sword collider IMMEDIATELY on release
-    // We've already played the backswing (0-0.5s), now resuming from 0.5s onwards
-    // So collider is active for the entire release/forward swing phase
-    this.setSwordColliderActive(true)
+    // Activate sword collider ONLY if held for at least 0.5 seconds
+    if (canActivateCollider) {
+      this.setSwordColliderActive(true)
+    }
     
     // After remaining attack duration (minus the backswing we already played), deactivate and reset
     this.attackEndTimeout = setTimeout(() => {
