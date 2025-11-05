@@ -184,6 +184,15 @@ export class ClientNetwork extends System {
     }
   }
 
+  onAttackCanceled = data => {
+    const { playerId } = data
+    // Get the remote player who canceled
+    const player = this.world.entities.get(playerId)
+    if (player && player.onAttackCanceled) {
+      player.onAttackCanceled()
+    }
+  }
+
   onEntityEvent = event => {
     const [id, version, name, data] = event
     const entity = this.world.entities.get(id)

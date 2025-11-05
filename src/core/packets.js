@@ -29,6 +29,7 @@ const names = [
   'playerHit',
   'blockHit',
   'swordBlocked',
+  'attackCanceled',
 ]
 
 const byName = {}

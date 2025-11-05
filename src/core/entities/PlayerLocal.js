@@ -761,6 +761,11 @@ export class PlayerLocal extends Entity {
       if (holdDuration < 0.5) {
         console.log('[Attack] Released too early - held for only', holdDuration.toFixed(3), 'seconds - no collider activation')
         canActivateCollider = false
+        
+        // Notify network that attack was canceled early
+        this.world.network.send('attackCanceled', {
+          playerId: this.data.id,
+        })
       }
     }
     

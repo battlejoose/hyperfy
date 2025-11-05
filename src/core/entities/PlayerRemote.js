@@ -776,6 +776,34 @@ export class PlayerRemote extends Entity {
     }
   }
 
+  onAttackCanceled() {
+    console.log('[Attack] Remote player canceled attack early')
+    
+    // Cancel any pending timeouts
+    if (this.attackFreezeTimeout) {
+      clearTimeout(this.attackFreezeTimeout)
+      this.attackFreezeTimeout = null
+    }
+    if (this.attackColliderDelayTimeout) {
+      clearTimeout(this.attackColliderDelayTimeout)
+      this.attackColliderDelayTimeout = null
+    }
+    
+    // Resume animation if it was paused
+    if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+      this.attackAnimationPaused = false
+    }
+    
+    // Immediately end the attack
+    this.currentlyAttacking = false
+    this.setSwordColliderActive(false)
+    if (this.attackTimeout) {
+      clearTimeout(this.attackTimeout)
+      this.attackTimeout = null
+    }
+  }
+
   setEffect(effect, onEnd) {
     if (this.data.effect) {
       this.data.effect = null

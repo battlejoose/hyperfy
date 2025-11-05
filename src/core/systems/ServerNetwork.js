@@ -373,6 +373,21 @@ export class ServerNetwork extends System {
     }
   }
 
+  onAttackCanceled = async (socket, data) => {
+    const { playerId } = data
+    
+    // Validate player is the socket's player
+    if (socket.player.data.id !== playerId) {
+      console.warn('[Server] Player', socket.player.data.id, 'tried to cancel attack as', playerId)
+      return
+    }
+    
+    console.log('[Server] Player', playerId, 'canceled attack early')
+    
+    // Broadcast to all other clients (exclude sender)
+    this.send('attackCanceled', { playerId }, socket.id)
+  }
+
   onCommand = async (socket, data) => {
     const { args } = data
     // handle slash commands
