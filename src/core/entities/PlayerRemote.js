@@ -513,7 +513,18 @@ export class PlayerRemote extends Entity {
     // Track if we just started an attack
     if (isAttacking && !this.currentlyAttacking) {
       this.currentlyAttacking = true
-      this.setSwordColliderActive(true)
+      this.attackStartTime = Date.now()
+      
+      // Wait 0.5 seconds before activating collider (same as local player minimum hold time)
+      if (this.attackColliderDelayTimeout) clearTimeout(this.attackColliderDelayTimeout)
+      this.attackColliderDelayTimeout = setTimeout(() => {
+        // Only activate if still attacking after 0.5 seconds
+        if (this.currentlyAttacking) {
+          this.setSwordColliderActive(true)
+        }
+        this.attackColliderDelayTimeout = null
+      }, 500)
+      
       // Clear the flag after attack duration
       if (this.attackTimeout) clearTimeout(this.attackTimeout)
       this.attackTimeout = setTimeout(() => {
@@ -521,7 +532,16 @@ export class PlayerRemote extends Entity {
         this.setSwordColliderActive(false)
       }, 1000)
     } else if (!isAttacking && this.currentlyAttacking) {
-      // Attack ended early
+      // Attack ended early - check if it was held for at least 0.5 seconds
+      const holdDuration = Date.now() - this.attackStartTime
+      if (holdDuration < 500) {
+        // Released too early - cancel collider activation
+        if (this.attackColliderDelayTimeout) {
+          clearTimeout(this.attackColliderDelayTimeout)
+          this.attackColliderDelayTimeout = null
+        }
+      }
+      
       this.currentlyAttacking = false
       this.setSwordColliderActive(false)
       if (this.attackTimeout) {
