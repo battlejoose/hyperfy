@@ -637,6 +637,12 @@ export class PlayerLocal extends Entity {
   }
 
   startAttack(emote, chargeMode = false) {
+    // Can't attack while sprinting
+    if (this.running) {
+      console.log('[Attack] Cannot attack while sprinting')
+      return
+    }
+    
     // If already charging, ignore
     if (this.isChargingAttack) return
     
@@ -1691,6 +1697,35 @@ export class PlayerLocal extends Entity {
     } else {
       // or keyboard shift key
       this.running = this.moving && (this.control.shiftLeft.down || this.control.shiftRight.down)
+    }
+
+    // Cancel any active attacks when sprinting starts
+    if (this.running && (this.isInWindup || this.isCommitted || this.isChargingAttack)) {
+      console.log('[Attack] Sprinting started - canceling active attack')
+      
+      // Clear all attack timeouts
+      if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
+      if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+      if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+      
+      // Resume animation if paused
+      if (this.attackAnimationPaused) {
+        this.resumeAttackAnimation()
+        this.attackAnimationPaused = false
+      }
+      
+      // Deactivate sword collider
+      this.setSwordColliderActive(false)
+      
+      // Reset attack state
+      this.isInWindup = false
+      this.isCommitted = false
+      this.isChargingAttack = false
+      this.chargedAttackEmote = null
+      this.currentAttackEmote = null
+      
+      // Clear effect to stop animation
+      this.setEffect(null)
     }
 
     // normalize direction (also prevents surfing)
