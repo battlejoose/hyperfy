@@ -113,6 +113,13 @@ export class PlayerLocal extends Entity {
     this.dragThreshold = 30 // pixels to move before it's considered a drag
     this.isChargingAttack = false // holding at backswing, waiting for release
     this.chargedAttackEmote = null // which attack is being charged
+    
+    // Mouse drag block tracking
+    this.blockDragStart = null // { time }
+    this.blockDragAccumulated = null // { x, y } - accumulated delta from start
+    this.isBlockDragging = false
+    this.isHoldingBlock = false // holding at block pose, waiting for release
+    this.currentBlockEmote = null // which block direction is being held
 
     this.pushForce = null
     this.pushForceInit = false
@@ -816,32 +823,122 @@ export class PlayerLocal extends Entity {
     }, (this.attackDuration - this.attackWindupTime) * 1000)
   }
 
-  startBlock() {
+  startBlock(emote = Emotes.BLOCK, holdMode = false) {
     // Can't block while dead
     if (this.isDead) return
     
-    // If already blocking, ignore
-    if (this.isBlocking) return
+    // If already blocking or holding a block, ignore
+    if (this.isBlocking || this.isHoldingBlock) return
     
-    console.log('[Block] Starting block')
+    console.log('[Block] Starting block:', emote, 'holdMode:', holdMode)
     this.isBlocking = true
     
     // Activate block collider
     this.setBlockColliderActive(true)
     
-    // Play block animation
-    this.setEffect({
-      emote: Emotes.BLOCK,
-      duration: this.blockDuration,
-      cancellable: false,
-    })
+    if (holdMode) {
+      // Hold mode: play first 0.5 seconds and hold indefinitely
+      console.log('[Block] Starting HOLD block - will pause after 0.5s')
+      this.isHoldingBlock = true
+      this.currentBlockEmote = emote
+      this.blockAnimationPaused = false
+      
+      // Play block animation with very long duration (999 seconds)
+      this.setEffect({
+        emote: emote,
+        duration: 999, // Very long duration to prevent auto-cancel
+        cancellable: false,
+      })
+      
+      // After 0.5 seconds, pause the animation at the block pose
+      this.blockFreezeTimeout = setTimeout(() => {
+        if (this.isHoldingBlock && this.currentBlockEmote === emote) {
+          console.log('[Block] Pausing animation at block pose - hold as long as you want!')
+          this.blockAnimationPaused = true
+          this.pauseBlockAnimation()
+        }
+      }, 500) // 0.5 seconds
+    } else {
+      // Normal mode: full block with duration
+      console.log('[Block] Starting NORMAL block with duration')
+      
+      // Play block animation
+      this.setEffect({
+        emote: emote,
+        duration: this.blockDuration,
+        cancellable: false,
+      })
+      
+      // After block duration, deactivate
+      this.blockTimeout = setTimeout(() => {
+        this.setBlockColliderActive(false)
+        this.isBlocking = false
+        console.log('[Block] Block ended')
+      }, this.blockDuration * 1000)
+    }
+  }
+  
+  pauseBlockAnimation() {
+    try {
+      // Access the mixer through the avatar's instance
+      if (this.avatar && this.avatar.instance && this.avatar.instance.mixer) {
+        const mixer = this.avatar.instance.mixer
+        // Pause the mixer itself
+        mixer.timeScale = 0
+        console.log('[Block] Animation mixer paused (timeScale = 0)')
+      } else {
+        console.warn('[Block] Could not access animation mixer to pause')
+      }
+    } catch (err) {
+      console.error('[Block] Error pausing animation:', err)
+    }
+  }
+  
+  resumeBlockAnimation() {
+    try {
+      // Access the mixer through the avatar's instance
+      if (this.avatar && this.avatar.instance && this.avatar.instance.mixer) {
+        const mixer = this.avatar.instance.mixer
+        // Resume the mixer
+        mixer.timeScale = 1
+        console.log('[Block] Animation mixer resumed (timeScale = 1)')
+      } else {
+        console.warn('[Block] Could not access animation mixer to resume')
+      }
+    } catch (err) {
+      console.error('[Block] Error resuming animation:', err)
+    }
+  }
+  
+  stopBlock() {
+    if (!this.isHoldingBlock) return
     
-    // After block duration, deactivate
-    this.blockTimeout = setTimeout(() => {
-      this.setBlockColliderActive(false)
-      this.isBlocking = false
-      console.log('[Block] Block ended')
-    }, this.blockDuration * 1000)
+    console.log('[Block] Stopping held block')
+    
+    // Clear any pending freeze timeout
+    if (this.blockFreezeTimeout) {
+      clearTimeout(this.blockFreezeTimeout)
+      this.blockFreezeTimeout = null
+    }
+    
+    // Resume the animation if it was paused
+    if (this.blockAnimationPaused) {
+      this.blockAnimationPaused = false
+      this.resumeBlockAnimation()
+    }
+    
+    // Clear the effect to return to idle
+    this.setEffect(null)
+    
+    // Deactivate block collider
+    this.setBlockColliderActive(false)
+    
+    // Reset state
+    this.isHoldingBlock = false
+    this.isBlocking = false
+    this.currentBlockEmote = null
+    
+    console.log('[Block] Block stopped, returning to idle')
   }
 
   setSwordColliderActive(active) {
@@ -1562,10 +1659,78 @@ export class PlayerLocal extends Entity {
       // Left mouse: drag direction determines attack
       // Right mouse: block
       
-      // Right click for block
-      if (this.control.mouseRight.pressed) {
-        console.log('[Mouse Attack] RIGHT CLICK - BLOCK')
-        this.startBlock()
+      // Right mouse down: start tracking block drag
+      if (this.control.mouseRight.pressed && this.control.pointer.locked) {
+        this.blockDragStart = {
+          time: Date.now()
+        }
+        this.blockDragAccumulated = { x: 0, y: 0 }
+        this.isBlockDragging = false
+        console.log('[Mouse Block] Right mouse down - starting block drag tracking')
+      }
+      
+      // Track mouse movement while dragging (accumulate deltas)
+      if (this.control.mouseRight.down && this.blockDragStart && this.control.pointer.locked) {
+        const delta = this.control.pointer.delta
+        this.blockDragAccumulated.x += delta.x
+        this.blockDragAccumulated.y += delta.y
+        
+        // Check if we've moved enough to be considered a drag
+        const distance = Math.sqrt(
+          this.blockDragAccumulated.x * this.blockDragAccumulated.x + 
+          this.blockDragAccumulated.y * this.blockDragAccumulated.y
+        )
+        
+        // Once we've dragged enough and not already holding block, start directional block
+        if (distance > this.dragThreshold && !this.isHoldingBlock && !this.isBlockDragging) {
+          this.isBlockDragging = true
+          
+          // Determine direction and start held block
+          const dx = this.blockDragAccumulated.x
+          const dy = this.blockDragAccumulated.y
+          const absX = Math.abs(dx)
+          const absY = Math.abs(dy)
+          
+          let blockEmote
+          if (absX > absY) {
+            // Horizontal drag
+            if (dx > 0) {
+              blockEmote = Emotes.BLOCK_RIGHT
+              console.log('[Mouse Block] HOLDING RIGHT block')
+            } else {
+              blockEmote = Emotes.BLOCK_LEFT
+              console.log('[Mouse Block] HOLDING LEFT block')
+            }
+          } else {
+            // Vertical drag
+            if (dy > 0) {
+              blockEmote = Emotes.BLOCK_LOW
+              console.log('[Mouse Block] HOLDING LOW block')
+            } else {
+              blockEmote = Emotes.BLOCK_HIGH
+              console.log('[Mouse Block] HOLDING HIGH block')
+            }
+          }
+          
+          // Start the directional block in hold mode
+          this.startBlock(blockEmote, true) // holdMode = true
+        }
+      }
+      
+      // Right mouse released: stop held block
+      if (this.control.mouseRight.released && this.blockDragStart && this.control.pointer.locked) {
+        if (this.isHoldingBlock) {
+          // Stop the held block (no follow-through)
+          console.log('[Mouse Block] Right mouse released - stopping held block')
+          this.stopBlock()
+        } else {
+          console.log('[Mouse Block] Right mouse released - no held block (drag too short)')
+        }
+        
+        // Reset drag tracking
+        this.blockDragStart = null
+        this.blockDragAccumulated = null
+        this.isBlockDragging = false
       }
       
       // Left mouse down: start tracking drag
@@ -2207,8 +2372,19 @@ export class PlayerLocal extends Entity {
     
     // Cancel any active block
     if (this.blockTimeout) clearTimeout(this.blockTimeout)
+    if (this.blockFreezeTimeout) clearTimeout(this.blockFreezeTimeout)
     this.setBlockColliderActive(false)
     this.isBlocking = false
+    
+    // Cancel any held block state and resume animation mixer BEFORE death animation starts
+    if (this.isHoldingBlock) {
+      this.isHoldingBlock = false
+      this.currentBlockEmote = null
+    }
+    if (this.blockAnimationPaused && this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+      this.blockAnimationPaused = false
+    }
     
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {

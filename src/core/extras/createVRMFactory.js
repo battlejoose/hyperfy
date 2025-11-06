@@ -231,13 +231,17 @@ export function createVRMFactory(glb, setupMaterial) {
       //   action: AnimationAction
       // }
     }
-    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW, Emotes.BLOCK]
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW, Emotes.BLOCK, Emotes.BLOCK_LEFT, Emotes.BLOCK_RIGHT, Emotes.BLOCK_HIGH, Emotes.BLOCK_LOW]
     const attackUrlToKey = {
       [Emotes.ATTACK_LEFT]: 'attackLeft',
       [Emotes.ATTACK_RIGHT]: 'attackRight',
       [Emotes.ATTACK_HIGH]: 'attackHigh',
       [Emotes.ATTACK_LOW]: 'attackLow',
       [Emotes.BLOCK]: 'block',
+      [Emotes.BLOCK_LEFT]: 'blockLeft',
+      [Emotes.BLOCK_RIGHT]: 'blockRight',
+      [Emotes.BLOCK_HIGH]: 'blockHigh',
+      [Emotes.BLOCK_LOW]: 'blockLow',
     }
     
     // Death emotes should be treated specially - full body animations
@@ -715,6 +719,10 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('attackHigh', Emotes.ATTACK_HIGH, true)
     addPose('attackLow', Emotes.ATTACK_LOW, true)
     addPose('block', Emotes.BLOCK, true)
+    addPose('blockLeft', Emotes.BLOCK_LEFT, true)
+    addPose('blockRight', Emotes.BLOCK_RIGHT, true)
+    addPose('blockHigh', Emotes.BLOCK_HIGH, true)
+    addPose('blockLow', Emotes.BLOCK_LOW, true)
     addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation
