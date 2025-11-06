@@ -619,19 +619,27 @@ export class PlayerRemote extends Entity {
     }
     
     // Handle block collider activation for block animation
-    const isBlocking = this.data.effect?.emote === Emotes.BLOCK
+    const blockEmotes = [Emotes.BLOCK, Emotes.BLOCK_HIGH, Emotes.BLOCK_LEFT, Emotes.BLOCK_RIGHT, Emotes.BLOCK_LOW]
+    const isBlocking = this.data.effect?.emote && blockEmotes.includes(this.data.effect.emote)
     
     if (isBlocking && !this.currentlyBlocking) {
       this.currentlyBlocking = true
+      console.log('[Block Remote] Activating block collider for emote:', this.data.effect.emote, 'with tag:', this.currentBlockTag)
       this.setBlockColliderActive(true)
-      // Clear the flag after block duration
-      if (this.blockTimeout) clearTimeout(this.blockTimeout)
-      this.blockTimeout = setTimeout(() => {
-        this.currentlyBlocking = false
-        this.setBlockColliderActive(false)
-      }, 1000)
+      // For directional blocks with long duration (999), keep active indefinitely
+      // For normal blocks, clear after 1 second
+      const blockDuration = this.data.effect?.duration || 1.0
+      if (blockDuration < 10) {
+        // Normal timed block
+        if (this.blockTimeout) clearTimeout(this.blockTimeout)
+        this.blockTimeout = setTimeout(() => {
+          this.currentlyBlocking = false
+          this.setBlockColliderActive(false)
+        }, blockDuration * 1000)
+      }
     } else if (!isBlocking && this.currentlyBlocking) {
       // Block ended early
+      console.log('[Block Remote] Deactivating block collider')
       this.currentlyBlocking = false
       this.setBlockColliderActive(false)
       if (this.blockTimeout) {

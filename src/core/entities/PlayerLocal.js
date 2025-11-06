@@ -604,6 +604,8 @@ export class PlayerLocal extends Entity {
       const attackTag = this.currentAttackTag
       const blockTag = blocker.currentBlockTag
       
+      console.log('[Sword] Checking block match - Attack tag:', attackTag, 'Block tag:', blockTag, 'Blocker type:', blocker.isRemote ? 'REMOTE' : 'LOCAL')
+      
       let blockedSuccessfully = false
       
       // If no tags, old block behavior (blocks everything)
@@ -621,6 +623,11 @@ export class PlayerLocal extends Entity {
       
       if (blockedSuccessfully) {
         console.log('[Sword] Hit ACTIVE BLOCK from player:', blockerId, '- Attack:', attackTag, 'blocked by:', blockTag, '- SWORD BLOCKED!')
+        
+        // Add blocker to hit list to prevent damage in same frame
+        this.hitPlayersThisSwing.add(blockerId)
+        
+        // Deactivate sword for rest of swing
         this.setSwordColliderActive(false)
         
         // Play block sound and spawn spark particles at block position
