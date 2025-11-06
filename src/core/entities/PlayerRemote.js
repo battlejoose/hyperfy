@@ -34,6 +34,10 @@ export class PlayerRemote extends Entity {
     // Block state
     this.isBlocking = false
     
+    // Attack and block tags for directional blocking system
+    this.currentAttackTag = null // 'high', 'left', 'right', 'low'
+    this.currentBlockTag = null // 'high', 'left', 'right', 'low'
+    
     // Death state tracking
     this.isDead = false
     this.deathTimeout = null
@@ -497,6 +501,23 @@ export class PlayerRemote extends Entity {
     }
     // Check for attack emotes from effects first, otherwise use regular emote
     const emote = this.data.effect?.emote || this.data.emote
+    
+    // Set attack/block tags based on current emote for directional blocking
+    if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
+    else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
+    else if (emote === Emotes.ATTACK_RIGHT) this.currentAttackTag = 'right'
+    else if (emote === Emotes.ATTACK_LOW) this.currentAttackTag = 'low'
+    else if (emote === Emotes.BLOCK_HIGH) this.currentBlockTag = 'high'
+    else if (emote === Emotes.BLOCK_LEFT) this.currentBlockTag = 'left'
+    else if (emote === Emotes.BLOCK_RIGHT) this.currentBlockTag = 'right'
+    else if (emote === Emotes.BLOCK_LOW) this.currentBlockTag = 'low'
+    else if (emote === Emotes.BLOCK) this.currentBlockTag = null // Old block blocks everything
+    else {
+      // Clear tags if not attacking or blocking
+      this.currentAttackTag = null
+      this.currentBlockTag = null
+    }
+    
     // Pass effect duration if available (important for charged attacks)
     // NOTE: Must call .instance.setEmote() directly to pass duration parameter
     // because the Avatar Node wrapper only accepts one parameter

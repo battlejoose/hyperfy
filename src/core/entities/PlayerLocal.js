@@ -120,6 +120,10 @@ export class PlayerLocal extends Entity {
     this.isBlockDragging = false
     this.isHoldingBlock = false // holding at block pose, waiting for release
     this.currentBlockEmote = null // which block direction is being held
+    this.currentBlockTag = null // 'high', 'left', 'right', 'low'
+    
+    // Current attack tag for blocking system
+    this.currentAttackTag = null // 'high', 'left', 'right', 'low'
 
     this.pushForce = null
     this.pushForceInit = false
@@ -592,27 +596,55 @@ export class PlayerLocal extends Entity {
       if (!blockerId) return
       if (blockerId === this.data.id) return // Don't block our own sword
       
-      console.log('[Sword] Hit ACTIVE BLOCK from player:', blockerId, '- SWORD BLOCKED! Disabling sword for rest of swing')
-      this.setSwordColliderActive(false)
-      
-      // Play block sound and spawn spark particles at block position
+      // Get blocker entity to check their block tag
       const blocker = this.world.entities.get(blockerId)
-      if (blocker && blocker.base) {
-        const blockPos = new THREE.Vector3()
-        blockPos.copy(blocker.base.position)
-        blockPos.y += 1.8 * 0.6 // Match block collider height
-        this.spawnSparkParticles(blockPos)
-        
-        // Play block audio
-        this.playBlockAudio(blockPos)
+      if (!blocker) return
+      
+      // Check if the block direction matches the attack direction
+      const attackTag = this.currentAttackTag
+      const blockTag = blocker.currentBlockTag
+      
+      let blockedSuccessfully = false
+      
+      // If no tags, old block behavior (blocks everything)
+      if (!blockTag) {
+        blockedSuccessfully = true
+      } else if (blockTag && attackTag) {
+        // Tag-based blocking: check if tags match
+        // high blocks high, low blocks low
+        // left blocks RIGHT, right blocks LEFT
+        if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
+        else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
+        else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
+        else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
       }
       
-      // Notify server for logging
-      this.world.network.send('blockHit', {
-        blockerId: blockerId,
-        attackerId: this.data.id,
-      })
-      return
+      if (blockedSuccessfully) {
+        console.log('[Sword] Hit ACTIVE BLOCK from player:', blockerId, '- Attack:', attackTag, 'blocked by:', blockTag, '- SWORD BLOCKED!')
+        this.setSwordColliderActive(false)
+        
+        // Play block sound and spawn spark particles at block position
+        if (blocker.base) {
+          const blockPos = new THREE.Vector3()
+          blockPos.copy(blocker.base.position)
+          blockPos.y += 1.8 * 0.6 // Match block collider height
+          this.spawnSparkParticles(blockPos)
+          
+          // Play block audio
+          this.playBlockAudio(blockPos)
+        }
+        
+        // Notify server for logging
+        this.world.network.send('blockHit', {
+          blockerId: blockerId,
+          attackerId: this.data.id,
+        })
+        return
+      } else {
+        // Block doesn't match attack direction - attack goes through!
+        console.log('[Sword] Block from player:', blockerId, 'does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack continues')
+        // Continue to damage check below (treat as if no block)
+      }
     }
     
     // Don't hit ourselves
@@ -657,6 +689,12 @@ export class PlayerLocal extends Entity {
     if (this.isCommitted) {
       return
     }
+    
+    // Set attack tag based on emote
+    if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
+    else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
+    else if (emote === Emotes.ATTACK_RIGHT) this.currentAttackTag = 'right'
+    else if (emote === Emotes.ATTACK_LOW) this.currentAttackTag = 'low'
     
     // If we're in windup, this is a cancel + new attack
     if (this.isInWindup) {
@@ -726,6 +764,7 @@ export class PlayerLocal extends Entity {
       this.attackEndTimeout = setTimeout(() => {
         this.setSwordColliderActive(false)
         this.currentAttackEmote = null
+        this.currentAttackTag = null // Clear attack tag
         this.isInWindup = false
         this.isCommitted = false
       }, this.attackDuration * 1000)
@@ -817,6 +856,7 @@ export class PlayerLocal extends Entity {
     this.attackEndTimeout = setTimeout(() => {
       this.setSwordColliderActive(false)
       this.currentAttackEmote = null
+      this.currentAttackTag = null // Clear attack tag
       this.isInWindup = false
       this.isCommitted = false
       console.log('[Attack] Charged attack complete')
@@ -832,6 +872,13 @@ export class PlayerLocal extends Entity {
     
     console.log('[Block] Starting block:', emote, 'holdMode:', holdMode)
     this.isBlocking = true
+    
+    // Set block tag based on emote
+    if (emote === Emotes.BLOCK_HIGH) this.currentBlockTag = 'high'
+    else if (emote === Emotes.BLOCK_LEFT) this.currentBlockTag = 'left'
+    else if (emote === Emotes.BLOCK_RIGHT) this.currentBlockTag = 'right'
+    else if (emote === Emotes.BLOCK_LOW) this.currentBlockTag = 'low'
+    else this.currentBlockTag = null // Old block emote has no tag (blocks everything)
     
     // Activate block collider
     this.setBlockColliderActive(true)
@@ -873,6 +920,7 @@ export class PlayerLocal extends Entity {
       this.blockTimeout = setTimeout(() => {
         this.setBlockColliderActive(false)
         this.isBlocking = false
+        this.currentBlockTag = null // Clear block tag
         console.log('[Block] Block ended')
       }, this.blockDuration * 1000)
     }
@@ -937,6 +985,7 @@ export class PlayerLocal extends Entity {
     this.isHoldingBlock = false
     this.isBlocking = false
     this.currentBlockEmote = null
+    this.currentBlockTag = null // Clear block tag
     
     console.log('[Block] Block stopped, returning to idle')
   }
@@ -2358,6 +2407,7 @@ export class PlayerLocal extends Entity {
     this.isInWindup = false
     this.isCommitted = false
     this.currentAttackEmote = null
+    this.currentAttackTag = null // Clear attack tag
     this.hitPlayersThisSwing.clear()
     
     // Cancel any charged attack state and resume animation mixer BEFORE death animation starts
@@ -2375,6 +2425,7 @@ export class PlayerLocal extends Entity {
     if (this.blockFreezeTimeout) clearTimeout(this.blockFreezeTimeout)
     this.setBlockColliderActive(false)
     this.isBlocking = false
+    this.currentBlockTag = null // Clear block tag
     
     // Cancel any held block state and resume animation mixer BEFORE death animation starts
     if (this.isHoldingBlock) {
