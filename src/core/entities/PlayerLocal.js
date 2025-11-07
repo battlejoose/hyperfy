@@ -410,21 +410,49 @@ export class PlayerLocal extends Entity {
     // Don't block our own sword
     if (attackerId === this.data.id) return
     
-    console.log('[Block] Blocked attack from player:', attackerId, '- disabling their sword')
+    // Get attacker entity to check their attack tag
+    const attacker = this.world.entities.get(attackerId)
+    if (!attacker) return
     
-    // Spawn spark particles and play block audio at block position (chest area)
-    const blockPos = new THREE.Vector3()
-    blockPos.copy(this.base.position)
-    blockPos.y += this.capsuleHeight * 0.6 // Match block collider height
-    this.spawnSparkParticles(blockPos)
-    this.playBlockAudio(blockPos)
+    // Check if the block direction matches the attack direction
+    const attackTag = attacker.currentAttackTag
+    const blockTag = this.currentBlockTag
     
-    // Notify the server that we blocked this attack
-    // The server will tell the attacker to disable their sword collider
-    this.world.network.send('blockHit', {
-      blockerId: this.data.id,
-      attackerId: attackerId,
-    })
+    let blockedSuccessfully = false
+    
+    // If no block tag, old block behavior (blocks everything)
+    if (!blockTag) {
+      blockedSuccessfully = true
+    } else if (blockTag && attackTag) {
+      // Tag-based blocking: check if tags match
+      // high blocks high, low blocks low
+      // left blocks RIGHT, right blocks LEFT
+      if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
+      else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
+      else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
+      else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
+    }
+    
+    if (blockedSuccessfully) {
+      console.log('[Block] Successfully blocked attack from player:', attackerId, '- Attack:', attackTag, 'blocked by:', blockTag)
+      
+      // Spawn spark particles and play block audio at block position (chest area)
+      const blockPos = new THREE.Vector3()
+      blockPos.copy(this.base.position)
+      blockPos.y += this.capsuleHeight * 0.6 // Match block collider height
+      this.spawnSparkParticles(blockPos)
+      this.playBlockAudio(blockPos)
+      
+      // Notify the server that we blocked this attack
+      // The server will tell the attacker to disable their sword collider
+      this.world.network.send('blockHit', {
+        blockerId: this.data.id,
+        attackerId: attackerId,
+      })
+    } else {
+      console.log('[Block] Block does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack goes through (no sparks)')
+      // Don't spawn sparks or notify server - attacker will spawn blood particles
+    }
   }
 
   spawnBloodParticles(position) {
