@@ -271,7 +271,9 @@ export class PlayerLocal extends Entity {
         this.applySword()
       })
       .catch(err => {
-        console.error(err)
+        console.error('[Avatar Load Error]', err)
+        console.error('[Avatar Load Error] Avatar URL:', avatarUrl)
+        console.error('[Avatar Load Error] Stack:', err.stack)
       })
   }
 

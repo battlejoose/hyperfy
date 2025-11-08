@@ -212,7 +212,11 @@ export class ClientNetwork extends System {
   }
 
   onPlayerSessionAvatar = data => {
-    this.world.entities.player?.setSessionAvatar(data.avatar)
+    // Update the avatar for the specified player (local or remote)
+    const player = this.world.entities.get(data.networkId)
+    if (player) {
+      player.modify({ sessionAvatar: data.avatar })
+    }
   }
 
   onLiveKitLevel = data => {

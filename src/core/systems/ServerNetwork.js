@@ -629,7 +629,8 @@ export class ServerNetwork extends System {
   }
 
   onPlayerSessionAvatar = (socket, data) => {
-    this.sendTo(data.networkId, 'playerSessionAvatar', data.avatar)
+    // Broadcast to all clients so everyone sees the avatar change
+    this.send('playerSessionAvatar', { networkId: data.networkId, avatar: data.avatar })
   }
 
   onAi = (socket, action) => {

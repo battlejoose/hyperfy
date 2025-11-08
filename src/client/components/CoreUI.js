@@ -94,6 +94,7 @@ export function CoreUI({ world }) {
       {disconnected && <Disconnected />}
       {!ui.reticleSuppressors && <Reticle world={world} />}
       {<Toast world={world} />}
+      {ready && <AvatarSwitcher world={world} player={player} />}
       {ready && <ActionsBlock world={world} />}
       {ready && <Sidebar world={world} ui={ui} />}
       {ready && <Chat world={world} />}
@@ -1379,6 +1380,94 @@ function Confirm({ options }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function AvatarSwitcher({ world, player }) {
+  const switchAvatar = (avatarUrl, e) => {
+    // Stop event propagation and prevent default behavior
+    e.stopPropagation()
+    e.preventDefault()
+    
+    console.log('[Avatar Switcher] Clicked! Player:', player, 'Avatar URL:', avatarUrl)
+    
+    if (!player) {
+      console.log('[Avatar Switcher] No player found!')
+      return
+    }
+    
+    console.log('[Avatar Switcher] Player data:', player.data)
+    console.log('[Avatar Switcher] Sending network message with networkId:', player.data.owner || world.network.id, 'avatar:', avatarUrl)
+    
+    // Use world.network.id if owner is not set
+    const networkId = player.data.owner || world.network.id
+    world.network.send('playerSessionAvatar', { networkId, avatar: avatarUrl })
+  }
+
+  return (
+    <div
+      css={css`
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        z-index: 1000;
+        pointer-events: auto;
+      `}
+    >
+      <button
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          e.preventDefault()
+        }}
+        onClick={(e) => switchAvatar('asset://avatar.vrm', e)}
+        css={css`
+          padding: 10px 20px;
+          background: rgba(15, 16, 24, 0.9);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          color: white;
+          font-size: 1rem;
+          font-weight: 500;
+          cursor: pointer;
+          pointer-events: auto;
+          transition: all 0.2s;
+          &:hover {
+            background: rgba(25, 26, 34, 1);
+            border-color: rgba(255, 255, 255, 0.3);
+          }
+        `}
+      >
+        Crusader
+      </button>
+      <button
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          e.preventDefault()
+        }}
+        onClick={(e) => switchAvatar('asset://saladin.vrm', e)}
+        css={css`
+          padding: 10px 20px;
+          background: rgba(15, 16, 24, 0.9);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          color: white;
+          font-size: 1rem;
+          font-weight: 500;
+          cursor: pointer;
+          pointer-events: auto;
+          transition: all 0.2s;
+          &:hover {
+            background: rgba(25, 26, 34, 1);
+            border-color: rgba(255, 255, 255, 0.3);
+          }
+        `}
+      >
+        Saladin
+      </button>
     </div>
   )
 }
