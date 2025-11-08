@@ -273,13 +273,48 @@ export class PlayerRemote extends Entity {
     if (otherHandle.tag === 'block') {
       console.log('[Sword Remote] Hit BLOCK from player:', playerId)
       
-      // Spawn spark particles and play block audio at block position (chest area)
-      const blockPos = new THREE.Vector3()
-      blockPos.copy(this.base.position)
-      blockPos.y += 1.8 * 0.6 // Match block collider height
-      this.spawnSparkParticles(blockPos)
-      this.playBlockAudio(blockPos)
-      return
+      // Get blocker entity to check their block tag
+      const blocker = this.world.entities.get(playerId)
+      if (!blocker) return
+      
+      // Check if the block direction matches the attack direction
+      const attackTag = this.currentAttackTag
+      const blockTag = blocker.currentBlockTag
+      
+      let blockedSuccessfully = false
+      
+      // If no tags, old block behavior (blocks everything)
+      if (!blockTag) {
+        blockedSuccessfully = true
+      } else if (blockTag && attackTag) {
+        // Tag-based blocking: check if tags match
+        // high blocks high, low blocks low
+        // left blocks RIGHT, right blocks LEFT
+        if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
+        else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
+        else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
+        else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
+      }
+      
+      if (blockedSuccessfully) {
+        console.log('[Sword Remote] Block SUCCESSFUL - Attack:', attackTag, 'blocked by:', blockTag, '- spawning sparks')
+        // Spawn spark particles and play block audio at block position (chest area)
+        const blockPos = new THREE.Vector3()
+        blockPos.copy(this.base.position)
+        blockPos.y += 1.8 * 0.6 // Match block collider height
+        this.spawnSparkParticles(blockPos)
+        this.playBlockAudio(blockPos)
+        return
+      } else {
+        console.log('[Sword Remote] Block FAILED - Attack:', attackTag, 'vs Block:', blockTag, '- spawning blood, attack continues')
+        // Block doesn't match - spawn blood and continue to damage
+        const blockPos = new THREE.Vector3()
+        blockPos.copy(this.base.position)
+        blockPos.y += 1.8 * 0.6
+        this.spawnBloodParticles(blockPos)
+        this.playHitAudio(blockPos)
+        return
+      }
     }
     
     // Spawn blood particles and play hit audio at hit location (use sword mesh position)

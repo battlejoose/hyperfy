@@ -450,8 +450,16 @@ export class PlayerLocal extends Entity {
         attackerId: attackerId,
       })
     } else {
-      console.log('[Block] Block does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack goes through (no sparks)')
-      // Don't spawn sparks or notify server - attacker will spawn blood particles
+      console.log('[Block] Block does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack goes through, taking damage!')
+      
+      // Spawn blood particles at hit location (block position, since sword hit our block)
+      const hitPos = new THREE.Vector3()
+      hitPos.copy(this.base.position)
+      hitPos.y += this.capsuleHeight * 0.6 // Match block collider height
+      this.spawnBloodParticles(hitPos)
+      this.playHitAudio(hitPos)
+      
+      // Don't notify server about block - the attacker will send damage normally
     }
   }
 
