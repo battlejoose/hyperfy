@@ -136,26 +136,85 @@ if (world.assetsDir) {
     },
   })
 } else if (world.assetsUrl && process.env.ASSETS === 's3') {
+  // Log assetsUrl once on startup
+  console.log(`[assets] S3 proxy enabled, assetsUrl: ${world.assetsUrl}`)
+  
   // S3 assets - proxy requests to S3
   fastify.get('/assets/*', async (request, reply) => {
-    const filename = request.url.replace('/assets/', '')
-    // Assets are stored with 'assets/' prefix in S3, and assetsUrl already includes the base
-    // So we need to construct: assetsUrl/assets/filename
-    const s3Url = `${world.assetsUrl}/assets/${filename}`
+    const filename = request.url.replace('/assets/', '').split('?')[0] // Remove query params
+    
+    // Prevent infinite loops - check if filename already has assets prefix
+    if (filename.startsWith('assets/')) {
+      console.error(`[assets] Invalid filename (already has assets prefix): ${filename}`)
+      return reply.code(400).send({ error: 'Invalid asset path' })
+    }
+    
+    // Assets are stored with 'assets/' prefix in S3
+    // assetsUrl is the base URL (e.g., https://bucket.s3.amazonaws.com)
+    // So construct: assetsUrl/assets/filename
+    const baseUrl = world.assetsUrl.replace(/\/$/, '') // Remove trailing slash if present
+    
+    // Ensure we don't double-add the prefix
+    let s3Url
+    if (baseUrl.endsWith('/assets')) {
+      s3Url = `${baseUrl}/${filename}`
+    } else {
+      s3Url = `${baseUrl}/assets/${filename}`
+    }
+    
+    // Prevent infinite loops - check if URL already has multiple assets prefixes
+    if (s3Url.match(/\/assets\/assets\//)) {
+      console.error(`[assets] Invalid URL construction detected`)
+      console.error(`[assets] baseUrl: ${baseUrl}`)
+      console.error(`[assets] filename: ${filename}`)
+      console.error(`[assets] s3Url: ${s3Url}`)
+      return reply.code(500).send({ error: 'Invalid S3 URL configuration' })
+    }
+    
     try {
-      const response = await fetch(s3Url)
+      const response = await fetch(s3Url, { redirect: 'manual' })
+      // Handle redirects manually to avoid loops
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location')
+        if (!location) {
+          return reply.code(404).send({ error: 'Asset not found', filename })
+        }
+        // Check for redirect loops
+        if (location.includes('/assets/assets/')) {
+          console.error(`[assets] Redirect loop detected for ${filename}`)
+          console.error(`[assets] Original URL: ${s3Url}`)
+          console.error(`[assets] Redirect URL: ${location}`)
+          return reply.code(500).send({ error: 'Invalid S3 redirect configuration' })
+        }
+        const redirectResponse = await fetch(location)
+        if (!redirectResponse.ok) {
+          return reply.code(404).send({ error: 'Asset not found', filename })
+        }
+        const buffer = await redirectResponse.arrayBuffer()
+        const contentType = redirectResponse.headers.get('content-type') || 'application/octet-stream'
+        reply.type(contentType)
+        reply.header('Cache-Control', 'public, max-age=31536000, immutable')
+        return reply.send(Buffer.from(buffer))
+      }
       if (!response.ok) {
-        console.warn(`[assets] S3 returned ${response.status} for ${filename}`)
+        // Only log first few 404s to avoid spam
+        if (Math.random() < 0.01) { // Log 1% of 404s
+          console.warn(`[assets] S3 returned ${response.status} for ${filename}`)
+          console.warn(`[assets] S3 URL: ${s3Url}`)
+        }
         return reply.code(404).send({ error: 'Asset not found', filename })
       }
       const buffer = await response.arrayBuffer()
       const contentType = response.headers.get('content-type') || 'application/octet-stream'
       reply.type(contentType)
-      // Set cache headers for S3 assets
       reply.header('Cache-Control', 'public, max-age=31536000, immutable')
       reply.send(Buffer.from(buffer))
     } catch (error) {
-      console.error(`[assets] Error proxying ${filename} from S3:`, error.message)
+      // Only log errors occasionally to avoid spam
+      if (Math.random() < 0.1) { // Log 10% of errors
+        console.error(`[assets] Error proxying ${filename} from S3:`, error.message)
+        console.error(`[assets] Attempted URL: ${s3Url}`)
+      }
       return reply.code(502).send({ error: 'Failed to fetch asset from S3', filename })
     }
   })
