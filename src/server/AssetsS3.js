@@ -7,7 +7,11 @@ import {
 } from '@aws-sdk/client-s3'
 import fs from 'fs-extra'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { hashFile } from '../core/utils-server'
+
+// Support __dirname in ESM (for build directory detection)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const contentTypes = {
   // Images
@@ -148,7 +152,8 @@ export class AssetsS3 {
   }
 
   async init({ rootDir, worldDir }) {
-    console.log('[assets] initializing')
+    console.log('[assets] initializing S3')
+    console.log(`[assets] bucket: ${this.bucketName}, prefix: ${this.prefix}, url: ${this.url}`)
     // Verify bucket access
     try {
       await this.client.send(
@@ -157,14 +162,26 @@ export class AssetsS3 {
           MaxKeys: 1,
         })
       )
+      console.log('[assets] S3 bucket access verified')
     } catch (error) {
       throw new Error(`Failed to access S3 bucket: ${error.message}`)
     }
 
     // Upload built-in assets from local directory to S3
-    const builtInAssetsDir = path.join(rootDir, 'src/world/assets')
+    // Check both source location and build location (for Heroku deployments)
+    let builtInAssetsDir = path.join(rootDir, 'src/world/assets')
+    if (!(await fs.exists(builtInAssetsDir))) {
+      // Try build directory (for Heroku/production builds)
+      builtInAssetsDir = path.join(__dirname, '../src/world/assets')
+    }
+    console.log(`[assets] checking for built-in assets at: ${builtInAssetsDir}`)
     if (await fs.exists(builtInAssetsDir)) {
+      console.log('[assets] uploading built-in assets to S3...')
       await this.uploadDirectory(builtInAssetsDir, builtInAssetsDir)
+      console.log('[assets] built-in assets uploaded to S3')
+    } else {
+      console.warn(`[assets] built-in assets directory not found: ${builtInAssetsDir}`)
+      console.warn('[assets] This is normal if assets are already in S3 or if running in production build')
     }
   }
 
@@ -213,10 +230,10 @@ export class AssetsS3 {
           Bucket: this.bucketName,
           Key: key,
           Body: buffer,
-          // Optional: Set content type based on file extension
+          // Set content type based on file extension
           ContentType: this.getContentType(filename),
-          // Optional: Make objects publicly readable if needed
-          // ACL: 'public-read',
+          // Make objects publicly readable (required for browser access)
+          ACL: 'public-read',
         })
       )
     } catch (error) {

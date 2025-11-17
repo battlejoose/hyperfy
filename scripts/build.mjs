@@ -121,6 +121,20 @@ let spawn
             const physxWasmSrc = path.join(rootDir, 'src/core/physx-js-webidl.wasm')
             const physxWasmDest = path.join(rootDir, 'build/physx-js-webidl.wasm')
             await fs.copy(physxWasmSrc, physxWasmDest)
+            // copy over world assets directory (needed for S3 upload on Heroku)
+            const worldAssetsSrc = path.join(rootDir, 'src/world/assets')
+            const worldAssetsDest = path.join(rootDir, 'build/src/world/assets')
+            if (await fs.exists(worldAssetsSrc)) {
+              await fs.ensureDir(path.join(rootDir, 'build/src/world'))
+              await fs.copy(worldAssetsSrc, worldAssetsDest)
+            }
+            // copy over world collections directory (needed for collections init)
+            const worldCollectionsSrc = path.join(rootDir, 'src/world/collections')
+            const worldCollectionsDest = path.join(rootDir, 'build/src/world/collections')
+            if (await fs.exists(worldCollectionsSrc)) {
+              await fs.ensureDir(path.join(rootDir, 'build/src/world'))
+              await fs.copy(worldCollectionsSrc, worldCollectionsDest)
+            }
             // start the server or stop here
             if (dev) {
               // (re)start server
