@@ -38,15 +38,31 @@ export class AssetsS3 {
   constructor() {
     this.url = process.env.ASSETS_BASE_URL
 
-    // Parse S3 URI: s3://access_key:secret_key@endpoint/bucket/prefix
-    // or for AWS: s3://access_key:secret_key@bucket.s3.region.amazonaws.com/prefix
-    // or simple AWS: s3://access_key:secret_key@bucket/prefix (defaults to us-east-1)
-    const uri = process.env.ASSETS_S3_URI
-    if (!uri) {
-      throw new Error('ASSETS_S3_URI environment variable is required')
+    // Support Heroku addons (Bucketeer, etc.) or direct S3 URI
+    let config
+    if (process.env.BUCKETEER_BUCKET_NAME) {
+      // Heroku Bucketeer addon
+      config = {
+        accessKeyId: process.env.BUCKETEER_AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.BUCKETEER_AWS_SECRET_ACCESS_KEY,
+        bucket: process.env.BUCKETEER_BUCKET_NAME,
+        region: process.env.BUCKETEER_AWS_REGION || 'us-east-1',
+        prefix: 'assets/',
+        endpoint: undefined,
+        forcePathStyle: false,
+      }
+      // Set ASSETS_BASE_URL if not already set
+      if (!this.url && process.env.BUCKETEER_BUCKET_NAME) {
+        const region = config.region || 'us-east-1'
+        this.url = `https://${config.bucket}.s3.${region}.amazonaws.com`
+      }
+    } else if (process.env.ASSETS_S3_URI) {
+      // Direct S3 URI format
+      config = this.parseURI(process.env.ASSETS_S3_URI)
+    } else {
+      throw new Error('Either ASSETS_S3_URI or Heroku S3 addon (e.g., Bucketeer) environment variables are required')
     }
 
-    const config = this.parseURI(uri)
     this.bucketName = config.bucket
     this.prefix = config.prefix || 'assets/'
 

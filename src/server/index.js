@@ -53,11 +53,18 @@ if (!process.env.PUBLIC_API_URL) {
 if (!process.env.ASSETS) {
   throw new Error(`[envs] ASSETS must be set to 'local' or 's3'`)
 }
-if (!process.env.ASSETS_BASE_URL) {
-  throw new Error(`[envs] ASSETS_BASE_URL must be set`)
+// ASSETS_BASE_URL is required unless using Bucketeer (which can auto-generate it)
+if (!process.env.ASSETS_BASE_URL && !process.env.BUCKETEER_BUCKET_NAME) {
+  throw new Error(`[envs] ASSETS_BASE_URL must be set (or use Bucketeer addon which auto-generates it)`)
 }
-if (process.env.ASSETS === 's3' && !process.env.ASSETS_S3_URI) {
-  throw new Error(`[envs] ASSETS_S3_URI must be set when using ASSETS=s3`)
+if (process.env.ASSETS === 's3' && !process.env.ASSETS_S3_URI && !process.env.BUCKETEER_BUCKET_NAME) {
+  throw new Error(`[envs] Either ASSETS_S3_URI or Heroku S3 addon (e.g., Bucketeer) must be configured when using ASSETS=s3`)
+}
+// Auto-set ASSETS_BASE_URL from Bucketeer if not set
+if (process.env.ASSETS === 's3' && process.env.BUCKETEER_BUCKET_NAME && !process.env.ASSETS_BASE_URL) {
+  const region = process.env.BUCKETEER_AWS_REGION || 'us-east-1'
+  process.env.ASSETS_BASE_URL = `https://${process.env.BUCKETEER_BUCKET_NAME}.s3.${region}.amazonaws.com`
+  console.log(`[envs] Auto-set ASSETS_BASE_URL from Bucketeer: ${process.env.ASSETS_BASE_URL}`)
 }
 
 const fastify = Fastify({ logger: { level: 'error' } })
@@ -126,6 +133,19 @@ if (world.assetsDir) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable') // 1 year
       res.setHeader('Expires', new Date(Date.now() + 31536000000).toUTCString()) // older browsers
     },
+  })
+  // Handle 404 for missing assets
+  fastify.setNotFoundHandler(async (request, reply) => {
+    if (request.url.startsWith('/assets/')) {
+      const filename = request.url.replace('/assets/', '')
+      console.warn(`[assets] 404 - missing asset: ${filename}`)
+      if (process.env.DYNO) {
+        console.warn(`[assets] This is expected on Heroku with local storage - assets are lost on restart`)
+        console.warn(`[assets] Consider using S3 for persistent storage (set ASSETS=s3)`)
+      }
+      return reply.code(404).send({ error: 'Asset not found', filename })
+    }
+    return reply.code(404).send({ error: 'Not found' })
   })
 }
 fastify.register(multipart, {

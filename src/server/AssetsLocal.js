@@ -14,7 +14,18 @@ export class AssetsLocal {
     // ensure assets directory exists
     await fs.ensureDir(this.dir)
     // copy over built-in assets
-    await fs.copy(path.join(rootDir, 'src/world/assets'), this.dir)
+    const builtInAssetsPath = path.join(rootDir, 'src/world/assets')
+    if (await fs.exists(builtInAssetsPath)) {
+      await fs.copy(builtInAssetsPath, this.dir)
+      console.log('[assets] copied built-in assets')
+    } else {
+      console.warn('[assets] built-in assets directory not found:', builtInAssetsPath)
+    }
+    // Warn if using local storage on Heroku (ephemeral filesystem)
+    if (process.env.DYNO) {
+      console.warn('[assets] WARNING: Using local storage on Heroku. Uploaded assets will be lost on restart.')
+      console.warn('[assets] Consider using S3 for persistent storage (set ASSETS=s3)')
+    }
   }
 
   async upload(file) {
