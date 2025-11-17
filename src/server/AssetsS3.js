@@ -177,8 +177,15 @@ export class AssetsS3 {
     console.log(`[assets] checking for built-in assets at: ${builtInAssetsDir}`)
     if (await fs.exists(builtInAssetsDir)) {
       console.log('[assets] uploading built-in assets to S3...')
-      await this.uploadDirectory(builtInAssetsDir, builtInAssetsDir)
-      console.log('[assets] built-in assets uploaded to S3')
+      try {
+        await this.uploadDirectory(builtInAssetsDir, builtInAssetsDir)
+        console.log('[assets] built-in assets uploaded to S3')
+      } catch (error) {
+        console.error('[assets] Error uploading built-in assets to S3:', error.message)
+        console.error('[assets] Stack:', error.stack)
+        // Don't crash - assets might already be uploaded or we can continue without them
+        console.warn('[assets] Continuing despite upload errors - assets may already exist in S3')
+      }
     } else {
       console.warn(`[assets] built-in assets directory not found: ${builtInAssetsDir}`)
       console.warn('[assets] This is normal if assets are already in S3 or if running in production build')
@@ -198,11 +205,17 @@ export class AssetsS3 {
         await this.uploadDirectory(filePath, baseDir, newSubPath)
       } else {
         // Upload file with its original path structure
-        const buffer = await fs.readFile(filePath)
-        const relativePath = subPath ? path.join(subPath, file) : file
+        try {
+          const buffer = await fs.readFile(filePath)
+          const relativePath = subPath ? path.join(subPath, file) : file
 
-        // Always upload built-in assets (overwrite existing)
-        await this.uploadBuffer(buffer, relativePath)
+          // Always upload built-in assets (overwrite existing)
+          await this.uploadBuffer(buffer, relativePath)
+          console.log(`[assets] uploaded: ${relativePath}`)
+        } catch (error) {
+          console.error(`[assets] failed to upload ${file}:`, error.message)
+          throw error
+        }
       }
     }
   }
@@ -225,17 +238,33 @@ export class AssetsS3 {
     const key = this.getKey(filename)
 
     try {
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: key,
-          Body: buffer,
-          // Set content type based on file extension
-          ContentType: this.getContentType(filename),
-          // Make objects publicly readable (required for browser access)
-          ACL: 'public-read',
-        })
-      )
+      // Try with ACL first (for buckets with ACLs enabled)
+      const putCommand = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: this.getContentType(filename),
+        ACL: 'public-read',
+      })
+      
+      try {
+        await this.client.send(putCommand)
+      } catch (aclError) {
+        // If ACL fails, try without ACL (bucket policy should handle public access)
+        if (aclError.name === 'AccessControlListNotSupported' || aclError.message?.includes('ACL')) {
+          console.log(`[assets] ACL not supported for ${filename}, using bucket policy instead`)
+          await this.client.send(
+            new PutObjectCommand({
+              Bucket: this.bucketName,
+              Key: key,
+              Body: buffer,
+              ContentType: this.getContentType(filename),
+            })
+          )
+        } else {
+          throw aclError
+        }
+      }
     } catch (error) {
       throw new Error(`Failed to upload to S3: ${error.message}`)
     }
