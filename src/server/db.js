@@ -12,19 +12,46 @@ let db
 
 export async function getDB({ worldDir }) {
   if (!db) {
-    const isPostgres = process.env.DB_URI?.startsWith('postgres://') || process.env.DB_URI?.startsWith('postgresql://')
+    // Check for Heroku DATABASE_URL first, then DB_URI
+    const dbUri = process.env.DATABASE_URL || process.env.DB_URI
+    const isPostgres = dbUri?.startsWith('postgres://') || dbUri?.startsWith('postgresql://')
+    
     if (isPostgres) {
       const schema = process.env.DB_SCHEMA || 'public'
+      
+      // Parse connection string for SSL configuration
+      // Heroku Postgres requires SSL, so enable it if not explicitly disabled
+      let sslMode = null
+      try {
+        const url = new URL(dbUri)
+        sslMode = url.searchParams.get('sslmode')
+      } catch (err) {
+        // If URL parsing fails, continue with default SSL settings
+      }
+      
+      // Build connection config with SSL for Heroku Postgres
+      // Heroku Postgres connection strings typically don't include sslmode parameter
+      // so we default to requiring SSL with rejectUnauthorized: false
+      const connection = {
+        connectionString: dbUri,
+        ssl: sslMode === 'disable' ? false : {
+          rejectUnauthorized: false, // Required for Heroku Postgres
+        },
+      }
+      
       db = Knex({
         client: 'pg',
-        connection: process.env.DB_URI,
+        connection,
         pool: { min: 2, max: 10 },
         searchPath: [schema],
         useNullAsDefault: true,
       })
+      
       if (schema !== 'public') {
         await db.raw(`CREATE SCHEMA IF NOT EXISTS ??`, [schema])
       }
+      
+      console.log('[db] using Postgres database')
     } else {
       db = Knex({
         client: 'better-sqlite3',
@@ -33,6 +60,7 @@ export async function getDB({ worldDir }) {
         },
         useNullAsDefault: true,
       })
+      console.log('[db] using SQLite database')
     }
     await migrate(db)
   }
