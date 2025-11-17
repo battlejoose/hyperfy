@@ -124,6 +124,7 @@ fastify.register(statics, {
   },
 })
 if (world.assetsDir) {
+  // Local assets - serve from filesystem
   fastify.register(statics, {
     root: world.assetsDir,
     prefix: '/assets/',
@@ -134,20 +135,44 @@ if (world.assetsDir) {
       res.setHeader('Expires', new Date(Date.now() + 31536000000).toUTCString()) // older browsers
     },
   })
-  // Handle 404 for missing assets
-  fastify.setNotFoundHandler(async (request, reply) => {
-    if (request.url.startsWith('/assets/')) {
-      const filename = request.url.replace('/assets/', '')
-      console.warn(`[assets] 404 - missing asset: ${filename}`)
-      if (process.env.DYNO) {
-        console.warn(`[assets] This is expected on Heroku with local storage - assets are lost on restart`)
-        console.warn(`[assets] Consider using S3 for persistent storage (set ASSETS=s3)`)
+} else if (world.assetsUrl && process.env.ASSETS === 's3') {
+  // S3 assets - proxy requests to S3
+  fastify.get('/assets/*', async (request, reply) => {
+    const filename = request.url.replace('/assets/', '')
+    // Assets are stored with 'assets/' prefix in S3, and assetsUrl already includes the base
+    // So we need to construct: assetsUrl/assets/filename
+    const s3Url = `${world.assetsUrl}/assets/${filename}`
+    try {
+      const response = await fetch(s3Url)
+      if (!response.ok) {
+        console.warn(`[assets] S3 returned ${response.status} for ${filename}`)
+        return reply.code(404).send({ error: 'Asset not found', filename })
       }
-      return reply.code(404).send({ error: 'Asset not found', filename })
+      const buffer = await response.arrayBuffer()
+      const contentType = response.headers.get('content-type') || 'application/octet-stream'
+      reply.type(contentType)
+      // Set cache headers for S3 assets
+      reply.header('Cache-Control', 'public, max-age=31536000, immutable')
+      reply.send(Buffer.from(buffer))
+    } catch (error) {
+      console.error(`[assets] Error proxying ${filename} from S3:`, error.message)
+      return reply.code(502).send({ error: 'Failed to fetch asset from S3', filename })
     }
-    return reply.code(404).send({ error: 'Not found' })
   })
 }
+// Handle 404 for missing assets
+fastify.setNotFoundHandler(async (request, reply) => {
+  if (request.url.startsWith('/assets/')) {
+    const filename = request.url.replace('/assets/', '')
+    console.warn(`[assets] 404 - missing asset: ${filename}`)
+    if (process.env.DYNO) {
+      console.warn(`[assets] This is expected on Heroku with local storage - assets are lost on restart`)
+      console.warn(`[assets] Consider using S3 for persistent storage (set ASSETS=s3)`)
+    }
+    return reply.code(404).send({ error: 'Asset not found', filename })
+  }
+  return reply.code(404).send({ error: 'Not found' })
+})
 fastify.register(multipart, {
   limits: {
     fileSize: 200 * 1024 * 1024, // 200MB
