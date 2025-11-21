@@ -121,6 +121,12 @@ let spawn
             const physxWasmSrc = path.join(rootDir, 'src/core/physx-js-webidl.wasm')
             const physxWasmDest = path.join(rootDir, 'build/physx-js-webidl.wasm')
             await fs.copy(physxWasmSrc, physxWasmDest)
+            // copy over world assets (for S3 upload)
+            const worldAssetsSrc = path.join(rootDir, 'src/world/assets')
+            const worldAssetsDest = path.join(rootDir, 'build/src/world/assets')
+            if (await fs.exists(worldAssetsSrc)) {
+              await fs.copy(worldAssetsSrc, worldAssetsDest)
+            }
             // start the server or stop here
             if (dev) {
               // (re)start server
