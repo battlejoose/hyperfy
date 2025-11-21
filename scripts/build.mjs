@@ -127,6 +127,18 @@ let spawn
             if (await fs.exists(worldAssetsSrc)) {
               await fs.copy(worldAssetsSrc, worldAssetsDest)
             }
+            // copy over world collections
+            const worldCollectionsSrc = path.join(rootDir, 'src/world/collections')
+            const worldCollectionsDest = path.join(rootDir, 'build/src/world/collections')
+            if (await fs.exists(worldCollectionsSrc)) {
+              await fs.copy(worldCollectionsSrc, worldCollectionsDest)
+            }
+            // copy over world scene.hyp
+            const worldSceneSrc = path.join(rootDir, 'src/world/scene.hyp')
+            const worldSceneDest = path.join(rootDir, 'build/src/world/scene.hyp')
+            if (await fs.exists(worldSceneSrc)) {
+              await fs.copy(worldSceneSrc, worldSceneDest)
+            }
             // start the server or stop here
             if (dev) {
               // (re)start server
