@@ -349,6 +349,7 @@ const migrations = [
       // create blueprint and entity
       app.blueprint.id = '$scene' // singleton
       app.blueprint.preload = true
+      app.blueprint.frozen = true // Prevent players from editing the scene
       const blueprint = {
         id: app.blueprint.id,
         data: JSON.stringify(app.blueprint),
@@ -368,7 +369,7 @@ const migrations = [
           scale: [1, 1, 1],
           mover: null,
           uploader: null,
-          pinned: false,
+          pinned: true, // Prevent players from moving/deleting the scene
           state: {},
         }),
         createdAt: now,
