@@ -133,6 +133,11 @@ export class AssetsS3 {
 
   async init({ rootDir, worldDir }) {
     console.log('[assets] initializing')
+    console.log('[assets] bucket:', this.bucketName)
+    console.log('[assets] prefix:', this.prefix)
+    console.log('[assets] base url:', this.url)
+    console.log('[assets] rootDir:', rootDir)
+    
     // Verify bucket access
     try {
       await this.client.send(
@@ -141,14 +146,20 @@ export class AssetsS3 {
           MaxKeys: 1,
         })
       )
+      console.log('[assets] bucket access verified')
     } catch (error) {
       throw new Error(`Failed to access S3 bucket: ${error.message}`)
     }
 
     // Upload built-in assets from local directory to S3
     const builtInAssetsDir = path.join(rootDir, 'src/world/assets')
+    console.log('[assets] checking for built-in assets at:', builtInAssetsDir)
     if (await fs.exists(builtInAssetsDir)) {
+      console.log('[assets] uploading built-in assets...')
       await this.uploadDirectory(builtInAssetsDir, builtInAssetsDir)
+      console.log('[assets] built-in assets uploaded')
+    } else {
+      console.warn('[assets] WARNING: built-in assets directory not found!')
     }
   }
 
@@ -169,6 +180,7 @@ export class AssetsS3 {
         const relativePath = subPath ? path.join(subPath, file) : file
 
         // Always upload built-in assets (overwrite existing)
+        console.log('[assets] uploading:', relativePath)
         await this.uploadBuffer(buffer, relativePath)
       }
     }
