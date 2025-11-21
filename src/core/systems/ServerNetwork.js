@@ -442,6 +442,11 @@ export class ServerNetwork extends System {
       return console.error('player attempted to modify blueprint without builder permission')
     }
     const blueprint = this.world.blueprints.get(data.id)
+    // prevent modification of frozen or locked blueprints
+    if (blueprint.frozen || blueprint.locked) {
+      console.error('player attempted to modify frozen/locked blueprint')
+      return socket.send('blueprintModified', blueprint) // send current state back
+    }
     // if new version is greater than current version, allow it
     if (data.version > blueprint.version) {
       this.world.blueprints.modify(data)
@@ -466,6 +471,11 @@ export class ServerNetwork extends System {
   onEntityModified = async (socket, data) => {
     const entity = this.world.entities.get(data.id)
     if (!entity) return console.error('onEntityModified: no entity found', data)
+    // prevent transform modifications on pinned entities
+    if (entity.data.pinned && (data.position || data.quaternion || data.scale || data.mover)) {
+      console.error('player attempted to move/transform pinned entity')
+      return // ignore the modification
+    }
     entity.modify(data)
     this.send('entityModified', data, socket.id)
     if (entity.isApp) {
@@ -499,6 +509,11 @@ export class ServerNetwork extends System {
   onEntityRemoved = (socket, id) => {
     if (!socket.player.isBuilder()) return console.error('player attempted to remove entity without builder permission')
     const entity = this.world.entities.get(id)
+    // prevent deletion of pinned entities
+    if (entity.data.pinned) {
+      console.error('player attempted to remove pinned entity')
+      return // ignore the deletion
+    }
     this.world.entities.remove(id)
     this.send('entityRemoved', id, socket.id)
     if (entity.isApp) this.dirtyApps.add(id)
