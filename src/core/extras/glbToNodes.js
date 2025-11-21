@@ -91,6 +91,16 @@ export function glbToNodes(glb, world) {
       }
       // Mesh
       else if (object3d.type === 'Mesh') {
+        // Change ground color to moon surface
+        const meshName = object3d.name.toLowerCase()
+        const isGround = meshName.includes('ground') || meshName.includes('terrain') || meshName.includes('floor')
+
+        if (isGround) {
+          console.log('[GLB] Changing ground to moon surface')
+          // Create moon surface material with procedural noise
+          setupMoonSurface(object3d)
+        }
+
         // experimental splatmaps
         if (props.exp_splatmap && !world.network.isServer) {
           setupSplatmap(object3d)
@@ -105,7 +115,8 @@ export function glbToNodes(glb, world) {
           type: 'geometry',
           geometry: object3d.geometry,
           material: object3d.material,
-          linked: !hasMorphTargets && !object3d.material.transparent,
+          // Don't link ground materials - they need individual colors
+          linked: !isGround && !hasMorphTargets && !object3d.material.transparent,
           castShadow: props.castShadow,
           receiveShadow: props.receiveShadow,
           visible: props.visible, // DEPRECATED: use Node.active
@@ -296,6 +307,45 @@ const snoise = `
                                 dot(p2,x2), dot(p3,x3) ) );
   }
 `
+
+function setupMoonSurface(mesh) {
+  const material = new CustomShaderMaterial({
+    baseMaterial: THREE.MeshStandardMaterial,
+    roughness: 0.95,
+    metalness: 0,
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+      }
+    `,
+    fragmentShader: `
+      ${snoise}
+
+      varying vec3 vPos;
+
+      void main() {
+        // Base moon surface color - medium gray with yellow tint
+        vec3 moonColor = vec3(0.58, 0.57, 0.52); // Darker gray with warm yellow tint
+
+        // Add minimal noise patches for subtle texture
+        float noise1 = snoise(vPos * 0.5) * 0.5 + 0.5;  // Large patches
+        float noise2 = snoise(vPos * 1.5) * 0.5 + 0.5;  // Medium patches
+        float noise3 = snoise(vPos * 4.0) * 0.5 + 0.5;  // Small detail
+
+        // Combine noise layers with minimal influence
+        float lunarNoise = noise1 * 0.6 + noise2 * 0.3 + noise3 * 0.1;
+
+        // Apply very subtle noise variation
+        vec3 finalColor = moonColor * (0.95 + lunarNoise * 0.1);
+
+        csm_DiffuseColor = vec4(finalColor, 1.0);
+      }
+    `,
+  })
+
+  mesh.material = material
+}
 
 function setupSplatmap(mesh) {
   /**
