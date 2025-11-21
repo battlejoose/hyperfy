@@ -26,11 +26,11 @@ export function Client({ wsUrl, onSetup }) {
       const ui = uiRef.current
       const baseEnvironment = {
         model: '/base-environment.glb',
-        bg: null, // '/day2-2k.jpg',
-        hdr: '/Clear_08_4pm_LDR.hdr',
+        bg: '/spacey.png', // Visible starfield sky
+        hdr: '/spacey.hdr', // Space environment lighting
         rotationY: 0,
         sunDirection: new THREE.Vector3(-1, -2, -2).normalize(),
-        sunIntensity: 1,
+        sunIntensity: 0.3, // Reduced for space atmosphere
         sunColor: 0xffffff,
         fogNear: null,
         fogFar: null,
