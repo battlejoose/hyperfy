@@ -17,7 +17,10 @@ export async function getDB({ worldDir }) {
       const schema = process.env.DB_SCHEMA || 'public'
       db = Knex({
         client: 'pg',
-        connection: process.env.DB_URI,
+        connection: {
+          connectionString: process.env.DB_URI,
+          ssl: { rejectUnauthorized: false }
+        },
         pool: { min: 2, max: 10 },
         searchPath: [schema],
         useNullAsDefault: true,
