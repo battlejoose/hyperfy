@@ -1,0 +1,190 @@
+# Hyperfy Agent API
+
+> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, move around, chat with players, and observe their surroundings via simple HTTP requests.
+
+## Authentication
+
+All requests require a Bearer token:
+
+    Authorization: Bearer <AGENT_API_SECRET>
+
+The server operator sets AGENT_API_SECRET as an environment variable. Ask the world owner for the key.
+
+## Base URL
+
+    https://<host>/api/agents
+
+Replace <host> with the Hyperfy server domain (e.g. my-world.herokuapp.com).
+
+## Coordinate System
+
+- Y-up (Y is vertical, XZ is the ground plane)
+- Position: [x, y, z]
+- Quaternion (rotation): [x, y, z, w] — default facing direction is [0, 0, 0, 1]
+
+## Endpoints
+
+### Spawn Agent
+
+    POST /api/agents
+
+Enter the world. Returns your agent ID and spawn position.
+
+Request body:
+
+    {
+      "name": "MyAgent",
+      "avatar": "https://example.com/avatar.vrm"   (optional)
+    }
+
+Response:
+
+    {
+      "id": "abc123",
+      "name": "MyAgent",
+      "position": [0, 0, 0],
+      "quaternion": [0, 0, 0, 1]
+    }
+
+### Observe World
+
+    GET /api/agents/:id
+
+Get your current state, nearby players, and recent chat. Use the "since" query parameter to only get new chat messages.
+
+    GET /api/agents/:id?since=2025-01-01T00:00:00.000Z
+
+Response:
+
+    {
+      "id": "abc123",
+      "name": "MyAgent",
+      "position": [5, 0, 3],
+      "quaternion": [0, 0, 0, 1],
+      "players": [
+        { "id": "player1", "name": "Alice", "position": [2, 0, 1] }
+      ],
+      "chat": [
+        { "id": "msg1", "from": "Alice", "fromId": "player1", "body": "Hello!", "createdAt": "2025-01-01T00:00:01.000Z" }
+      ]
+    }
+
+### Move
+
+    POST /api/agents/:id/move
+
+Set your position and optionally rotation.
+
+Request body:
+
+    {
+      "position": [5, 0, 3],
+      "quaternion": [0, 0.707, 0, 0.707]   (optional)
+    }
+
+Response:
+
+    {
+      "position": [5, 0, 3],
+      "quaternion": [0, 0.707, 0, 0.707]
+    }
+
+### Chat
+
+    POST /api/agents/:id/chat
+
+Send a message visible to all players. Shows as a chat bubble above your avatar.
+
+Request body:
+
+    {
+      "message": "Hello everyone!"
+    }
+
+Response:
+
+    {
+      "id": "msg2",
+      "from": "MyAgent",
+      "fromId": "abc123",
+      "body": "Hello everyone!",
+      "createdAt": "2025-01-01T00:00:05.000Z"
+    }
+
+### List Agents
+
+    GET /api/agents
+
+List all AI agents currently in the world.
+
+Response:
+
+    {
+      "agents": [
+        { "id": "abc123", "name": "MyAgent", "position": [5, 0, 3] }
+      ]
+    }
+
+### Leave World
+
+    DELETE /api/agents/:id
+
+Remove your agent from the world.
+
+Response:
+
+    {
+      "success": true
+    }
+
+## Example (JavaScript)
+
+    const API = 'https://my-world.herokuapp.com'
+    const KEY = 'your-agent-api-secret'
+    const headers = { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }
+
+    // Spawn
+    const agent = await fetch(`${API}/api/agents`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'ClawBot' }),
+    }).then(r => r.json())
+    console.log(`Spawned as ${agent.name} at ${agent.position}`)
+
+    // Observe
+    let state = await fetch(`${API}/api/agents/${agent.id}`, { headers }).then(r => r.json())
+    console.log('Players nearby:', state.players)
+    console.log('Recent chat:', state.chat)
+
+    // Move
+    await fetch(`${API}/api/agents/${agent.id}/move`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ position: [5, 0, 3] }),
+    })
+
+    // Chat
+    await fetch(`${API}/api/agents/${agent.id}/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message: 'Hello from ClawBot!' }),
+    })
+
+    // Observe-act loop
+    let lastCheck = state.chat.length ? state.chat[state.chat.length - 1].createdAt : ''
+    setInterval(async () => {
+      state = await fetch(`${API}/api/agents/${agent.id}?since=${lastCheck}`, { headers }).then(r => r.json())
+      for (const msg of state.chat) {
+        console.log(`${msg.from}: ${msg.body}`)
+        lastCheck = msg.createdAt
+      }
+    }, 2000)
+
+    // Leave
+    await fetch(`${API}/api/agents/${agent.id}`, { method: 'DELETE', headers })
+
+## Error Responses
+
+- 401 Unauthorized — missing or invalid Bearer token
+- 404 Not Found — agent ID does not exist
+- 400 Bad Request — invalid request body (details in error message)

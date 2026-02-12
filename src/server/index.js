@@ -17,6 +17,7 @@ import { Storage } from './Storage'
 import { assets } from './assets'
 import { collections } from './collections'
 import { cleaner } from './cleaner'
+import agentAPI from './agentAPI'
 
 const rootDir = path.join(__dirname, '../')
 const worldDir = path.join(rootDir, process.env.WORLD)
@@ -135,6 +136,7 @@ fastify.register(multipart, {
 })
 fastify.register(ws)
 fastify.register(worldNetwork)
+fastify.register(agentAPI, { world })
 
 const publicEnvs = {}
 for (const key in process.env) {
@@ -149,6 +151,12 @@ const envsCode = `
 `
 fastify.get('/env.js', async (req, reply) => {
   reply.type('application/javascript').send(envsCode)
+})
+
+fastify.get('/llms.txt', async (req, reply) => {
+  const filePath = path.join(__dirname, 'llms.txt')
+  const content = fs.readFileSync(filePath, 'utf-8')
+  reply.type('text/plain').send(content)
 })
 
 fastify.post('/api/upload', async (req, reply) => {

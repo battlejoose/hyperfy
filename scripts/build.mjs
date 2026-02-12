@@ -139,6 +139,12 @@ let spawn
             if (await fs.exists(worldSceneSrc)) {
               await fs.copy(worldSceneSrc, worldSceneDest)
             }
+            // copy over llms.txt
+            const llmsSrc = path.join(rootDir, 'src/server/llms.txt')
+            const llmsDest = path.join(rootDir, 'build/llms.txt')
+            if (await fs.exists(llmsSrc)) {
+              await fs.copy(llmsSrc, llmsDest)
+            }
             // start the server or stop here
             if (dev) {
               // (re)start server
