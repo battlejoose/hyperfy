@@ -1,178 +1,92 @@
 import moment from 'moment'
 import { uuid } from '../core/utils.js'
-
-const HEALTH_MAX = 100
-const TICK_RATE = 1 / 8 // 8Hz, matches game networkRate
-const WALK_SPEED = 3 // units per second
-const RUN_SPEED = 6 // units per second
-
-// Locomotion modes (must match PlayerLocal.js)
-const Modes = {
-  IDLE: 0,
-  WALK: 1,
-  RUN: 2,
-}
-
-// Direction name -> local axis (relative to player facing)
-const Directions = {
-  forward: [0, 0, -1],
-  backward: [0, 0, 1],
-  left: [-1, 0, 0],
-  right: [1, 0, 0],
-}
+import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
+import { storage } from '../core/storage.js'
 
 /**
  * Agent REST API
  *
- * Allows AI agents to enter the world, move around, and chat via simple HTTP requests.
- * Agents appear as regular player entities to all connected clients.
+ * Allows AI agents to enter the world, walk around, and chat via simple HTTP requests.
+ * Each agent runs a full node-client world internally, using the exact same movement
+ * and animation system as real players.
  */
 export default async function agentAPI(fastify, { world }) {
-  // agentId -> { entity, name, yaw, movement }
+  // agentId -> { world, name, walkTimer }
   const agents = new Map()
+  const wsUrl = `ws://localhost:${process.env.PORT}/ws`
 
   console.log('[agent-api] agent API enabled')
 
-  // --- Helpers ---
+  // Movement key names
+  const directionKeys = {
+    forward: 'keyW',
+    backward: 'keyS',
+    left: 'keyA',
+    right: 'keyD',
+  }
 
-  function getSpawn() {
-    const spawn = world.network.spawn
-    return {
-      position: spawn.position.slice(),
-      quaternion: spawn.quaternion.slice(),
+  function releaseAllMovement(agent) {
+    for (const key of Object.values(directionKeys)) {
+      agent.world.controls.simulateButton(key, false)
+    }
+    if (agent.walkTimer) {
+      clearTimeout(agent.walkTimer)
+      agent.walkTimer = null
     }
   }
-
-  function yawToQuaternion(yaw) {
-    return [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)]
-  }
-
-  function quaternionToYaw(q) {
-    // Extract Y rotation from quaternion [x, y, z, w]
-    return 2 * Math.atan2(q[1], q[3])
-  }
-
-  // Rotate a local direction [x, 0, z] by yaw around Y axis
-  function rotateByYaw(axis, yaw) {
-    const cos = Math.cos(yaw)
-    const sin = Math.sin(yaw)
-    return [
-      axis[0] * cos + axis[2] * sin,
-      0,
-      -axis[0] * sin + axis[2] * cos,
-    ]
-  }
-
-  function getGazeFromYaw(yaw) {
-    // Forward direction in world space
-    return [Math.sin(yaw), 0, -Math.cos(yaw)]
-  }
-
-  function broadcastAgent(agent) {
-    const entity = agent.entity
-    const mode = agent.movement ? agent.movement.mode : Modes.IDLE
-    const axis = agent.movement ? agent.movement.axis : [0, 0, 0]
-    const gaze = getGazeFromYaw(agent.yaw)
-    const q = yawToQuaternion(agent.yaw)
-
-    entity.data.quaternion = q
-
-    world.network.send('entityModified', {
-      id: entity.data.id,
-      p: entity.data.position,
-      q,
-      m: mode,
-      a: axis,
-      g: gaze,
-    })
-  }
-
-  function stopAgent(agent) {
-    agent.movement = null
-    broadcastAgent(agent)
-  }
-
-  // --- Movement tick at 8Hz ---
-
-  const tickInterval = setInterval(() => {
-    const now = performance.now()
-    for (const [, agent] of agents) {
-      const mv = agent.movement
-      if (!mv) continue
-
-      // Check if duration expired
-      if (now >= mv.endTime) {
-        stopAgent(agent)
-        continue
-      }
-
-      // Calculate elapsed since last tick
-      const elapsed = (now - mv.lastTick) / 1000 // seconds
-      mv.lastTick = now
-
-      // Move in world-space direction
-      const worldDir = rotateByYaw(mv.axis, agent.yaw)
-      const pos = agent.entity.data.position
-      pos[0] += worldDir[0] * mv.speed * elapsed
-      pos[1] += worldDir[1] * mv.speed * elapsed
-      pos[2] += worldDir[2] * mv.speed * elapsed
-
-      broadcastAgent(agent)
-    }
-  }, TICK_RATE * 1000)
-
-  // Clean up on server shutdown
-  fastify.addHook('onClose', () => {
-    clearInterval(tickInterval)
-  })
 
   // --- Endpoints ---
 
   // POST /api/agents — Spawn an agent into the world
   fastify.post('/api/agents', async (req, reply) => {
     const { name = 'Agent', avatar } = req.body || {}
-    const id = uuid()
-    const spawn = getSpawn()
 
-    const entity = world.entities.add(
-      {
-        id,
-        type: 'player',
-        position: spawn.position,
-        quaternion: spawn.quaternion,
-        owner: id,
-        userId: id,
-        name,
-        health: HEALTH_MAX,
-        avatar: avatar || world.settings.avatar?.url || 'asset://avatar.vrm',
-        sessionAvatar: null,
-        rank: 0,
-        enteredAt: Date.now(),
-      },
-      true
-    )
+    // Create a node-client world for this agent (same system as real players)
+    const agentWorld = createNodeClientWorld()
 
-    const yaw = quaternionToYaw(spawn.quaternion)
-    agents.set(id, { entity, name, yaw, movement: null })
+    // Clear authToken so this agent gets a fresh identity
+    storage.set('authToken', null)
 
-    world.events.emit('enter', { playerId: id })
+    const result = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        agentWorld.destroy()
+        reject(new Error('Agent spawn timed out'))
+      }, 15000)
 
-    return {
-      id,
-      name,
-      position: spawn.position,
-      quaternion: spawn.quaternion,
-    }
+      agentWorld.once('ready', () => {
+        clearTimeout(timeout)
+        const player = agentWorld.entities.player
+        resolve({
+          id: agentWorld.network.id,
+          name: player.data.name,
+          position: player.data.position.slice(),
+          quaternion: player.data.quaternion.slice(),
+        })
+      })
+
+      agentWorld.on('kick', () => {
+        clearTimeout(timeout)
+        agentWorld.destroy()
+        reject(new Error('Agent was kicked'))
+      })
+
+      agentWorld.init({ wsUrl, name, avatar })
+    })
+
+    agents.set(result.id, { world: agentWorld, name, walkTimer: null })
+
+    return result
   })
 
   // GET /api/agents — List all active agents
   fastify.get('/api/agents', async (req, reply) => {
     const list = []
     for (const [id, agent] of agents) {
+      const entity = world.entities.get(id)
       list.push({
         id,
         name: agent.name,
-        position: agent.entity.data.position,
+        position: entity?.data.position || [0, 0, 0],
       })
     }
     return { agents: list }
@@ -185,7 +99,12 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    const entity = agent.entity
+    // Read from the server world for authoritative state
+    const entity = world.entities.get(req.params.id)
+    if (!entity) {
+      return reply.code(404).send({ error: 'Agent entity not found' })
+    }
+
     const since = req.query.since ? new Date(req.query.since) : null
 
     const players = []
@@ -226,12 +145,12 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    const { direction = 'forward', duration = 1, run = false } = req.body || {}
+    const { direction = 'forward', duration = 1 } = req.body || {}
 
-    const axis = Directions[direction]
-    if (!axis) {
+    const key = directionKeys[direction]
+    if (!key) {
       return reply.code(400).send({
-        error: `direction must be one of: ${Object.keys(Directions).join(', ')}`,
+        error: `direction must be one of: ${Object.keys(directionKeys).join(', ')}`,
       })
     }
 
@@ -239,24 +158,19 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(400).send({ error: 'duration must be a number between 0 and 30 seconds' })
     }
 
-    const now = performance.now()
-    agent.movement = {
-      axis: axis.slice(),
-      speed: run ? RUN_SPEED : WALK_SPEED,
-      mode: run ? Modes.RUN : Modes.WALK,
-      endTime: now + duration * 1000,
-      lastTick: now,
-    }
+    // Release any existing movement first
+    releaseAllMovement(agent)
 
-    // Broadcast immediately so animation starts right away
-    broadcastAgent(agent)
+    // Press the movement key
+    agent.world.controls.simulateButton(key, true)
 
-    return {
-      direction,
-      duration,
-      run,
-      speed: agent.movement.speed,
-    }
+    // Schedule key release after duration
+    agent.walkTimer = setTimeout(() => {
+      agent.world.controls.simulateButton(key, false)
+      agent.walkTimer = null
+    }, duration * 1000)
+
+    return { direction, duration }
   })
 
   // POST /api/agents/:id/turn — Turn the agent left or right
@@ -276,18 +190,11 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(400).send({ error: 'degrees must be a number between 0 and 360' })
     }
 
+    const player = agent.world.entities.player
     const radians = (degrees * Math.PI) / 180
-    agent.yaw += direction === 'left' ? radians : -radians
+    player.cam.rotation.y += direction === 'left' ? radians : -radians
 
-    // Update entity quaternion and broadcast
-    agent.entity.data.quaternion = yawToQuaternion(agent.yaw)
-    broadcastAgent(agent)
-
-    return {
-      direction,
-      degrees,
-      quaternion: agent.entity.data.quaternion,
-    }
+    return { direction, degrees }
   })
 
   // POST /api/agents/:id/stop — Stop walking immediately
@@ -297,44 +204,12 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    stopAgent(agent)
+    releaseAllMovement(agent)
 
+    const entity = world.entities.get(req.params.id)
     return {
-      position: agent.entity.data.position,
-      quaternion: agent.entity.data.quaternion,
-    }
-  })
-
-  // POST /api/agents/:id/move — Direct position set (teleport)
-  fastify.post('/api/agents/:id/move', async (req, reply) => {
-    const agent = agents.get(req.params.id)
-    if (!agent) {
-      return reply.code(404).send({ error: 'Agent not found' })
-    }
-
-    const { position, quaternion } = req.body || {}
-
-    if (!position || !Array.isArray(position) || position.length !== 3) {
-      return reply.code(400).send({ error: 'position must be an array of [x, y, z]' })
-    }
-
-    // Stop any active movement
-    agent.movement = null
-
-    // Update position
-    agent.entity.data.position = position
-
-    // Update rotation if provided
-    if (quaternion && Array.isArray(quaternion) && quaternion.length === 4) {
-      agent.entity.data.quaternion = quaternion
-      agent.yaw = quaternionToYaw(quaternion)
-    }
-
-    broadcastAgent(agent)
-
-    return {
-      position: agent.entity.data.position,
-      quaternion: agent.entity.data.quaternion,
+      position: entity?.data.position || [0, 0, 0],
+      quaternion: entity?.data.quaternion || [0, 0, 0, 1],
     }
   })
 
@@ -350,18 +225,14 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(400).send({ error: 'message must be a non-empty string' })
     }
 
-    const msg = {
-      id: uuid(),
-      from: agent.entity.data.name,
-      fromId: agent.entity.data.id,
+    // Use the agent's own chat system (same as real players)
+    agent.world.chat.send(message)
+
+    return {
+      from: agent.name,
       body: message,
       createdAt: moment().toISOString(),
     }
-
-    world.chat.add(msg, false)
-    world.network.send('chatAdded', msg)
-
-    return msg
   })
 
   // DELETE /api/agents/:id — Remove agent from the world
@@ -371,8 +242,8 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    agent.movement = null
-    agent.entity.destroy(true)
+    releaseAllMovement(agent)
+    agent.world.destroy()
     agents.delete(req.params.id)
 
     return { success: true }

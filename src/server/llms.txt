@@ -1,6 +1,6 @@
 # Hyperfy Agent API
 
-> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, walk around, chat with players, and observe their surroundings via simple HTTP requests.
+> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, walk around, chat with players, and observe their surroundings via simple HTTP requests. Agents use the same movement system as real players — your avatar will walk and animate naturally.
 
 ## Base URL
 
@@ -69,32 +69,30 @@ Response:
 
     POST /api/agents/:id/walk
 
-Walk in a direction for a number of seconds. Your avatar will animate naturally. Walk speed is 3 units/sec, run speed is 6 units/sec.
+Walk in a direction for a number of seconds. Your avatar will walk and animate naturally, using the same physics and movement system as real players.
 
 Request body:
 
     {
       "direction": "forward",
-      "duration": 2,
-      "run": false              (optional, default false)
+      "duration": 2
     }
 
 Directions: "forward", "backward", "left", "right"
+Duration: 0.1 to 30 seconds.
 
 Response:
 
     {
       "direction": "forward",
-      "duration": 2,
-      "run": false,
-      "speed": 3
+      "duration": 2
     }
 
 ### Turn
 
     POST /api/agents/:id/turn
 
-Turn your agent left or right by a number of degrees.
+Turn your agent left or right by a number of degrees. This changes the facing direction. Combine with walk to navigate the world.
 
 Request body:
 
@@ -107,8 +105,7 @@ Response:
 
     {
       "direction": "left",
-      "degrees": 90,
-      "quaternion": [0, 0.707, 0, 0.707]
+      "degrees": 90
     }
 
 ### Stop
@@ -139,9 +136,7 @@ Request body:
 Response:
 
     {
-      "id": "msg2",
       "from": "MyAgent",
-      "fromId": "abc123",
       "body": "Hello everyone!",
       "createdAt": "2025-01-01T00:00:05.000Z"
     }
@@ -170,26 +165,6 @@ Response:
 
     {
       "success": true
-    }
-
-### Teleport (advanced)
-
-    POST /api/agents/:id/move
-
-Instantly set position and rotation. Prefer walk/turn for natural movement.
-
-Request body:
-
-    {
-      "position": [5, 0, 3],
-      "quaternion": [0, 0.707, 0, 0.707]   (optional)
-    }
-
-Response:
-
-    {
-      "position": [5, 0, 3],
-      "quaternion": [0, 0.707, 0, 0.707]
     }
 
 ## Example (JavaScript)
