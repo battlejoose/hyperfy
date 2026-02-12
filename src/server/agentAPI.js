@@ -8,29 +8,11 @@ const HEALTH_MAX = 100
  *
  * Allows AI agents to enter the world, move around, and chat via simple HTTP requests.
  * Agents appear as regular player entities to all connected clients.
- *
- * Authentication: Authorization: Bearer <AGENT_API_SECRET>
  */
 export default async function agentAPI(fastify, { world }) {
   const agents = new Map() // agentId -> { entity, name }
 
-  const secret = process.env.AGENT_API_SECRET
-  if (!secret) {
-    console.log('[agent-api] AGENT_API_SECRET not set, agent API is disabled')
-    return
-  }
-
   console.log('[agent-api] agent API enabled')
-
-  // Auth hook for all /api/agents routes
-  function authenticate(req, reply) {
-    const auth = req.headers.authorization
-    if (!auth || auth !== `Bearer ${secret}`) {
-      reply.code(401).send({ error: 'Unauthorized' })
-      return false
-    }
-    return true
-  }
 
   // Get spawn position from server network
   function getSpawn() {
@@ -43,8 +25,6 @@ export default async function agentAPI(fastify, { world }) {
 
   // POST /api/agents — Spawn an agent into the world
   fastify.post('/api/agents', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-
     const { name = 'Agent', avatar } = req.body || {}
     const id = uuid()
     const spawn = getSpawn()
@@ -83,8 +63,6 @@ export default async function agentAPI(fastify, { world }) {
 
   // GET /api/agents — List all active agents
   fastify.get('/api/agents', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-
     const list = []
     for (const [id, agent] of agents) {
       list.push({
@@ -99,8 +77,6 @@ export default async function agentAPI(fastify, { world }) {
 
   // GET /api/agents/:id — Get agent state + world observations
   fastify.get('/api/agents/:id', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-
     const agent = agents.get(req.params.id)
     if (!agent) {
       return reply.code(404).send({ error: 'Agent not found' })
@@ -144,8 +120,6 @@ export default async function agentAPI(fastify, { world }) {
 
   // POST /api/agents/:id/move — Set agent position and rotation
   fastify.post('/api/agents/:id/move', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-
     const agent = agents.get(req.params.id)
     if (!agent) {
       return reply.code(404).send({ error: 'Agent not found' })
@@ -185,8 +159,6 @@ export default async function agentAPI(fastify, { world }) {
 
   // POST /api/agents/:id/chat — Send a chat message
   fastify.post('/api/agents/:id/chat', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-
     const agent = agents.get(req.params.id)
     if (!agent) {
       return reply.code(404).send({ error: 'Agent not found' })
@@ -214,8 +186,6 @@ export default async function agentAPI(fastify, { world }) {
 
   // DELETE /api/agents/:id — Remove agent from the world
   fastify.delete('/api/agents/:id', async (req, reply) => {
-    if (!authenticate(req, reply)) return
-
     const agent = agents.get(req.params.id)
     if (!agent) {
       return reply.code(404).send({ error: 'Agent not found' })

@@ -2,14 +2,6 @@
 
 > Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, move around, chat with players, and observe their surroundings via simple HTTP requests.
 
-## Authentication
-
-All requests require a Bearer token:
-
-    Authorization: Bearer <AGENT_API_SECRET>
-
-The server operator sets AGENT_API_SECRET as an environment variable. Ask the world owner for the key.
-
 ## Base URL
 
     https://<host>/api/agents
@@ -140,8 +132,7 @@ Response:
 ## Example (JavaScript)
 
     const API = 'https://my-world.herokuapp.com'
-    const KEY = 'your-agent-api-secret'
-    const headers = { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }
+    const headers = { 'Content-Type': 'application/json' }
 
     // Spawn
     const agent = await fetch(`${API}/api/agents`, {
@@ -152,7 +143,7 @@ Response:
     console.log(`Spawned as ${agent.name} at ${agent.position}`)
 
     // Observe
-    let state = await fetch(`${API}/api/agents/${agent.id}`, { headers }).then(r => r.json())
+    let state = await fetch(`${API}/api/agents/${agent.id}`).then(r => r.json())
     console.log('Players nearby:', state.players)
     console.log('Recent chat:', state.chat)
 
@@ -173,7 +164,7 @@ Response:
     // Observe-act loop
     let lastCheck = state.chat.length ? state.chat[state.chat.length - 1].createdAt : ''
     setInterval(async () => {
-      state = await fetch(`${API}/api/agents/${agent.id}?since=${lastCheck}`, { headers }).then(r => r.json())
+      state = await fetch(`${API}/api/agents/${agent.id}?since=${lastCheck}`).then(r => r.json())
       for (const msg of state.chat) {
         console.log(`${msg.from}: ${msg.body}`)
         lastCheck = msg.createdAt
@@ -181,10 +172,9 @@ Response:
     }, 2000)
 
     // Leave
-    await fetch(`${API}/api/agents/${agent.id}`, { method: 'DELETE', headers })
+    await fetch(`${API}/api/agents/${agent.id}`, { method: 'DELETE' })
 
 ## Error Responses
 
-- 401 Unauthorized — missing or invalid Bearer token
 - 404 Not Found — agent ID does not exist
 - 400 Bad Request — invalid request body (details in error message)
