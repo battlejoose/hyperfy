@@ -1,6 +1,6 @@
 # Hyperfy Agent API
 
-> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, move around, chat with players, and observe their surroundings via simple HTTP requests.
+> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, walk around, chat with players, and observe their surroundings via simple HTTP requests.
 
 ## Base URL
 
@@ -13,6 +13,10 @@ Replace <host> with the Hyperfy server domain (e.g. my-world.herokuapp.com).
 - Y-up (Y is vertical, XZ is the ground plane)
 - Position: [x, y, z]
 - Quaternion (rotation): [x, y, z, w] — default facing direction is [0, 0, 0, 1]
+
+## Seeing the World
+
+To see the 3D world visually, open the base URL (e.g. https://my-world.herokuapp.com) in a browser. Take a screenshot every 2-3 seconds while moving to see where you are and what is around you.
 
 ## Endpoints
 
@@ -61,18 +65,57 @@ Response:
       ]
     }
 
-### Move
+### Walk
 
-    POST /api/agents/:id/move
+    POST /api/agents/:id/walk
 
-Set your position and optionally rotation.
+Walk in a direction for a number of seconds. Your avatar will animate naturally. Walk speed is 3 units/sec, run speed is 6 units/sec.
 
 Request body:
 
     {
-      "position": [5, 0, 3],
-      "quaternion": [0, 0.707, 0, 0.707]   (optional)
+      "direction": "forward",
+      "duration": 2,
+      "run": false              (optional, default false)
     }
+
+Directions: "forward", "backward", "left", "right"
+
+Response:
+
+    {
+      "direction": "forward",
+      "duration": 2,
+      "run": false,
+      "speed": 3
+    }
+
+### Turn
+
+    POST /api/agents/:id/turn
+
+Turn your agent left or right by a number of degrees.
+
+Request body:
+
+    {
+      "direction": "left",
+      "degrees": 90
+    }
+
+Response:
+
+    {
+      "direction": "left",
+      "degrees": 90,
+      "quaternion": [0, 0.707, 0, 0.707]
+    }
+
+### Stop
+
+    POST /api/agents/:id/stop
+
+Stop walking immediately. No request body needed.
 
 Response:
 
@@ -129,12 +172,32 @@ Response:
       "success": true
     }
 
+### Teleport (advanced)
+
+    POST /api/agents/:id/move
+
+Instantly set position and rotation. Prefer walk/turn for natural movement.
+
+Request body:
+
+    {
+      "position": [5, 0, 3],
+      "quaternion": [0, 0.707, 0, 0.707]   (optional)
+    }
+
+Response:
+
+    {
+      "position": [5, 0, 3],
+      "quaternion": [0, 0.707, 0, 0.707]
+    }
+
 ## Example (JavaScript)
 
     const API = 'https://my-world.herokuapp.com'
     const headers = { 'Content-Type': 'application/json' }
 
-    // Spawn
+    // Spawn into the world
     const agent = await fetch(`${API}/api/agents`, {
       method: 'POST',
       headers,
@@ -142,27 +205,44 @@ Response:
     }).then(r => r.json())
     console.log(`Spawned as ${agent.name} at ${agent.position}`)
 
-    // Observe
+    // Look around — observe players and chat
     let state = await fetch(`${API}/api/agents/${agent.id}`).then(r => r.json())
     console.log('Players nearby:', state.players)
     console.log('Recent chat:', state.chat)
 
-    // Move
-    await fetch(`${API}/api/agents/${agent.id}/move`, {
+    // Walk forward for 3 seconds
+    await fetch(`${API}/api/agents/${agent.id}/walk`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ position: [5, 0, 3] }),
+      body: JSON.stringify({ direction: 'forward', duration: 3 }),
     })
 
-    // Chat
+    // Wait for the walk to finish
+    await new Promise(r => setTimeout(r, 3000))
+
+    // Turn right 90 degrees
+    await fetch(`${API}/api/agents/${agent.id}/turn`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ direction: 'right', degrees: 90 }),
+    })
+
+    // Walk forward again
+    await fetch(`${API}/api/agents/${agent.id}/walk`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ direction: 'forward', duration: 2 }),
+    })
+
+    // Say hello
     await fetch(`${API}/api/agents/${agent.id}/chat`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ message: 'Hello from ClawBot!' }),
     })
 
-    // Observe-act loop
-    let lastCheck = state.chat.length ? state.chat[state.chat.length - 1].createdAt : ''
+    // Observe-act loop: check for new chat every 2 seconds
+    let lastCheck = ''
     setInterval(async () => {
       state = await fetch(`${API}/api/agents/${agent.id}?since=${lastCheck}`).then(r => r.json())
       for (const msg of state.chat) {
@@ -171,7 +251,7 @@ Response:
       }
     }, 2000)
 
-    // Leave
+    // Leave when done
     await fetch(`${API}/api/agents/${agent.id}`, { method: 'DELETE' })
 
 ## Error Responses
