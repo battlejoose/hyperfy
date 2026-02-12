@@ -1,5 +1,6 @@
 import moment from 'moment'
 import { uuid } from '../core/utils.js'
+import { hashFile } from '../core/utils-server.js'
 import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
 import { storage } from '../core/storage.js'
 
@@ -325,6 +326,161 @@ export default async function agentAPI(fastify, { world }) {
       appId,
       prompt,
       position: spawnPos,
+    }
+  })
+
+  // --- Object / Script Endpoints ---
+
+  // GET /api/agents/:id/objects — List all app objects in the world
+  fastify.get('/api/agents/:id/objects', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const objects = []
+    for (const [, entity] of world.entities.items) {
+      if (!entity.isApp) continue
+      const blueprint = world.blueprints.get(entity.data.blueprint)
+      objects.push({
+        id: entity.data.id,
+        name: blueprint?.name || 'Unknown',
+        blueprintId: entity.data.blueprint,
+        position: entity.data.position,
+        quaternion: entity.data.quaternion,
+        scale: entity.data.scale,
+        hasScript: !!blueprint?.script,
+      })
+    }
+
+    return { objects }
+  })
+
+  // GET /api/agents/:id/objects/:appId — Get object details including script code
+  fastify.get('/api/agents/:id/objects/:appId', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.appId)
+    if (!entity || !entity.isApp) {
+      return reply.code(404).send({ error: 'Object not found' })
+    }
+
+    const blueprint = world.blueprints.get(entity.data.blueprint)
+    if (!blueprint) {
+      return reply.code(404).send({ error: 'Blueprint not found' })
+    }
+
+    // Load the script code if available
+    let code = null
+    if (blueprint.script) {
+      try {
+        let script = world.loader.get('script', blueprint.script)
+        if (!script) script = await world.loader.load('script', blueprint.script)
+        code = script.code
+      } catch (err) {
+        console.error('[agent-api] failed to load script:', err.message)
+      }
+    }
+
+    return {
+      id: entity.data.id,
+      name: blueprint.name,
+      blueprintId: blueprint.id,
+      position: entity.data.position,
+      quaternion: entity.data.quaternion,
+      scale: entity.data.scale,
+      script: code,
+    }
+  })
+
+  // PUT /api/agents/:id/objects/:appId/script — Write new script code to an object
+  fastify.put('/api/agents/:id/objects/:appId/script', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.appId)
+    if (!entity || !entity.isApp) {
+      return reply.code(404).send({ error: 'Object not found' })
+    }
+
+    const { code } = req.body || {}
+    if (!code || typeof code !== 'string') {
+      return reply.code(400).send({ error: 'code must be a non-empty string containing the JavaScript script' })
+    }
+
+    const blueprint = world.blueprints.get(entity.data.blueprint)
+    if (!blueprint) {
+      return reply.code(404).send({ error: 'Blueprint not found' })
+    }
+
+    // Create file from code, hash it, and upload
+    const file = new File([code], 'script.js', { type: 'text/plain' })
+    const fileContent = await file.arrayBuffer()
+    const hash = await hashFile(Buffer.from(fileContent))
+    const filename = `${hash}.js`
+    const url = `asset://${filename}`
+
+    // Upload the script asset
+    await world.ai.assets.upload(file)
+
+    // Update the blueprint with the new script
+    const version = blueprint.version + 1
+    const change = { id: blueprint.id, version, script: url }
+    world.blueprints.modify(change)
+    world.network.send('blueprintModified', change)
+    world.network.dirtyBlueprints.add(change.id)
+
+    return {
+      id: entity.data.id,
+      blueprintId: blueprint.id,
+      version,
+      script: url,
+    }
+  })
+
+  // POST /api/agents/:id/objects/:appId/edit — Use AI to edit an object's script
+  fastify.post('/api/agents/:id/objects/:appId/edit', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.appId)
+    if (!entity || !entity.isApp) {
+      return reply.code(404).send({ error: 'Object not found' })
+    }
+
+    const { prompt } = req.body || {}
+    if (!prompt || typeof prompt !== 'string') {
+      return reply.code(400).send({ error: 'prompt must be a non-empty string' })
+    }
+
+    if (!world.ai || !world.ai.enabled) {
+      return reply.code(400).send({ error: 'AI generation is not enabled on this server' })
+    }
+
+    const blueprint = world.blueprints.get(entity.data.blueprint)
+    if (!blueprint) {
+      return reply.code(404).send({ error: 'Blueprint not found' })
+    }
+
+    // Trigger AI edit (runs in background)
+    world.ai.onAction({
+      name: 'edit',
+      blueprintId: blueprint.id,
+      appId: entity.data.id,
+      prompt,
+    })
+
+    return {
+      id: entity.data.id,
+      blueprintId: blueprint.id,
+      prompt,
     }
   })
 
