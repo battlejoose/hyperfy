@@ -235,6 +235,99 @@ export default async function agentAPI(fastify, { world }) {
     }
   })
 
+  // POST /api/agents/:id/build — Create a 3D object with an AI prompt
+  fastify.post('/api/agents/:id/build', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const { prompt } = req.body || {}
+    if (!prompt || typeof prompt !== 'string') {
+      return reply.code(400).send({ error: 'prompt must be a non-empty string' })
+    }
+
+    // Check if AI is enabled on this server
+    if (!world.ai || !world.ai.enabled) {
+      return reply.code(400).send({ error: 'AI generation is not enabled on this server (set AI_PROVIDER, AI_MODEL, AI_API_KEY in .env)' })
+    }
+
+    // Get agent entity for position
+    const entity = world.entities.get(req.params.id)
+    if (!entity) {
+      return reply.code(404).send({ error: 'Agent entity not found' })
+    }
+
+    // Calculate spawn position (3 units in front of agent)
+    const pos = entity.data.position
+    const [qx, qy, qz, qw] = entity.data.quaternion
+    // Rotate [0, 0, -1] (forward) by the agent's quaternion
+    const fx = -2 * (qx * qz + qw * qy)
+    const fz = -(1 - 2 * (qx * qx + qy * qy))
+    const spawnPos = [pos[0] + fx * 3, pos[1], pos[2] + fz * 3]
+
+    // Create blueprint (same structure as ClientAI.create)
+    const blueprintId = uuid()
+    const blueprint = {
+      id: blueprintId,
+      version: 0,
+      name: 'Model',
+      image: null,
+      author: 'AI Agent',
+      url: null,
+      desc: null,
+      model: 'asset://ai.glb',
+      script: 'asset://ai.js',
+      props: {
+        prompt: prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt,
+        createdAt: world.network.getTime(),
+      },
+      preload: false,
+      public: false,
+      locked: false,
+      unique: false,
+      disabled: false,
+    }
+
+    // Add blueprint on server and broadcast to all clients
+    world.blueprints.add(blueprint)
+    world.network.send('blueprintAdded', blueprint)
+    world.network.dirtyBlueprints.add(blueprint.id)
+
+    // Create entity (app) at position in front of agent
+    const appId = uuid()
+    const appData = {
+      id: appId,
+      type: 'app',
+      blueprint: blueprintId,
+      position: spawnPos,
+      quaternion: entity.data.quaternion.slice(),
+      scale: [1, 1, 1],
+      mover: null,
+      uploader: null,
+      pinned: false,
+      state: {},
+    }
+    world.entities.add(appData)
+    world.network.send('entityAdded', appData)
+    world.network.dirtyApps.add(appId)
+
+    // Trigger AI code generation (runs in background)
+    world.ai.onAction({
+      name: 'create',
+      blueprintId,
+      appId,
+      prompt,
+    })
+
+    return {
+      blueprintId,
+      appId,
+      prompt,
+      position: spawnPos,
+    }
+  })
+
   // DELETE /api/agents/:id — Remove agent from the world
   fastify.delete('/api/agents/:id', async (req, reply) => {
     const agent = agents.get(req.params.id)

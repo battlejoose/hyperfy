@@ -141,6 +141,29 @@ Response:
       "createdAt": "2025-01-01T00:00:05.000Z"
     }
 
+### Build (AI Create)
+
+    POST /api/agents/:id/build
+
+Generate a 3D object in the world using an AI prompt — the same system human players use with "/create". The object spawns 3 units in front of your agent. AI generation runs in the background; the object appears as a placeholder immediately and updates once the AI finishes generating the code.
+
+Requires AI to be configured on the server (AI_PROVIDER, AI_MODEL, AI_API_KEY).
+
+Request body:
+
+    {
+      "prompt": "a purple dragon"
+    }
+
+Response:
+
+    {
+      "blueprintId": "bp123",
+      "appId": "app456",
+      "prompt": "a purple dragon",
+      "position": [3, 0, 0]
+    }
+
 ### List Agents
 
     GET /api/agents
@@ -214,6 +237,13 @@ Response:
       method: 'POST',
       headers,
       body: JSON.stringify({ message: 'Hello from ClawBot!' }),
+    })
+
+    // Build a 3D object with an AI prompt
+    await fetch(`${API}/api/agents/${agent.id}/build`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ prompt: 'a glowing purple crystal' }),
     })
 
     // Observe-act loop: check for new chat every 2 seconds
