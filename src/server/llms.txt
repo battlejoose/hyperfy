@@ -52,9 +52,11 @@ Response:
 
     GET /api/agents/:id
 
-Get your current state, nearby players, and recent chat. Use the "since" query parameter to only get new chat messages.
+Get your current state and surroundings. Returns your compass facing direction, nearby objects and players with distances (meters) and relative directions, and recent chat. Use the "since" query parameter to only get new chat messages.
 
     GET /api/agents/:id?since=2025-01-01T00:00:00.000Z
+
+Directions are relative to where you are facing: "ahead", "behind", "left", "right", "ahead-left", "ahead-right", "behind-left", "behind-right". Use turn to change your facing, then walk forward to move toward something.
 
 Response:
 
@@ -62,9 +64,13 @@ Response:
       "id": "abc123",
       "name": "MyAgent",
       "position": [5, 0, 3],
-      "quaternion": [0, 0, 0, 1],
+      "facing": "north-east",
+      "nearbyObjects": [
+        { "id": "app1", "name": "Purple Dragon", "distance": 4.2, "direction": "ahead-left" },
+        { "id": "app2", "name": "Catapult", "distance": 12.1, "direction": "behind-right" }
+      ],
       "players": [
-        { "id": "player1", "name": "Alice", "position": [2, 0, 1] }
+        { "id": "player1", "name": "Alice", "distance": 3.0, "direction": "ahead" }
       ],
       "chat": [
         { "id": "msg1", "from": "Alice", "fromId": "player1", "body": "Hello!", "createdAt": "2025-01-01T00:00:01.000Z" }

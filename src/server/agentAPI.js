@@ -40,6 +40,54 @@ export default async function agentAPI(fastify, { world }) {
     agent.lastActivity = Date.now()
   }
 
+  // --- Spatial awareness helpers ---
+
+  function getForwardVector(quaternion) {
+    const [qx, qy, qz, qw] = quaternion
+    const fx = -2 * (qx * qz + qw * qy)
+    const fz = -(1 - 2 * (qx * qx + qy * qy))
+    return [fx, fz]
+  }
+
+  function getDistance(a, b) {
+    const dx = b[0] - a[0]
+    const dz = b[2] - a[2]
+    return Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10
+  }
+
+  function getRelativeDirection(agentPos, forward, targetPos) {
+    const dx = targetPos[0] - agentPos[0]
+    const dz = targetPos[2] - agentPos[2]
+    const len = Math.sqrt(dx * dx + dz * dz)
+    if (len < 0.01) return 'here'
+    const nx = dx / len
+    const nz = dz / len
+    // dot product: positive = ahead, negative = behind
+    const dot = forward[0] * nx + forward[1] * nz
+    // cross product (2D): positive = right, negative = left
+    const cross = forward[0] * nz - forward[1] * nx
+    const fb = dot > 0.4 ? 'ahead' : dot < -0.4 ? 'behind' : ''
+    const lr = cross > 0.4 ? 'left' : cross < -0.4 ? 'right' : ''
+    if (fb && lr) return `${fb}-${lr}`
+    if (fb) return fb
+    if (lr) return lr
+    return 'ahead'
+  }
+
+  function getCompassFacing(forward) {
+    // atan2 of forward vector, game convention: -Z = north, +X = east
+    const angle = Math.atan2(-forward[0], -forward[1])
+    const deg = ((angle * 180) / Math.PI + 360) % 360
+    if (deg < 22.5 || deg >= 337.5) return 'north'
+    if (deg < 67.5) return 'north-west'
+    if (deg < 112.5) return 'west'
+    if (deg < 157.5) return 'south-west'
+    if (deg < 202.5) return 'south'
+    if (deg < 247.5) return 'south-east'
+    if (deg < 292.5) return 'east'
+    return 'north-east'
+  }
+
   // Periodically check for inactive agents and remove them
   const cleanupInterval = setInterval(() => {
     const now = Date.now()
@@ -125,7 +173,7 @@ export default async function agentAPI(fastify, { world }) {
     return { agents: list }
   })
 
-  // GET /api/agents/:id — Get agent state + world observations
+  // GET /api/agents/:id — Get agent state + world observations with spatial awareness
   fastify.get('/api/agents/:id', async (req, reply) => {
     const agent = agents.get(req.params.id)
     if (!agent) {
@@ -138,17 +186,41 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(404).send({ error: 'Agent entity not found' })
     }
 
+    const agentPos = entity.data.position
+    const forward = getForwardVector(entity.data.quaternion)
+    const facing = getCompassFacing(forward)
+
     const since = req.query.since ? new Date(req.query.since) : null
 
+    // Players with distance and relative direction
     const players = []
     for (const [, player] of world.entities.players) {
       if (player.data.id === req.params.id) continue
+      const dist = getDistance(agentPos, player.data.position)
       players.push({
         id: player.data.id,
         name: player.data.name,
-        position: player.data.position,
+        distance: dist,
+        direction: getRelativeDirection(agentPos, forward, player.data.position),
       })
     }
+    players.sort((a, b) => a.distance - b.distance)
+
+    // Nearby objects with distance and relative direction
+    const nearbyObjects = []
+    for (const [, item] of world.entities.items) {
+      if (!item.isApp) continue
+      const blueprint = world.blueprints.get(item.data.blueprint)
+      const dist = getDistance(agentPos, item.data.position)
+      nearbyObjects.push({
+        id: item.data.id,
+        name: blueprint?.name || 'Unknown',
+        distance: dist,
+        direction: getRelativeDirection(agentPos, forward, item.data.position),
+      })
+    }
+    nearbyObjects.sort((a, b) => a.distance - b.distance)
+    if (nearbyObjects.length > 50) nearbyObjects.length = 50
 
     let chat = world.chat.msgs
     if (since) {
@@ -159,7 +231,8 @@ export default async function agentAPI(fastify, { world }) {
       id: entity.data.id,
       name: entity.data.name,
       position: entity.data.position,
-      quaternion: entity.data.quaternion,
+      facing,
+      nearbyObjects,
       players,
       chat: chat.map(msg => ({
         id: msg.id,
