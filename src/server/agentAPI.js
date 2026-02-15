@@ -12,9 +12,10 @@ import { storage } from '../core/storage.js'
  * and animation system as real players.
  */
 export default async function agentAPI(fastify, { world }) {
-  // agentId -> { world, name, walkTimer }
+  // agentId -> { world, name, walkTimer, lastActivity }
   const agents = new Map()
   const wsUrl = `ws://localhost:${process.env.PORT}/ws`
+  const INACTIVITY_TIMEOUT = 60 * 1000 // 60 seconds without any API call = auto-remove
 
   console.log('[agent-api] agent API enabled')
 
@@ -25,6 +26,47 @@ export default async function agentAPI(fastify, { world }) {
       agent.walkTimer = null
     }
   }
+
+  function removeAgent(id) {
+    const agent = agents.get(id)
+    if (!agent) return
+    releaseAllMovement(agent)
+    agent.world.destroy()
+    agents.delete(id)
+    console.log(`[agent-api] agent ${id} removed`)
+  }
+
+  function touchAgent(agent) {
+    agent.lastActivity = Date.now()
+  }
+
+  // Periodically check for inactive agents and remove them
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now()
+    for (const [id, agent] of agents) {
+      if (now - agent.lastActivity > INACTIVITY_TIMEOUT) {
+        console.log(`[agent-api] agent ${id} timed out (no activity for ${INACTIVITY_TIMEOUT / 1000}s)`)
+        removeAgent(id)
+      }
+    }
+  }, 10000)
+
+  fastify.addHook('onClose', () => {
+    clearInterval(cleanupInterval)
+    for (const [id] of agents) {
+      removeAgent(id)
+    }
+  })
+
+  // Touch the agent on every request to keep it alive
+  fastify.addHook('preHandler', (req, reply, done) => {
+    const id = req.params?.id
+    if (id) {
+      const agent = agents.get(id)
+      if (agent) touchAgent(agent)
+    }
+    done()
+  })
 
   // --- Endpoints ---
 
@@ -64,7 +106,7 @@ export default async function agentAPI(fastify, { world }) {
       agentWorld.init({ wsUrl, name, avatar })
     })
 
-    agents.set(result.id, { world: agentWorld, name, walkTimer: null })
+    agents.set(result.id, { world: agentWorld, name, walkTimer: null, lastActivity: Date.now() })
 
     return result
   })
@@ -474,9 +516,7 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    releaseAllMovement(agent)
-    agent.world.destroy()
-    agents.delete(req.params.id)
+    removeAgent(req.params.id)
 
     return { success: true }
   })
