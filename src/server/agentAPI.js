@@ -1,5 +1,4 @@
 import moment from 'moment'
-import puppeteer from 'puppeteer'
 import { uuid } from '../core/utils.js'
 import { hashFile } from '../core/utils-server.js'
 import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
@@ -20,40 +19,6 @@ export default async function agentAPI(fastify, { world }) {
 
   console.log('[agent-api] agent API enabled')
 
-  // --- Puppeteer (lazy) for agent screenshots ---
-  let browser = null
-  const agentPages = new Map() // agentId -> puppeteer Page
-
-  async function getBrowser() {
-    if (!browser) {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
-      })
-      console.log('[agent-api] puppeteer browser launched')
-    }
-    return browser
-  }
-
-  async function closeAgentPage(id) {
-    const page = agentPages.get(id)
-    if (page) {
-      agentPages.delete(id)
-      try { await page.close() } catch (e) { /* ignore */ }
-    }
-  }
-
-  async function closeBrowser() {
-    for (const [id] of agentPages) {
-      await closeAgentPage(id)
-    }
-    if (browser) {
-      try { await browser.close() } catch (e) { /* ignore */ }
-      browser = null
-      console.log('[agent-api] puppeteer browser closed')
-    }
-  }
-
   function releaseAllMovement(agent) {
     agent.world.controls.simulateButton('keyW', false)
     if (agent.walkTimer) {
@@ -68,7 +33,6 @@ export default async function agentAPI(fastify, { world }) {
     releaseAllMovement(agent)
     agent.world.destroy()
     agents.delete(id)
-    closeAgentPage(id)
     console.log(`[agent-api] agent ${id} removed`)
   }
 
@@ -135,12 +99,11 @@ export default async function agentAPI(fastify, { world }) {
     }
   }, 10000)
 
-  fastify.addHook('onClose', async () => {
+  fastify.addHook('onClose', () => {
     clearInterval(cleanupInterval)
     for (const [id] of agents) {
       removeAgent(id)
     }
-    await closeBrowser()
   })
 
   // Touch the agent on every request to keep it alive
@@ -616,40 +579,6 @@ export default async function agentAPI(fastify, { world }) {
       id: entity.data.id,
       blueprintId: blueprint.id,
       prompt,
-    }
-  })
-
-  // GET /api/agents/:id/screenshot — Take a screenshot of what the agent sees
-  fastify.get('/api/agents/:id/screenshot', async (req, reply) => {
-    const agent = agents.get(req.params.id)
-    if (!agent) {
-      return reply.code(404).send({ error: 'Agent not found' })
-    }
-
-    try {
-      const b = await getBrowser()
-      let page = agentPages.get(req.params.id)
-
-      if (!page) {
-        const port = process.env.PORT || 3000
-        page = await b.newPage()
-        await page.setViewport({ width: 800, height: 600 })
-        await page.goto(`http://localhost:${port}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
-        // Wait for the 3D canvas to appear (up to 15 seconds)
-        await page.waitForSelector('canvas', { timeout: 15000 })
-        // Give the world a moment to render
-        await new Promise(r => setTimeout(r, 3000))
-        agentPages.set(req.params.id, page)
-      }
-
-      const screenshot = await page.screenshot({ encoding: 'base64', type: 'png' })
-
-      return { image: `data:image/png;base64,${screenshot}` }
-    } catch (err) {
-      console.error('[agent-api] screenshot error:', err.message)
-      // Clean up broken page
-      await closeAgentPage(req.params.id)
-      return reply.code(500).send({ error: 'Failed to take screenshot: ' + err.message })
     }
   })
 

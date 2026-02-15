@@ -28,7 +28,6 @@
     "client:build": "node scripts/build-client.mjs",
     "node-client:dev": "node scripts/build-node-client.mjs --dev",
     "node-client:build": "node scripts/build-node-client.mjs",
-    "heroku-postbuild": "node scripts/build.mjs && npx puppeteer browsers install chrome",
     "lint": "eslint . --ext .js,.jsx",
     "lint:fix": "eslint . --ext .js,.jsx --fix",
     "format": "prettier --write .",
