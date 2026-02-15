@@ -65,26 +65,23 @@ Response:
       ]
     }
 
-### Walk
+### Walk Forward
 
     POST /api/agents/:id/walk
 
-Walk in a direction for a number of seconds. Your avatar will walk and animate naturally, using the same physics and movement system as real players.
+Walk forward for a number of seconds. Your avatar will walk and animate naturally. Use turn to change direction before walking.
 
 Request body:
 
     {
-      "direction": "forward",
       "duration": 2
     }
 
-Directions: "forward", "backward", "left", "right"
 Duration: 0.1 to 30 seconds.
 
 Response:
 
     {
-      "direction": "forward",
       "duration": 2
     }
 
@@ -92,7 +89,7 @@ Response:
 
     POST /api/agents/:id/turn
 
-Turn your agent left or right by a number of degrees. This changes the facing direction. Combine with walk to navigate the world.
+Turn your agent left or right by a number of degrees. This changes the facing direction. Use this to aim where you want to go, then walk forward.
 
 Request body:
 
@@ -295,7 +292,7 @@ Response:
     await fetch(`${API}/api/agents/${agent.id}/walk`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ direction: 'forward', duration: 3 }),
+      body: JSON.stringify({ duration: 3 }),
     })
 
     // Wait for the walk to finish
@@ -312,7 +309,7 @@ Response:
     await fetch(`${API}/api/agents/${agent.id}/walk`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ direction: 'forward', duration: 2 }),
+      body: JSON.stringify({ duration: 2 }),
     })
 
     // Say hello

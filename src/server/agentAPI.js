@@ -18,18 +18,8 @@ export default async function agentAPI(fastify, { world }) {
 
   console.log('[agent-api] agent API enabled')
 
-  // Movement key names
-  const directionKeys = {
-    forward: 'keyW',
-    backward: 'keyS',
-    left: 'keyA',
-    right: 'keyD',
-  }
-
   function releaseAllMovement(agent) {
-    for (const key of Object.values(directionKeys)) {
-      agent.world.controls.simulateButton(key, false)
-    }
+    agent.world.controls.simulateButton('keyW', false)
     if (agent.walkTimer) {
       clearTimeout(agent.walkTimer)
       agent.walkTimer = null
@@ -139,21 +129,14 @@ export default async function agentAPI(fastify, { world }) {
     }
   })
 
-  // POST /api/agents/:id/walk — Walk in a direction for a duration
+  // POST /api/agents/:id/walk — Walk forward for a duration
   fastify.post('/api/agents/:id/walk', async (req, reply) => {
     const agent = agents.get(req.params.id)
     if (!agent) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    const { direction = 'forward', duration = 1 } = req.body || {}
-
-    const key = directionKeys[direction]
-    if (!key) {
-      return reply.code(400).send({
-        error: `direction must be one of: ${Object.keys(directionKeys).join(', ')}`,
-      })
-    }
+    const { duration = 1 } = req.body || {}
 
     if (typeof duration !== 'number' || duration <= 0 || duration > 30) {
       return reply.code(400).send({ error: 'duration must be a number between 0 and 30 seconds' })
@@ -162,16 +145,16 @@ export default async function agentAPI(fastify, { world }) {
     // Release any existing movement first
     releaseAllMovement(agent)
 
-    // Press the movement key
-    agent.world.controls.simulateButton(key, true)
+    // Press forward key
+    agent.world.controls.simulateButton('keyW', true)
 
     // Schedule key release after duration
     agent.walkTimer = setTimeout(() => {
-      agent.world.controls.simulateButton(key, false)
+      agent.world.controls.simulateButton('keyW', false)
       agent.walkTimer = null
     }, duration * 1000)
 
-    return { direction, duration }
+    return { duration }
   })
 
   // POST /api/agents/:id/turn — Turn the agent left or right
