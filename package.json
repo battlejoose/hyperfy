@@ -31,8 +31,7 @@
     "lint": "eslint . --ext .js,.jsx",
     "lint:fix": "eslint . --ext .js,.jsx --fix",
     "format": "prettier --write .",
-    "check": "npm run lint && npm run format",
-    "heroku-postbuild": "npm run build && mkdir -p ./.cache && mv /app/.cache/puppeteer ./.cache"
+    "check": "npm run lint && npm run format"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.60.0",
@@ -68,7 +67,7 @@
     "openai": "^5.12.2",
     "pg": "^8.16.3",
     "postprocessing": "^6.36.4",
-    "puppeteer": "^24.37.3",
+    "puppeteer-core": "^24.37.3",
     "react": "^19.1.0",
     "react-colorful": "^5.6.1",
     "react-dom": "^19.1.0",

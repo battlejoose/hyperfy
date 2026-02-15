@@ -1,5 +1,5 @@
 import moment from 'moment'
-import puppeteer from 'puppeteer'
+import puppeteer from 'puppeteer-core'
 import { uuid } from '../core/utils.js'
 import { hashFile } from '../core/utils-server.js'
 import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
@@ -9,8 +9,10 @@ import { storage } from '../core/storage.js'
 let browser = null
 async function getBrowser() {
   if (!browser) {
+    const executablePath = process.env.GOOGLE_CHROME_BIN || process.env.CHROME_PATH || '/usr/bin/google-chrome'
     browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+      executablePath,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     })
   }
   return browser
