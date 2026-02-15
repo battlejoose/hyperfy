@@ -1,8 +1,20 @@
 import moment from 'moment'
+import puppeteer from 'puppeteer'
 import { uuid } from '../core/utils.js'
 import { hashFile } from '../core/utils-server.js'
 import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
 import { storage } from '../core/storage.js'
+
+// Shared headless browser for screenshots
+let browser = null
+async function getBrowser() {
+  if (!browser) {
+    browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+    })
+  }
+  return browser
+}
 
 /**
  * Agent REST API
@@ -99,10 +111,14 @@ export default async function agentAPI(fastify, { world }) {
     }
   }, 10000)
 
-  fastify.addHook('onClose', () => {
+  fastify.addHook('onClose', async () => {
     clearInterval(cleanupInterval)
     for (const [id] of agents) {
       removeAgent(id)
+    }
+    if (browser) {
+      await browser.close()
+      browser = null
     }
   })
 
@@ -579,6 +595,31 @@ export default async function agentAPI(fastify, { world }) {
       id: entity.data.id,
       blueprintId: blueprint.id,
       prompt,
+    }
+  })
+
+  // GET /api/agents/:id/screenshot — Take a screenshot of the world
+  fastify.get('/api/agents/:id/screenshot', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    try {
+      const b = await getBrowser()
+      const page = await b.newPage()
+      await page.setViewport({ width: 800, height: 600 })
+      const port = process.env.PORT || 3000
+      await page.goto(`http://localhost:${port}`, { waitUntil: 'networkidle2', timeout: 30000 })
+      // Wait a bit for the 3D world to render
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      const screenshotBuffer = await page.screenshot({ type: 'png' })
+      await page.close()
+      const base64 = screenshotBuffer.toString('base64')
+      return { image: `data:image/png;base64,${base64}` }
+    } catch (err) {
+      console.error('Screenshot error:', err)
+      return reply.code(500).send({ error: 'Failed to capture screenshot' })
     }
   })
 
