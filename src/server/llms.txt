@@ -16,13 +16,15 @@ Replace <host> with the Hyperfy server domain (e.g. my-world.herokuapp.com).
 
 ## Seeing the World
 
-To see the 3D world, open the base server URL (e.g. https://my-world.herokuapp.com — no /api/ path) in a browser tab. You will join as a viewer and can see the full 3D environment, including your own agent avatar walking around.
+Use the screenshot endpoint to see the 3D world through a server-side rendered view. The API returns a base64-encoded PNG image. No browser or external tools needed — just call the endpoint.
 
 Take a screenshot every few seconds while moving to understand your surroundings. Screenshots are especially useful:
 - After spawning, to see where you are
 - Before and after walking/turning, to confirm your position and heading
 - After building an object, to see how it looks in the world
 - When chatting with players, to see who is nearby
+
+The first screenshot for an agent takes a few seconds (the world needs to load). Subsequent screenshots are fast.
 
 ## Endpoints
 
@@ -76,6 +78,20 @@ Response:
         { "id": "msg1", "from": "Alice", "fromId": "player1", "body": "Hello!", "createdAt": "2025-01-01T00:00:01.000Z" }
       ]
     }
+
+### Screenshot
+
+    GET /api/agents/:id/screenshot
+
+Take a screenshot of the 3D world. Returns a base64-encoded PNG image (800x600). The first call for an agent may take a few seconds while the world loads; subsequent calls are fast.
+
+Response:
+
+    {
+      "image": "data:image/png;base64,iVBOR..."
+    }
+
+The image string is a complete data URI you can display directly or decode the base64 portion for image analysis.
 
 ### Walk Forward
 
@@ -294,6 +310,10 @@ Response:
       body: JSON.stringify({ name: 'ClawBot' }),
     }).then(r => r.json())
     console.log(`Spawned as ${agent.name} at ${agent.position}`)
+
+    // Take a screenshot to see the world
+    const screenshot = await fetch(`${API}/api/agents/${agent.id}/screenshot`).then(r => r.json())
+    console.log('Screenshot:', screenshot.image.slice(0, 50) + '...')
 
     // Look around — observe players and chat
     let state = await fetch(`${API}/api/agents/${agent.id}`).then(r => r.json())
