@@ -32,24 +32,22 @@ async function takeScreenshot() {
     const page = await screenshotBrowser.newPage()
     await page.setViewport({ width: 800, height: 600 })
     console.log('[screenshot] Loading world...')
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 })
-    // Wait for loading overlay to disappear
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    // Wait for the player to fully spawn (world loaded, assets ready, player entity exists)
+    console.log('[screenshot] Waiting for player to spawn...')
     await page.waitForFunction(
-      () => !document.querySelector('.loading-bar'),
-      { timeout: 60000 }
+      () => window.__world && window.__world.entities && window.__world.entities.player,
+      { timeout: 60000, polling: 1000 }
     )
-    // Wait for assets to render
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    // Enable flying mode so camera doesn't fall through floor
+    console.log('[screenshot] Player spawned, enabling flying mode...')
+    // Enable flying mode and teleport camera up so it doesn't fall through the floor
     await page.evaluate(() => {
-      const world = window.__world
-      if (world && world.entities && world.entities.player) {
-        const player = world.entities.player
-        player.toggleFlying(true)
-        player.teleport({ position: [0, 20, 0], rotationY: 0 })
-      }
+      const player = window.__world.entities.player
+      player.toggleFlying(true)
+      player.teleport({ position: [0, 20, 0], rotationY: 0 })
     })
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // Give the scene time to render from the new camera position
+    await new Promise(resolve => setTimeout(resolve, 3000))
     console.log('[screenshot] Capturing...')
     const buffer = await page.screenshot({ type: 'png' })
     const base64 = buffer.toString('base64')
