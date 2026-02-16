@@ -9,7 +9,7 @@ import { storage } from '../core/storage.js'
 let browser = null
 let sharedPage = null
 
-async function getScreenshotPage() {
+async function ensureBrowser() {
   if (!browser) {
     const executablePath =
       process.env.GOOGLE_CHROME_BIN ||
@@ -17,7 +17,7 @@ async function getScreenshotPage() {
       process.env.CHROME_PATH ||
       process.env.PUPPETEER_EXECUTABLE_PATH ||
       '/app/.chrome-for-testing/chrome-linux64/chrome'
-    console.log('Launching Chrome from:', executablePath)
+    console.log('[screenshot] Launching Chrome from:', executablePath)
     browser = await puppeteer.launch({
       executablePath,
       args: [
@@ -30,20 +30,46 @@ async function getScreenshotPage() {
       ],
     })
   }
+  return browser
+}
+
+async function getScreenshotPage() {
+  await ensureBrowser()
   if (!sharedPage || sharedPage.isClosed()) {
-    console.log('Opening persistent world page for screenshots...')
-    sharedPage = await browser.newPage()
-    await sharedPage.setViewport({ width: 800, height: 600 })
     const port = process.env.PORT || 3000
-    await sharedPage.goto(`http://localhost:${port}`, { waitUntil: 'networkidle2', timeout: 60000 })
-    // Wait for the loading overlay to disappear (world is ready)
-    await sharedPage.waitForFunction(
-      () => !document.querySelector('.loading-bar'),
-      { timeout: 60000 }
-    )
-    // Extra time for all assets to render in the 3D scene
-    await new Promise(resolve => setTimeout(resolve, 5000))
-    console.log('World page loaded and ready for screenshots')
+    const url = `http://localhost:${port}`
+    const maxRetries = 5
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[screenshot] Loading world page (attempt ${attempt}/${maxRetries})...`)
+        sharedPage = await browser.newPage()
+        await sharedPage.setViewport({ width: 800, height: 600 })
+        // Log browser console messages for debugging
+        sharedPage.on('console', msg => console.log('[screenshot-page]', msg.text()))
+        sharedPage.on('pageerror', err => console.error('[screenshot-page] error:', err.message))
+        await sharedPage.goto(url, { waitUntil: 'networkidle2', timeout: 60000 })
+        // Wait for the loading overlay to disappear (world is ready)
+        await sharedPage.waitForFunction(
+          () => !document.querySelector('.loading-bar'),
+          { timeout: 60000 }
+        )
+        // Extra time for all assets to render in the 3D scene
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        console.log('[screenshot] World page loaded and ready for screenshots')
+        return sharedPage
+      } catch (err) {
+        console.error(`[screenshot] Attempt ${attempt} failed:`, err.message)
+        if (sharedPage) {
+          try { await sharedPage.close() } catch (_) {}
+          sharedPage = null
+        }
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 5000))
+        } else {
+          throw err
+        }
+      }
+    }
   }
   return sharedPage
 }
@@ -63,8 +89,10 @@ export default async function agentAPI(fastify, { world }) {
 
   console.log('[agent-api] agent API enabled')
 
-  // Eagerly open the persistent screenshot page so it's ready before any request
-  getScreenshotPage().catch(err => console.error('Failed to pre-load screenshot page:', err))
+  // Eagerly open the persistent screenshot page once the server is listening
+  setTimeout(() => {
+    getScreenshotPage().catch(err => console.error('Failed to pre-load screenshot page:', err))
+  }, 15000)
 
   function releaseAllMovement(agent) {
     agent.world.controls.simulateButton('keyW', false)
