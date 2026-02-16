@@ -9,7 +9,13 @@ import { storage } from '../core/storage.js'
 let browser = null
 async function getBrowser() {
   if (!browser) {
-    const executablePath = process.env.GOOGLE_CHROME_BIN || process.env.CHROME_PATH || '/usr/bin/google-chrome'
+    const executablePath =
+      process.env.GOOGLE_CHROME_BIN ||
+      process.env.GOOGLE_CHROME_SHIM ||
+      process.env.CHROME_PATH ||
+      process.env.PUPPETEER_EXECUTABLE_PATH ||
+      '/app/.chrome-for-testing/chrome-linux64/chrome'
+    console.log('Launching Chrome from:', executablePath)
     browser = await puppeteer.launch({
       executablePath,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
