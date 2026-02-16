@@ -67,7 +67,7 @@ export default async function agentAPI(fastify, { world }) {
     // cross product (2D): positive = right, negative = left
     const cross = forward[0] * nz - forward[1] * nx
     const fb = dot > 0.4 ? 'ahead' : dot < -0.4 ? 'behind' : ''
-    const lr = cross > 0.4 ? 'left' : cross < -0.4 ? 'right' : ''
+    const lr = cross > 0.4 ? 'right' : cross < -0.4 ? 'left' : ''
     if (fb && lr) return `${fb}-${lr}`
     if (fb) return fb
     if (lr) return lr
