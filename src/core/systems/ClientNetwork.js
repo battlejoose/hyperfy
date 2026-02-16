@@ -29,10 +29,6 @@ export class ClientNetwork extends System {
     let url = `${wsUrl}?authToken=${authToken}`
     if (name) url += `&name=${encodeURIComponent(name)}`
     if (avatar) url += `&avatar=${encodeURIComponent(avatar)}`
-    if (typeof window !== 'undefined') {
-      const pageParams = new URLSearchParams(window.location.search)
-      if (pageParams.get('spectator') === 'true') url += '&spectator=true'
-    }
     this.ws = new WebSocket(url)
     this.ws.binaryType = 'arraybuffer'
     this.ws.addEventListener('message', this.onPacket)
@@ -202,11 +198,11 @@ export class ClientNetwork extends System {
   }
 
   onLiveKitLevel = data => {
-    this.world.livekit?.setLevel(data.playerId, data.level)
+    this.world.livekit.setLevel(data.playerId, data.level)
   }
 
   onMute = data => {
-    this.world.livekit?.setMuted(data.playerId, data.muted)
+    this.world.livekit.setMuted(data.playerId, data.muted)
   }
 
   onPong = time => {
