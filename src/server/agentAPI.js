@@ -33,13 +33,16 @@ async function takeScreenshot() {
     await page.setViewport({ width: 800, height: 600 })
     console.log('[screenshot] Loading world...')
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    // Wait for the player to fully spawn (world loaded, assets ready, player entity exists)
+    // Wait for the player to fully spawn including physics capsule
     console.log('[screenshot] Waiting for player to spawn...')
     await page.waitForFunction(
-      () => window.__world && window.__world.entities && window.__world.entities.player,
+      () => {
+        const w = window.__world
+        return w && w.entities && w.entities.player && w.entities.player.capsule
+      },
       { timeout: 60000, polling: 1000 }
     )
-    console.log('[screenshot] Player spawned, enabling flying mode...')
+    console.log('[screenshot] Player spawned with physics, enabling flying mode...')
     // Enable flying mode and teleport camera up so it doesn't fall through the floor
     await page.evaluate(() => {
       const player = window.__world.entities.player
