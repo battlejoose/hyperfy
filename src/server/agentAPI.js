@@ -5,9 +5,11 @@ import { hashFile } from '../core/utils-server.js'
 import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
 import { storage } from '../core/storage.js'
 
-// Shared headless browser for screenshots
+// Shared headless browser + persistent page for screenshots
 let browser = null
-async function getBrowser() {
+let sharedPage = null
+
+async function getScreenshotPage() {
   if (!browser) {
     const executablePath =
       process.env.GOOGLE_CHROME_BIN ||
@@ -28,7 +30,22 @@ async function getBrowser() {
       ],
     })
   }
-  return browser
+  if (!sharedPage || sharedPage.isClosed()) {
+    console.log('Opening persistent world page for screenshots...')
+    sharedPage = await browser.newPage()
+    await sharedPage.setViewport({ width: 800, height: 600 })
+    const port = process.env.PORT || 3000
+    await sharedPage.goto(`http://localhost:${port}`, { waitUntil: 'networkidle2', timeout: 60000 })
+    // Wait for the loading overlay to disappear (world is ready)
+    await sharedPage.waitForFunction(
+      () => !document.querySelector('.loading-bar'),
+      { timeout: 60000 }
+    )
+    // Extra time for all assets to render in the 3D scene
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    console.log('World page loaded and ready for screenshots')
+  }
+  return sharedPage
 }
 
 /**
@@ -45,6 +62,9 @@ export default async function agentAPI(fastify, { world }) {
   const INACTIVITY_TIMEOUT = 60 * 1000 // 60 seconds without any API call = auto-remove
 
   console.log('[agent-api] agent API enabled')
+
+  // Eagerly open the persistent screenshot page so it's ready before any request
+  getScreenshotPage().catch(err => console.error('Failed to pre-load screenshot page:', err))
 
   function releaseAllMovement(agent) {
     agent.world.controls.simulateButton('keyW', false)
@@ -131,6 +151,7 @@ export default async function agentAPI(fastify, { world }) {
     for (const [id] of agents) {
       removeAgent(id)
     }
+    sharedPage = null
     if (browser) {
       await browser.close()
       browser = null
@@ -621,24 +642,17 @@ export default async function agentAPI(fastify, { world }) {
     }
 
     try {
-      const b = await getBrowser()
-      const page = await b.newPage()
-      await page.setViewport({ width: 800, height: 600 })
-      const port = process.env.PORT || 3000
-      await page.goto(`http://localhost:${port}`, { waitUntil: 'networkidle2', timeout: 30000 })
-      // Wait for loading overlay to disappear (the .loading-bar element is inside it)
-      await page.waitForFunction(
-        () => !document.querySelector('.loading-bar'),
-        { timeout: 30000 }
-      )
-      // Extra time for the 3D scene to finish rendering
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      const page = await getScreenshotPage()
       const screenshotBuffer = await page.screenshot({ type: 'png' })
-      await page.close()
       const base64 = screenshotBuffer.toString('base64')
       return { image: `data:image/png;base64,${base64}` }
     } catch (err) {
       console.error('Screenshot error:', err)
+      // Reset shared page on error so it reconnects next time
+      if (sharedPage) {
+        try { await sharedPage.close() } catch (_) {}
+        sharedPage = null
+      }
       return reply.code(500).send({ error: 'Failed to capture screenshot' })
     }
   })
