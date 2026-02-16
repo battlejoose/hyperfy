@@ -53,9 +53,23 @@ async function getScreenshotPage() {
           () => !document.querySelector('.loading-bar'),
           { timeout: 60000 }
         )
-        // Extra time for all assets to render in the 3D scene
+        // Wait for the player to spawn and the world to render
         await new Promise(resolve => setTimeout(resolve, 5000))
-        console.log('[screenshot] World page loaded and ready for screenshots')
+        // Enable flying mode so the screenshot camera doesn't fall through the floor
+        await sharedPage.evaluate(() => {
+          const poll = setInterval(() => {
+            const world = window.__world
+            if (world && world.entities && world.entities.player) {
+              const player = world.entities.player
+              player.toggleFlying(true)
+              player.teleport({ position: [0, 20, 0], rotationY: 0 })
+              clearInterval(poll)
+            }
+          }, 500)
+        })
+        // Give flying mode a moment to engage
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        console.log('[screenshot] World page loaded, flying camera ready')
         return sharedPage
       } catch (err) {
         console.error(`[screenshot] Attempt ${attempt} failed:`, err.message)

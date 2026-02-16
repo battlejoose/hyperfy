@@ -42,6 +42,7 @@ export function Client({ wsUrl, onSetup }) {
       }
       const config = { viewport, ui, wsUrl, baseEnvironment }
       onSetup?.(world, config)
+      window.__world = world
       world.init(config)
     }
     init()
