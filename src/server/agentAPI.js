@@ -5,20 +5,20 @@ import { hashFile } from '../core/utils-server.js'
 import { createNodeClientWorld } from '../core/createNodeClientWorld.js'
 import { storage } from '../core/storage.js'
 
-// Shared headless browser + persistent page for screenshots
-let browser = null
-let sharedPage = null
-
-async function ensureBrowser() {
-  if (!browser) {
-    const executablePath =
-      process.env.GOOGLE_CHROME_BIN ||
-      process.env.GOOGLE_CHROME_SHIM ||
-      process.env.CHROME_PATH ||
-      process.env.PUPPETEER_EXECUTABLE_PATH ||
-      '/app/.chrome-for-testing/chrome-linux64/chrome'
-    console.log('[screenshot] Launching Chrome from:', executablePath)
-    browser = await puppeteer.launch({
+// On-demand screenshot: launch browser, load world, capture, close everything
+async function takeScreenshot() {
+  const executablePath =
+    process.env.GOOGLE_CHROME_BIN ||
+    process.env.GOOGLE_CHROME_SHIM ||
+    process.env.CHROME_PATH ||
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    '/app/.chrome-for-testing/chrome-linux64/chrome'
+  const port = process.env.PORT || 3000
+  const url = `http://localhost:${port}`
+  let screenshotBrowser = null
+  try {
+    console.log('[screenshot] Launching browser...')
+    screenshotBrowser = await puppeteer.launch({
       executablePath,
       args: [
         '--no-sandbox',
@@ -29,63 +29,37 @@ async function ensureBrowser() {
         '--enable-webgl',
       ],
     })
-  }
-  return browser
-}
-
-async function getScreenshotPage() {
-  await ensureBrowser()
-  if (!sharedPage || sharedPage.isClosed()) {
-    const port = process.env.PORT || 3000
-    const url = `http://localhost:${port}`
-    const maxRetries = 5
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`[screenshot] Loading world page (attempt ${attempt}/${maxRetries})...`)
-        sharedPage = await browser.newPage()
-        await sharedPage.setViewport({ width: 800, height: 600 })
-        // Log browser console messages for debugging
-        sharedPage.on('console', msg => console.log('[screenshot-page]', msg.text()))
-        sharedPage.on('pageerror', err => console.error('[screenshot-page] error:', err.message))
-        await sharedPage.goto(url, { waitUntil: 'networkidle2', timeout: 60000 })
-        // Wait for the loading overlay to disappear (world is ready)
-        await sharedPage.waitForFunction(
-          () => !document.querySelector('.loading-bar'),
-          { timeout: 60000 }
-        )
-        // Wait for the player to spawn and the world to render
-        await new Promise(resolve => setTimeout(resolve, 5000))
-        // Enable flying mode so the screenshot camera doesn't fall through the floor
-        await sharedPage.evaluate(() => {
-          const poll = setInterval(() => {
-            const world = window.__world
-            if (world && world.entities && world.entities.player) {
-              const player = world.entities.player
-              player.toggleFlying(true)
-              player.teleport({ position: [0, 20, 0], rotationY: 0 })
-              clearInterval(poll)
-            }
-          }, 500)
-        })
-        // Give flying mode a moment to engage
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        console.log('[screenshot] World page loaded, flying camera ready')
-        return sharedPage
-      } catch (err) {
-        console.error(`[screenshot] Attempt ${attempt} failed:`, err.message)
-        if (sharedPage) {
-          try { await sharedPage.close() } catch (_) {}
-          sharedPage = null
-        }
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 5000))
-        } else {
-          throw err
-        }
+    const page = await screenshotBrowser.newPage()
+    await page.setViewport({ width: 800, height: 600 })
+    console.log('[screenshot] Loading world...')
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 })
+    // Wait for loading overlay to disappear
+    await page.waitForFunction(
+      () => !document.querySelector('.loading-bar'),
+      { timeout: 60000 }
+    )
+    // Wait for assets to render
+    await new Promise(resolve => setTimeout(resolve, 3000))
+    // Enable flying mode so camera doesn't fall through floor
+    await page.evaluate(() => {
+      const world = window.__world
+      if (world && world.entities && world.entities.player) {
+        const player = world.entities.player
+        player.toggleFlying(true)
+        player.teleport({ position: [0, 20, 0], rotationY: 0 })
       }
+    })
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    console.log('[screenshot] Capturing...')
+    const buffer = await page.screenshot({ type: 'png' })
+    const base64 = buffer.toString('base64')
+    return `data:image/png;base64,${base64}`
+  } finally {
+    if (screenshotBrowser) {
+      await screenshotBrowser.close().catch(() => {})
+      console.log('[screenshot] Browser closed, memory freed')
     }
   }
-  return sharedPage
 }
 
 /**
@@ -102,11 +76,6 @@ export default async function agentAPI(fastify, { world }) {
   const INACTIVITY_TIMEOUT = 60 * 1000 // 60 seconds without any API call = auto-remove
 
   console.log('[agent-api] agent API enabled')
-
-  // Eagerly open the persistent screenshot page once the server is listening
-  setTimeout(() => {
-    getScreenshotPage().catch(err => console.error('Failed to pre-load screenshot page:', err))
-  }, 15000)
 
   function releaseAllMovement(agent) {
     agent.world.controls.simulateButton('keyW', false)
@@ -192,11 +161,6 @@ export default async function agentAPI(fastify, { world }) {
     clearInterval(cleanupInterval)
     for (const [id] of agents) {
       removeAgent(id)
-    }
-    sharedPage = null
-    if (browser) {
-      await browser.close()
-      browser = null
     }
   })
 
@@ -684,17 +648,10 @@ export default async function agentAPI(fastify, { world }) {
     }
 
     try {
-      const page = await getScreenshotPage()
-      const screenshotBuffer = await page.screenshot({ type: 'png' })
-      const base64 = screenshotBuffer.toString('base64')
-      return { image: `data:image/png;base64,${base64}` }
+      const image = await takeScreenshot()
+      return { image }
     } catch (err) {
       console.error('Screenshot error:', err)
-      // Reset shared page on error so it reconnects next time
-      if (sharedPage) {
-        try { await sharedPage.close() } catch (_) {}
-        sharedPage = null
-      }
       return reply.code(500).send({ error: 'Failed to capture screenshot' })
     }
   })
