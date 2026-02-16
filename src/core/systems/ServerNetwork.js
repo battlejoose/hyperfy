@@ -217,6 +217,9 @@ export class ServerNetwork extends System {
         return
       }
 
+      // check for spectator mode (no player spawned)
+      const spectator = params.spectator === 'true'
+
       // check connection params
       let authToken = params.authToken
       let name = params.name
@@ -258,24 +261,26 @@ export class ServerNetwork extends System {
       // create socket
       const socket = new Socket({ id: user.id, ws, network: this })
 
-      // spawn player
-      socket.player = this.world.entities.add(
-        {
-          id: user.id,
-          type: 'player',
-          position: this.spawn.position.slice(),
-          quaternion: this.spawn.quaternion.slice(),
-          owner: socket.id, // deprecated, same as userId
-          userId: user.id, // deprecated, same as userId
-          name: name || user.name,
-          health: HEALTH_MAX,
-          avatar: user.avatar || this.world.settings.avatar?.url || 'asset://avatar.vrm',
-          sessionAvatar: avatar || null,
-          rank: user.rank,
-          enteredAt: Date.now(),
-        },
-        true
-      )
+      // spawn player (skip for spectators)
+      if (!spectator) {
+        socket.player = this.world.entities.add(
+          {
+            id: user.id,
+            type: 'player',
+            position: this.spawn.position.slice(),
+            quaternion: this.spawn.quaternion.slice(),
+            owner: socket.id, // deprecated, same as userId
+            userId: user.id, // deprecated, same as userId
+            name: name || user.name,
+            health: HEALTH_MAX,
+            avatar: user.avatar || this.world.settings.avatar?.url || 'asset://avatar.vrm',
+            sessionAvatar: avatar || null,
+            rank: user.rank,
+            enteredAt: Date.now(),
+          },
+          true
+        )
+      }
 
       // send snapshot
       socket.send('snapshot', {
@@ -299,7 +304,9 @@ export class ServerNetwork extends System {
 
       // enter events on the server are sent after the snapshot.
       // on the client these are sent during PlayerRemote.js entity instantiation!
-      this.world.events.emit('enter', { playerId: socket.player.data.id })
+      if (socket.player) {
+        this.world.events.emit('enter', { playerId: socket.player.data.id })
+      }
     } catch (err) {
       console.error(err)
     }
@@ -567,7 +574,9 @@ export class ServerNetwork extends System {
 
   onDisconnect = (socket, code) => {
     this.world.livekit.clearModifiers(socket.id)
-    socket.player.destroy(true)
+    if (socket.player) {
+      socket.player.destroy(true)
+    }
     this.sockets.delete(socket.id)
   }
 }

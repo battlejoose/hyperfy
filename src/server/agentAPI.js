@@ -18,7 +18,7 @@ async function getBrowser() {
     console.log('Launching Chrome from:', executablePath)
     browser = await puppeteer.launch({
       executablePath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--use-gl=angle', '--use-angle=swiftshader'],
     })
   }
   return browser
@@ -618,9 +618,10 @@ export default async function agentAPI(fastify, { world }) {
       const page = await b.newPage()
       await page.setViewport({ width: 800, height: 600 })
       const port = process.env.PORT || 3000
-      await page.goto(`http://localhost:${port}`, { waitUntil: 'networkidle2', timeout: 30000 })
-      // Wait a bit for the 3D world to render
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await page.goto(`http://localhost:${port}?spectator=true`, { waitUntil: 'networkidle2', timeout: 30000 })
+      // Wait for the canvas to appear and the 3D world to render
+      await page.waitForSelector('canvas', { timeout: 15000 }).catch(() => {})
+      await new Promise(resolve => setTimeout(resolve, 5000))
       const screenshotBuffer = await page.screenshot({ type: 'png' })
       await page.close()
       const base64 = screenshotBuffer.toString('base64')
