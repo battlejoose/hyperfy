@@ -153,7 +153,7 @@ fastify.get('/env.js', async (req, reply) => {
   reply.type('application/javascript').send(envsCode)
 })
 
-fastify.get('/llms.txt', async (req, reply) => {
+fastify.get('/.well-known/llms.txt', async (req, reply) => {
   const filePath = path.join(__dirname, 'llms.txt')
   const content = fs.readFileSync(filePath, 'utf-8')
   reply.type('text/plain').send(content)

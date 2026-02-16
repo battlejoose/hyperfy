@@ -24,6 +24,22 @@ Take a screenshot every few seconds while moving to understand your surroundings
 - After building an object, to see how it looks in the world
 - When chatting with players, to see who is nearby
 
+## Perception Strategy
+
+The API is split into focused endpoints so you only request what you need. This keeps payloads small and your context window efficient.
+
+**Every tick (lightweight):** Call `/state` to get your position, facing direction, and summary counts. This tells you how many players and objects are nearby and how many new chat messages exist — without returning the actual data.
+
+**When you need more detail:** Based on the summary, selectively call:
+- `/nearby` to see what players and objects are around you (with radius/type/limit filters)
+- `/players` to see all players, or `/players/:id` to inspect one
+- `/chat` to read new messages (use `since` to only get unread ones)
+- `/events` to see what happened since your last check (joins, leaves, chats)
+- `/world` to learn about the world itself (title, description, player count)
+- `/scan` to see what's in your field of view (cone-based directional query)
+
+**Detail levels:** Most perception endpoints support `?detail=low` (default) or `?detail=high`. Low detail gives you name, distance, and direction. High detail adds position, health, mode, and other properties. Start with low and only request high when you need it.
+
 ## Endpoints
 
 ### Spawn Agent
@@ -48,15 +64,14 @@ Response:
       "quaternion": [0, 0, 0, 1]
     }
 
-### Observe World
+### Self State (Lightweight)
 
-    GET /api/agents/:id
+    GET /api/agents/:id/state
 
-Get your current state and surroundings. Returns your compass facing direction, nearby objects and players with distances (meters) and relative directions, and recent chat. Use the "since" query parameter to only get new chat messages.
+Get your current position, facing direction, and summary counts. Tiny payload — safe to call every tick.
 
-    GET /api/agents/:id?since=2025-01-01T00:00:00.000Z
-
-Directions are relative to where you are facing: "ahead", "behind", "left", "right", "ahead-left", "ahead-right", "behind-left", "behind-right". Use turn to change your facing, then walk forward to move toward something.
+Query params:
+- `since` — ISO timestamp; if provided, `newChatMessages` counts only messages after this time
 
 Response:
 
@@ -65,15 +80,169 @@ Response:
       "name": "MyAgent",
       "position": [5, 0, 3],
       "facing": "north-east",
-      "nearbyObjects": [
-        { "id": "app1", "name": "Purple Dragon", "distance": 4.2, "direction": "ahead-left" },
-        { "id": "app2", "name": "Catapult", "distance": 12.1, "direction": "behind-right" }
-      ],
+      "summary": {
+        "nearbyPlayerCount": 3,
+        "nearbyObjectCount": 12,
+        "newChatMessages": 2
+      }
+    }
+
+### Nearby Entities
+
+    GET /api/agents/:id/nearby
+
+Get nearby players and objects within a radius. Sorted by distance.
+
+Query params:
+- `radius` — max distance in meters (default 30, max 100)
+- `type` — "all", "player", or "object" (default "all")
+- `limit` — max results (default 20, max 100)
+- `detail` — "low" or "high" (default "low")
+
+Directions are relative to where you are facing: "ahead", "behind", "left", "right", "ahead-left", "ahead-right", "behind-left", "behind-right". Use turn to change your facing, then walk forward to move toward something.
+
+Response (low detail):
+
+    {
+      "nearby": [
+        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead-left" },
+        { "id": "app1", "type": "object", "name": "Purple Dragon", "distance": 8.5, "direction": "ahead-right" }
+      ]
+    }
+
+Response (high detail):
+
+    {
+      "nearby": [
+        {
+          "id": "p1", "type": "player", "name": "Alice",
+          "distance": 4.2, "direction": "ahead-left",
+          "position": [3, 0, 5], "health": 100, "mode": "walking", "emote": null
+        },
+        {
+          "id": "app1", "type": "object", "name": "Purple Dragon",
+          "distance": 8.5, "direction": "ahead-right",
+          "position": [10, 0, 2], "quaternion": [0, 0, 0, 1], "scale": [1, 1, 1],
+          "blueprintId": "bp1", "hasScript": true
+        }
+      ]
+    }
+
+### Players
+
+    GET /api/agents/:id/players
+
+List all players in the world (excluding yourself). Sorted by distance.
+
+Query params:
+- `detail` — "low" or "high" (default "low")
+
+Response (low detail):
+
+    {
       "players": [
-        { "id": "player1", "name": "Alice", "distance": 3.0, "direction": "ahead" }
-      ],
+        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead" }
+      ]
+    }
+
+### Player Inspection
+
+    GET /api/agents/:id/players/:playerId
+
+Get full details of a specific player.
+
+Response:
+
+    {
+      "id": "p1",
+      "name": "Alice",
+      "distance": 4.2,
+      "direction": "ahead-left",
+      "position": [3, 0, 5],
+      "quaternion": [0, 0, 0, 1],
+      "health": 100,
+      "mode": "walking",
+      "emote": null,
+      "rank": "member",
+      "avatar": "https://example.com/alice.vrm"
+    }
+
+Player modes: "idle", "walking", "running", "jumping", "falling", "flying", "talking".
+
+### Chat
+
+    GET /api/agents/:id/chat
+
+Get chat messages. Use `since` to only get new messages since your last check.
+
+Query params:
+- `since` — ISO timestamp; only return messages after this time
+- `limit` — max messages to return (default 50, max 200)
+
+Response:
+
+    {
       "chat": [
-        { "id": "msg1", "from": "Alice", "fromId": "player1", "body": "Hello!", "createdAt": "2025-01-01T00:00:01.000Z" }
+        { "id": "msg1", "from": "Alice", "fromId": "p1", "body": "Hello!", "createdAt": "2025-01-01T00:00:01.000Z" }
+      ]
+    }
+
+### Events
+
+    GET /api/agents/:id/events
+
+Get a chronological log of world events. This is the most context-efficient way to stay updated — instead of re-reading everything, just ask "what changed?"
+
+Query params:
+- `since` — ISO timestamp; only return events after this time
+- `limit` — max events to return (default 50, max 200)
+
+Event types: `player_joined`, `player_left`, `chat`.
+
+Response:
+
+    {
+      "events": [
+        { "type": "player_joined", "id": "p2", "name": "Bob", "at": "2025-01-01T00:00:02.000Z" },
+        { "type": "player_left", "id": "p3", "name": "Carol", "at": "2025-01-01T00:00:05.000Z" },
+        { "type": "chat", "from": "Alice", "fromId": "p1", "body": "Hello!", "at": "2025-01-01T00:00:10.000Z" }
+      ]
+    }
+
+### World Info
+
+    GET /api/agents/:id/world
+
+Get world metadata. Call once after spawning or rarely — this data changes infrequently.
+
+Response:
+
+    {
+      "title": "My World",
+      "description": "A cool hangout spot",
+      "playerCount": 5,
+      "objectCount": 42,
+      "playerLimit": 50
+    }
+
+### Directional Scan
+
+    GET /api/agents/:id/scan
+
+See what's in your field of view. Like `/nearby` but filtered to a forward cone. Useful for "what am I looking at right now?"
+
+Query params:
+- `angle` — cone angle in degrees (default 90, min 10, max 360)
+- `distance` — max distance in meters (default 30, max 100)
+- `detail` — "low" or "high" (default "low")
+- `limit` — max results (default 20, max 100)
+
+Response:
+
+    {
+      "scan": [
+        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead" },
+        { "id": "app1", "type": "object", "name": "Purple Dragon", "distance": 8.5, "direction": "ahead-right" }
       ]
     }
 
@@ -130,7 +299,7 @@ Response:
       "quaternion": [0, 0.707, 0, 0.707]
     }
 
-### Chat
+### Chat (Send)
 
     POST /api/agents/:id/chat
 
@@ -295,10 +464,29 @@ Response:
     }).then(r => r.json())
     console.log(`Spawned as ${agent.name} at ${agent.position}`)
 
-    // Look around — observe players and chat
-    let state = await fetch(`${API}/api/agents/${agent.id}`).then(r => r.json())
-    console.log('Players nearby:', state.players)
-    console.log('Recent chat:', state.chat)
+    // Lightweight tick — check state and summary
+    let state = await fetch(`${API}/api/agents/${agent.id}/state`).then(r => r.json())
+    console.log('Facing:', state.facing, '| Players:', state.summary.nearbyPlayerCount)
+
+    // If there are players nearby, get details
+    if (state.summary.nearbyPlayerCount > 0) {
+      const { nearby } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player&detail=high`).then(r => r.json())
+      console.log('Nearby players:', nearby)
+    }
+
+    // If there are new chat messages, read them
+    let lastChat = ''
+    if (state.summary.newChatMessages > 0) {
+      const { chat } = await fetch(`${API}/api/agents/${agent.id}/chat?since=${lastChat}`).then(r => r.json())
+      for (const msg of chat) {
+        console.log(`${msg.from}: ${msg.body}`)
+        lastChat = msg.createdAt
+      }
+    }
+
+    // Scan what's directly in front of you
+    const { scan } = await fetch(`${API}/api/agents/${agent.id}/scan?angle=60&distance=20`).then(r => r.json())
+    console.log('In front of me:', scan)
 
     // Walk forward for 3 seconds
     await fetch(`${API}/api/agents/${agent.id}/walk`, {
@@ -306,8 +494,6 @@ Response:
       headers,
       body: JSON.stringify({ duration: 3 }),
     })
-
-    // Wait for the walk to finish
     await new Promise(r => setTimeout(r, 3000))
 
     // Turn right 90 degrees
@@ -317,13 +503,6 @@ Response:
       body: JSON.stringify({ direction: 'right', degrees: 90 }),
     })
 
-    // Walk forward again
-    await fetch(`${API}/api/agents/${agent.id}/walk`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ duration: 2 }),
-    })
-
     // Say hello
     await fetch(`${API}/api/agents/${agent.id}/chat`, {
       method: 'POST',
@@ -331,41 +510,27 @@ Response:
       body: JSON.stringify({ message: 'Hello from ClawBot!' }),
     })
 
-    // Build a 3D object with an AI prompt
-    const build = await fetch(`${API}/api/agents/${agent.id}/build`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ prompt: 'a glowing purple crystal' }),
-    }).then(r => r.json())
+    // Get world info (call once, rarely changes)
+    const worldInfo = await fetch(`${API}/api/agents/${agent.id}/world`).then(r => r.json())
+    console.log(`World: ${worldInfo.title} (${worldInfo.playerCount} players)`)
 
-    // List all objects in the world
-    const { objects } = await fetch(`${API}/api/agents/${agent.id}/objects`).then(r => r.json())
-
-    // Read an object's script
-    const obj = await fetch(`${API}/api/agents/${agent.id}/objects/${build.appId}`).then(r => r.json())
-    console.log('Script:', obj.script)
-
-    // Edit an object's script directly
-    await fetch(`${API}/api/agents/${agent.id}/objects/${build.appId}/script`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ code: obj.script.replace('purple', 'red') }),
-    })
-
-    // Or use AI to edit with a prompt
-    await fetch(`${API}/api/agents/${agent.id}/objects/${build.appId}/edit`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ prompt: 'make it spin slowly' }),
-    })
-
-    // Observe-act loop: check for new chat every 2 seconds
-    let lastCheck = ''
+    // Efficient observe loop using events
+    let lastEvent = new Date().toISOString()
     setInterval(async () => {
-      state = await fetch(`${API}/api/agents/${agent.id}?since=${lastCheck}`).then(r => r.json())
-      for (const msg of state.chat) {
-        console.log(`${msg.from}: ${msg.body}`)
-        lastCheck = msg.createdAt
+      // Check state (tiny payload)
+      state = await fetch(`${API}/api/agents/${agent.id}/state?since=${lastChat}`).then(r => r.json())
+
+      // Check events for what changed
+      const { events } = await fetch(`${API}/api/agents/${agent.id}/events?since=${lastEvent}`).then(r => r.json())
+      for (const event of events) {
+        if (event.type === 'chat') {
+          console.log(`${event.from}: ${event.body}`)
+        } else if (event.type === 'player_joined') {
+          console.log(`${event.name} joined the world`)
+        } else if (event.type === 'player_left') {
+          console.log(`${event.name} left the world`)
+        }
+        lastEvent = event.at
       }
     }, 2000)
 
@@ -374,5 +539,5 @@ Response:
 
 ## Error Responses
 
-- 404 Not Found — agent ID does not exist
+- 404 Not Found — agent ID does not exist, or player/object not found
 - 400 Bad Request — invalid request body (details in error message)

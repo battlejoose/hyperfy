@@ -12,10 +12,13 @@ import { storage } from '../core/storage.js'
  * and animation system as real players.
  */
 export default async function agentAPI(fastify, { world }) {
-  // agentId -> { world, name, walkTimer, lastActivity }
+  // agentId -> { world, name, walkTimer, lastActivity, events, eventCleanups }
   const agents = new Map()
   const wsUrl = `ws://localhost:${process.env.PORT}/ws`
-  const INACTIVITY_TIMEOUT = 60 * 1000 // 60 seconds without any API call = auto-remove
+  const INACTIVITY_TIMEOUT = 60 * 1000
+  const MAX_EVENTS = 200
+
+  const MODE_NAMES = ['idle', 'walking', 'running', 'jumping', 'falling', 'flying', 'talking']
 
   console.log('[agent-api] agent API enabled')
 
@@ -31,6 +34,7 @@ export default async function agentAPI(fastify, { world }) {
     const agent = agents.get(id)
     if (!agent) return
     releaseAllMovement(agent)
+    teardownEventListeners(agent)
     agent.world.destroy()
     agents.delete(id)
     console.log(`[agent-api] agent ${id} removed`)
@@ -38,6 +42,50 @@ export default async function agentAPI(fastify, { world }) {
 
   function touchAgent(agent) {
     agent.lastActivity = Date.now()
+  }
+
+  // --- Event ring buffer ---
+
+  function pushEvent(agent, event) {
+    event.at = moment().toISOString()
+    agent.events.push(event)
+    if (agent.events.length > MAX_EVENTS) {
+      agent.events.shift()
+    }
+  }
+
+  function setupEventListeners(agent, agentId) {
+    const onEnter = ({ playerId }) => {
+      if (playerId === agentId) return
+      const player = world.entities.getPlayer(playerId)
+      pushEvent(agent, { type: 'player_joined', id: playerId, name: player?.data.name || 'Unknown' })
+    }
+    const onLeave = ({ playerId }) => {
+      if (playerId === agentId) return
+      const player = world.entities.getPlayer(playerId)
+      pushEvent(agent, { type: 'player_left', id: playerId, name: player?.data.name || 'Unknown' })
+    }
+    const onChat = (msg) => {
+      if (msg.fromId === agentId) return
+      pushEvent(agent, { type: 'chat', from: msg.from, fromId: msg.fromId, body: msg.body })
+    }
+
+    world.events.on('enter', onEnter)
+    world.events.on('leave', onLeave)
+    world.events.on('chat', onChat)
+
+    agent.eventCleanups = () => {
+      world.events.off('enter', onEnter)
+      world.events.off('leave', onLeave)
+      world.events.off('chat', onChat)
+    }
+  }
+
+  function teardownEventListeners(agent) {
+    if (agent.eventCleanups) {
+      agent.eventCleanups()
+      agent.eventCleanups = null
+    }
   }
 
   // --- Spatial awareness helpers ---
@@ -53,6 +101,16 @@ export default async function agentAPI(fastify, { world }) {
     const dx = b[0] - a[0]
     const dz = b[2] - a[2]
     return Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10
+  }
+
+  function getDotProduct(agentPos, forward, targetPos) {
+    const dx = targetPos[0] - agentPos[0]
+    const dz = targetPos[2] - agentPos[2]
+    const len = Math.sqrt(dx * dx + dz * dz)
+    if (len < 0.01) return 1
+    const nx = dx / len
+    const nz = dz / len
+    return forward[0] * nx + forward[1] * nz
   }
 
   function getRelativeDirection(agentPos, forward, targetPos) {
@@ -75,7 +133,6 @@ export default async function agentAPI(fastify, { world }) {
   }
 
   function getCompassFacing(forward) {
-    // atan2 of forward vector, game convention: -Z = north, +X = east
     const angle = Math.atan2(-forward[0], -forward[1])
     const deg = ((angle * 180) / Math.PI + 360) % 360
     if (deg < 22.5 || deg >= 337.5) return 'north'
@@ -88,7 +145,51 @@ export default async function agentAPI(fastify, { world }) {
     return 'north-east'
   }
 
-  // Periodically check for inactive agents and remove them
+  function getModeName(mode) {
+    return MODE_NAMES[mode] || 'idle'
+  }
+
+  // --- Shared entity helpers for building response objects ---
+
+  function buildPlayerInfo(player, agentPos, forward, detail) {
+    const dist = getDistance(agentPos, player.data.position)
+    const info = {
+      id: player.data.id,
+      type: 'player',
+      name: player.data.name,
+      distance: dist,
+      direction: getRelativeDirection(agentPos, forward, player.data.position),
+    }
+    if (detail === 'high') {
+      info.position = player.data.position
+      info.health = player.data.health ?? 100
+      info.mode = getModeName(player.data.mode ?? 0)
+      info.emote = player.data.emote || null
+    }
+    return info
+  }
+
+  function buildObjectInfo(item, blueprint, agentPos, forward, detail) {
+    const dist = getDistance(agentPos, item.data.position)
+    const info = {
+      id: item.data.id,
+      type: 'object',
+      name: blueprint?.name || 'Unknown',
+      distance: dist,
+      direction: getRelativeDirection(agentPos, forward, item.data.position),
+    }
+    if (detail === 'high') {
+      info.position = item.data.position
+      info.quaternion = item.data.quaternion
+      info.scale = item.data.scale
+      info.blueprintId = item.data.blueprint
+      info.hasScript = !!blueprint?.script
+    }
+    return info
+  }
+
+  // --- Lifecycle ---
+
   const cleanupInterval = setInterval(() => {
     const now = Date.now()
     for (const [id, agent] of agents) {
@@ -106,7 +207,6 @@ export default async function agentAPI(fastify, { world }) {
     }
   })
 
-  // Touch the agent on every request to keep it alive
   fastify.addHook('preHandler', (req, reply, done) => {
     const id = req.params?.id
     if (id) {
@@ -122,10 +222,7 @@ export default async function agentAPI(fastify, { world }) {
   fastify.post('/api/agents', async (req, reply) => {
     const { name = 'Agent', avatar } = req.body || {}
 
-    // Create a node-client world for this agent (same system as real players)
     const agentWorld = createNodeClientWorld()
-
-    // Clear authToken so this agent gets a fresh identity
     storage.set('authToken', null)
 
     const result = await new Promise((resolve, reject) => {
@@ -154,7 +251,9 @@ export default async function agentAPI(fastify, { world }) {
       agentWorld.init({ wsUrl, name, avatar })
     })
 
-    agents.set(result.id, { world: agentWorld, name, walkTimer: null, lastActivity: Date.now() })
+    const agent = { world: agentWorld, name, walkTimer: null, lastActivity: Date.now(), events: [], eventCleanups: null }
+    agents.set(result.id, agent)
+    setupEventListeners(agent, result.id)
 
     return result
   })
@@ -173,68 +272,186 @@ export default async function agentAPI(fastify, { world }) {
     return { agents: list }
   })
 
-  // GET /api/agents/:id — Get agent state + world observations with spatial awareness
-  fastify.get('/api/agents/:id', async (req, reply) => {
+  // =====================
+  // PERCEPTION ENDPOINTS
+  // =====================
+
+  // GET /api/agents/:id/state — Lightweight self-state + summary counts
+  fastify.get('/api/agents/:id/state', async (req, reply) => {
     const agent = agents.get(req.params.id)
     if (!agent) {
       return reply.code(404).send({ error: 'Agent not found' })
     }
 
-    // Read from the server world for authoritative state
     const entity = world.entities.get(req.params.id)
     if (!entity) {
       return reply.code(404).send({ error: 'Agent entity not found' })
     }
 
-    const agentPos = entity.data.position
     const forward = getForwardVector(entity.data.quaternion)
-    const facing = getCompassFacing(forward)
 
     const since = req.query.since ? new Date(req.query.since) : null
 
-    // Players with distance and relative direction
-    const players = []
+    let nearbyPlayerCount = 0
     for (const [, player] of world.entities.players) {
       if (player.data.id === req.params.id) continue
-      const dist = getDistance(agentPos, player.data.position)
-      players.push({
-        id: player.data.id,
-        name: player.data.name,
-        distance: dist,
-        direction: getRelativeDirection(agentPos, forward, player.data.position),
-      })
+      nearbyPlayerCount++
     }
-    players.sort((a, b) => a.distance - b.distance)
 
-    // Nearby objects with distance and relative direction
-    const nearbyObjects = []
+    let nearbyObjectCount = 0
     for (const [, item] of world.entities.items) {
-      if (!item.isApp) continue
-      const blueprint = world.blueprints.get(item.data.blueprint)
-      const dist = getDistance(agentPos, item.data.position)
-      nearbyObjects.push({
-        id: item.data.id,
-        name: blueprint?.name || 'Unknown',
-        distance: dist,
-        direction: getRelativeDirection(agentPos, forward, item.data.position),
-      })
+      if (item.isApp) nearbyObjectCount++
     }
-    nearbyObjects.sort((a, b) => a.distance - b.distance)
-    if (nearbyObjects.length > 50) nearbyObjects.length = 50
 
-    let chat = world.chat.msgs
+    let newChatMessages = world.chat.msgs.length
     if (since) {
-      chat = chat.filter(msg => new Date(msg.createdAt) > since)
+      newChatMessages = world.chat.msgs.filter(msg => new Date(msg.createdAt) > since).length
     }
 
     return {
       id: entity.data.id,
       name: entity.data.name,
       position: entity.data.position,
-      facing,
-      nearbyObjects,
-      players,
-      chat: chat.map(msg => ({
+      facing: getCompassFacing(forward),
+      summary: {
+        nearbyPlayerCount,
+        nearbyObjectCount,
+        newChatMessages,
+      },
+    }
+  })
+
+  // GET /api/agents/:id/nearby — Nearby entities with filtering
+  fastify.get('/api/agents/:id/nearby', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.id)
+    if (!entity) {
+      return reply.code(404).send({ error: 'Agent entity not found' })
+    }
+
+    const radius = Math.min(Math.max(parseFloat(req.query.radius) || 30, 1), 100)
+    const type = req.query.type || 'all'
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100)
+    const detail = req.query.detail === 'high' ? 'high' : 'low'
+
+    const agentPos = entity.data.position
+    const forward = getForwardVector(entity.data.quaternion)
+
+    const results = []
+
+    if (type === 'all' || type === 'player') {
+      for (const [, player] of world.entities.players) {
+        if (player.data.id === req.params.id) continue
+        const dist = getDistance(agentPos, player.data.position)
+        if (dist <= radius) {
+          results.push(buildPlayerInfo(player, agentPos, forward, detail))
+        }
+      }
+    }
+
+    if (type === 'all' || type === 'object') {
+      for (const [, item] of world.entities.items) {
+        if (!item.isApp) continue
+        const dist = getDistance(agentPos, item.data.position)
+        if (dist <= radius) {
+          const blueprint = world.blueprints.get(item.data.blueprint)
+          results.push(buildObjectInfo(item, blueprint, agentPos, forward, detail))
+        }
+      }
+    }
+
+    results.sort((a, b) => a.distance - b.distance)
+    if (results.length > limit) results.length = limit
+
+    return { nearby: results }
+  })
+
+  // GET /api/agents/:id/players — All players with detail levels
+  fastify.get('/api/agents/:id/players', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.id)
+    if (!entity) {
+      return reply.code(404).send({ error: 'Agent entity not found' })
+    }
+
+    const detail = req.query.detail === 'high' ? 'high' : 'low'
+    const agentPos = entity.data.position
+    const forward = getForwardVector(entity.data.quaternion)
+
+    const players = []
+    for (const [, player] of world.entities.players) {
+      if (player.data.id === req.params.id) continue
+      players.push(buildPlayerInfo(player, agentPos, forward, detail))
+    }
+    players.sort((a, b) => a.distance - b.distance)
+
+    return { players }
+  })
+
+  // GET /api/agents/:id/players/:playerId — Full details for one player
+  fastify.get('/api/agents/:id/players/:playerId', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.id)
+    if (!entity) {
+      return reply.code(404).send({ error: 'Agent entity not found' })
+    }
+
+    const player = world.entities.getPlayer(req.params.playerId)
+    if (!player) {
+      return reply.code(404).send({ error: 'Player not found' })
+    }
+
+    const agentPos = entity.data.position
+    const forward = getForwardVector(entity.data.quaternion)
+    const dist = getDistance(agentPos, player.data.position)
+
+    return {
+      id: player.data.id,
+      name: player.data.name,
+      distance: dist,
+      direction: getRelativeDirection(agentPos, forward, player.data.position),
+      position: player.data.position,
+      quaternion: player.data.quaternion,
+      health: player.data.health ?? 100,
+      mode: getModeName(player.data.mode ?? 0),
+      emote: player.data.emote || null,
+      rank: player.data.rank || 'member',
+      avatar: player.data.sessionAvatar || player.data.avatar || null,
+    }
+  })
+
+  // GET /api/agents/:id/chat — Chat history with since/limit filtering
+  fastify.get('/api/agents/:id/chat', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const since = req.query.since ? new Date(req.query.since) : null
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200)
+
+    let msgs = world.chat.msgs
+    if (since) {
+      msgs = msgs.filter(msg => new Date(msg.createdAt) > since)
+    }
+    if (msgs.length > limit) {
+      msgs = msgs.slice(msgs.length - limit)
+    }
+
+    return {
+      chat: msgs.map(msg => ({
         id: msg.id,
         from: msg.from,
         fromId: msg.fromId,
@@ -243,6 +460,111 @@ export default async function agentAPI(fastify, { world }) {
       })),
     }
   })
+
+  // GET /api/agents/:id/events — Event log since timestamp
+  fastify.get('/api/agents/:id/events', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const since = req.query.since ? new Date(req.query.since) : null
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200)
+
+    let events = agent.events
+    if (since) {
+      events = events.filter(e => new Date(e.at) > since)
+    }
+    if (events.length > limit) {
+      events = events.slice(events.length - limit)
+    }
+
+    return { events }
+  })
+
+  // GET /api/agents/:id/world — World metadata
+  fastify.get('/api/agents/:id/world', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    let playerCount = 0
+    for (const [,] of world.entities.players) {
+      playerCount++
+    }
+
+    let objectCount = 0
+    for (const [, item] of world.entities.items) {
+      if (item.isApp) objectCount++
+    }
+
+    return {
+      title: world.settings.title || null,
+      description: world.settings.desc || null,
+      playerCount,
+      objectCount,
+      playerLimit: world.settings.playerLimit || null,
+    }
+  })
+
+  // GET /api/agents/:id/scan — Directional cone scan
+  fastify.get('/api/agents/:id/scan', async (req, reply) => {
+    const agent = agents.get(req.params.id)
+    if (!agent) {
+      return reply.code(404).send({ error: 'Agent not found' })
+    }
+
+    const entity = world.entities.get(req.params.id)
+    if (!entity) {
+      return reply.code(404).send({ error: 'Agent entity not found' })
+    }
+
+    const angle = Math.min(Math.max(parseFloat(req.query.angle) || 90, 10), 360)
+    const distance = Math.min(Math.max(parseFloat(req.query.distance) || 30, 1), 100)
+    const detail = req.query.detail === 'high' ? 'high' : 'low'
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100)
+
+    const agentPos = entity.data.position
+    const forward = getForwardVector(entity.data.quaternion)
+
+    // Convert half-angle to dot product threshold: cos(angle/2)
+    // At angle=360 we want everything (threshold = -1)
+    const halfAngleRad = (angle / 2) * Math.PI / 180
+    const dotThreshold = Math.cos(halfAngleRad)
+
+    const results = []
+
+    for (const [, player] of world.entities.players) {
+      if (player.data.id === req.params.id) continue
+      const dist = getDistance(agentPos, player.data.position)
+      if (dist > distance) continue
+      const dot = getDotProduct(agentPos, forward, player.data.position)
+      if (dot >= dotThreshold) {
+        results.push(buildPlayerInfo(player, agentPos, forward, detail))
+      }
+    }
+
+    for (const [, item] of world.entities.items) {
+      if (!item.isApp) continue
+      const dist = getDistance(agentPos, item.data.position)
+      if (dist > distance) continue
+      const dot = getDotProduct(agentPos, forward, item.data.position)
+      if (dot >= dotThreshold) {
+        const blueprint = world.blueprints.get(item.data.blueprint)
+        results.push(buildObjectInfo(item, blueprint, agentPos, forward, detail))
+      }
+    }
+
+    results.sort((a, b) => a.distance - b.distance)
+    if (results.length > limit) results.length = limit
+
+    return { scan: results }
+  })
+
+  // =====================
+  // ACTION ENDPOINTS
+  // =====================
 
   // POST /api/agents/:id/walk — Walk forward for a duration
   fastify.post('/api/agents/:id/walk', async (req, reply) => {
@@ -257,13 +579,8 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(400).send({ error: 'duration must be a number between 0 and 30 seconds' })
     }
 
-    // Release any existing movement first
     releaseAllMovement(agent)
-
-    // Press forward key
     agent.world.controls.simulateButton('keyW', true)
-
-    // Schedule key release after duration
     agent.walkTimer = setTimeout(() => {
       agent.world.controls.simulateButton('keyW', false)
       agent.walkTimer = null
@@ -324,7 +641,6 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(400).send({ error: 'message must be a non-empty string' })
     }
 
-    // Use the agent's own chat system (same as real players)
     agent.world.chat.send(message)
 
     return {
@@ -346,26 +662,21 @@ export default async function agentAPI(fastify, { world }) {
       return reply.code(400).send({ error: 'prompt must be a non-empty string' })
     }
 
-    // Check if AI is enabled on this server
     if (!world.ai || !world.ai.enabled) {
       return reply.code(400).send({ error: 'AI generation is not enabled on this server (set AI_PROVIDER, AI_MODEL, AI_API_KEY in .env)' })
     }
 
-    // Get agent entity for position
     const entity = world.entities.get(req.params.id)
     if (!entity) {
       return reply.code(404).send({ error: 'Agent entity not found' })
     }
 
-    // Calculate spawn position (3 units in front of agent)
     const pos = entity.data.position
     const [qx, qy, qz, qw] = entity.data.quaternion
-    // Rotate [0, 0, -1] (forward) by the agent's quaternion
     const fx = -2 * (qx * qz + qw * qy)
     const fz = -(1 - 2 * (qx * qx + qy * qy))
     const spawnPos = [pos[0] + fx * 3, pos[1], pos[2] + fz * 3]
 
-    // Create blueprint (same structure as ClientAI.create)
     const blueprintId = uuid()
     const blueprint = {
       id: blueprintId,
@@ -388,12 +699,10 @@ export default async function agentAPI(fastify, { world }) {
       disabled: false,
     }
 
-    // Add blueprint on server and broadcast to all clients
     world.blueprints.add(blueprint)
     world.network.send('blueprintAdded', blueprint)
     world.network.dirtyBlueprints.add(blueprint.id)
 
-    // Create entity (app) at position in front of agent
     const appId = uuid()
     const appData = {
       id: appId,
@@ -411,7 +720,6 @@ export default async function agentAPI(fastify, { world }) {
     world.network.send('entityAdded', appData)
     world.network.dirtyApps.add(appId)
 
-    // Trigger AI code generation (runs in background)
     world.ai.onAction({
       name: 'create',
       blueprintId,
