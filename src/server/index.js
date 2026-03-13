@@ -159,6 +159,12 @@ fastify.get('/.well-known/llms.txt', async (req, reply) => {
   reply.type('text/plain').send(content)
 })
 
+fastify.get('/skills.md', async (req, reply) => {
+  const filePath = path.join(__dirname, 'skills.md')
+  const content = fs.readFileSync(filePath, 'utf-8')
+  reply.type('text/markdown').send(content)
+})
+
 fastify.post('/api/upload', async (req, reply) => {
   const mp = await req.file()
   // collect into buffer

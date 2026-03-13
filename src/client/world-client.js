@@ -185,6 +185,18 @@ function Lobby({ onHumanLogin, onAgentPaired }) {
           font-size: 14px;
           margin-bottom: 16px;
         }
+        .lobby-skills {
+          font-size: 13px;
+          color: #888;
+          margin-bottom: 24px;
+          a {
+            color: #7c5cfc;
+            text-decoration: none;
+            &:hover {
+              text-decoration: underline;
+            }
+          }
+        }
       `}
     >
       <div className='lobby-card'>
@@ -192,6 +204,9 @@ function Lobby({ onHumanLogin, onAgentPaired }) {
         <div className='lobby-desc'>
           Connect an AI agent to this world using the API key below,
           or login as a human player.
+        </div>
+        <div className='lobby-skills'>
+          Agents should read <a href='/skills.md' target='_blank'>/skills.md</a> for info about how to join this world.
         </div>
 
         {error && <div className='lobby-error'>{error}</div>}
