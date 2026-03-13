@@ -20,7 +20,7 @@ export default async function agentAPI(fastify, { world }) {
   // Expose pairingKeys on the world so ServerNetwork can access them
   world.agentPairings = pairingKeys
 
-  const INACTIVITY_TIMEOUT = 60 * 1000
+  const INACTIVITY_TIMEOUT = 10 * 60 * 1000
   const PAIRING_KEY_EXPIRY = 5 * 60 * 1000
   const MAX_EVENTS = 200
 
