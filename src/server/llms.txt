@@ -24,6 +24,38 @@ Take a screenshot every few seconds while moving to understand your surroundings
 - After building an object, to see how it looks in the world
 - When chatting with players, to see who is nearby
 
+## How Direction and Angle Work
+
+Every entity (player or object) returned by the API includes two spatial fields:
+
+- `direction` — a coarse human-readable label: "ahead", "behind", "left", "right", "ahead-left", "ahead-right", "behind-left", "behind-right", or "here"
+- `angle` — the precise signed angle in degrees from where you are currently facing to the target. **Positive = target is to your right. Negative = target is to your left.** Range: -180 to +180.
+
+The `angle` field tells you exactly how much to turn to face something. For example:
+- `angle: 0` — target is dead ahead, no turn needed
+- `angle: 15` — target is slightly to your right, turn right 15 degrees
+- `angle: -45` — target is to your left, turn left 45 degrees
+- `angle: 170` — target is almost directly behind you to the right
+
+## How to Navigate to a Target
+
+To walk toward something, use this pattern:
+
+1. Call `/nearby` or `/scan` to find the target and read its `angle` and `distance`
+2. If `angle` is not close to 0, turn to face it: call `/turn` with `direction: "right"` and `degrees: angle` (if angle is positive) or `direction: "left"` and `degrees: abs(angle)` (if angle is negative)
+3. Walk forward: call `/walk` with an appropriate `duration` based on the distance (walking speed is roughly 2 meters/second)
+4. After walking, call `/nearby` again to check your new angle and distance — you may need to make small corrections
+5. When `distance` is under ~2 meters, you are standing near the target — stop
+
+IMPORTANT: Do NOT keep turning and walking in a loop without re-checking your angle first. Always observe, then turn, then walk, then observe again. Small corrections are normal.
+
+Example — walking to a player named Alice who is 10m away at angle -30:
+
+    1. Turn left 30 degrees:  POST /turn { "direction": "left", "degrees": 30 }
+    2. Walk ~5 seconds:       POST /walk { "duration": 5 }
+    3. Wait for walk to finish, then check /nearby again
+    4. Alice is now 1.5m ahead at angle 2 — close enough, stop
+
 ## Perception Strategy
 
 The API is split into focused endpoints so you only request what you need. This keeps payloads small and your context window efficient.
@@ -38,7 +70,7 @@ The API is split into focused endpoints so you only request what you need. This 
 - `/world` to learn about the world itself (title, description, player count)
 - `/scan` to see what's in your field of view (cone-based directional query)
 
-**Detail levels:** Most perception endpoints support `?detail=low` (default) or `?detail=high`. Low detail gives you name, distance, and direction. High detail adds position, health, mode, and other properties. Start with low and only request high when you need it.
+**Detail levels:** Most perception endpoints support `?detail=low` (default) or `?detail=high`. Low detail gives you name, distance, direction, and angle. High detail adds position, health, mode, and other properties. Start with low and only request high when you need it.
 
 ## Endpoints
 
@@ -91,7 +123,7 @@ Response:
 
     GET /api/agents/:id/nearby
 
-Get nearby players and objects within a radius. Sorted by distance.
+Get nearby players and objects within a radius. Sorted by distance. Each entity includes a `direction` label and a precise `angle` (degrees to turn to face it — positive = right, negative = left).
 
 Query params:
 - `radius` — max distance in meters (default 30, max 100)
@@ -99,14 +131,12 @@ Query params:
 - `limit` — max results (default 20, max 100)
 - `detail` — "low" or "high" (default "low")
 
-Directions are relative to where you are facing: "ahead", "behind", "left", "right", "ahead-left", "ahead-right", "behind-left", "behind-right". Use turn to change your facing, then walk forward to move toward something.
-
 Response (low detail):
 
     {
       "nearby": [
-        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead-left" },
-        { "id": "app1", "type": "object", "name": "Purple Dragon", "distance": 8.5, "direction": "ahead-right" }
+        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead-left", "angle": -25 },
+        { "id": "app1", "type": "object", "name": "Purple Dragon", "distance": 8.5, "direction": "ahead-right", "angle": 40 }
       ]
     }
 
@@ -116,12 +146,12 @@ Response (high detail):
       "nearby": [
         {
           "id": "p1", "type": "player", "name": "Alice",
-          "distance": 4.2, "direction": "ahead-left",
+          "distance": 4.2, "direction": "ahead-left", "angle": -25,
           "position": [3, 0, 5], "health": 100, "mode": "walking", "emote": null
         },
         {
           "id": "app1", "type": "object", "name": "Purple Dragon",
-          "distance": 8.5, "direction": "ahead-right",
+          "distance": 8.5, "direction": "ahead-right", "angle": 40,
           "position": [10, 0, 2], "quaternion": [0, 0, 0, 1], "scale": [1, 1, 1],
           "blueprintId": "bp1", "hasScript": true
         }
@@ -141,7 +171,7 @@ Response (low detail):
 
     {
       "players": [
-        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead" }
+        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead", "angle": 5 }
       ]
     }
 
@@ -158,6 +188,7 @@ Response:
       "name": "Alice",
       "distance": 4.2,
       "direction": "ahead-left",
+      "angle": -25,
       "position": [3, 0, 5],
       "quaternion": [0, 0, 0, 1],
       "health": 100,
@@ -241,49 +272,62 @@ Response:
 
     {
       "scan": [
-        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead" },
-        { "id": "app1", "type": "object", "name": "Purple Dragon", "distance": 8.5, "direction": "ahead-right" }
+        { "id": "p1", "type": "player", "name": "Alice", "distance": 4.2, "direction": "ahead", "angle": 5 },
+        { "id": "app1", "type": "object", "name": "Purple Dragon", "distance": 8.5, "direction": "ahead-right", "angle": 35 }
       ]
-    }
-
-### Walk Forward
-
-    POST /api/agents/:id/walk
-
-Walk forward for a number of seconds. Your avatar will walk and animate naturally. Use turn to change direction before walking.
-
-Request body:
-
-    {
-      "duration": 2
-    }
-
-Duration: 0.1 to 30 seconds.
-
-Response:
-
-    {
-      "duration": 2
     }
 
 ### Turn
 
     POST /api/agents/:id/turn
 
-Turn your agent left or right by a number of degrees. This changes the facing direction. Use this to aim where you want to go, then walk forward.
+Turn your agent to face a new direction. The turn takes effect immediately — your character physically rotates in the world. Use the `angle` field from nearby/scan responses to know exactly how much to turn.
 
 Request body:
 
     {
-      "direction": "left",
-      "degrees": 90
+      "direction": "right",
+      "degrees": 25
     }
+
+- `direction` — "left" or "right" (default "left")
+- `degrees` — how far to turn, 0 to 360 (default 90)
+
+To face a target with `angle: -25` (25 degrees to the left), turn left 25 degrees:
+
+    { "direction": "left", "degrees": 25 }
+
+To face a target with `angle: 40` (40 degrees to the right), turn right 40 degrees:
+
+    { "direction": "right", "degrees": 40 }
 
 Response:
 
     {
-      "direction": "left",
-      "degrees": 90
+      "direction": "right",
+      "degrees": 25
+    }
+
+### Walk Forward
+
+    POST /api/agents/:id/walk
+
+Walk forward for a number of seconds. Your avatar walks at roughly 2 meters per second. Always turn to face your target first, then walk forward.
+
+Request body:
+
+    {
+      "duration": 2
+    }
+
+Duration: 0.1 to 30 seconds. To walk roughly N meters, use `duration = N / 2`.
+
+IMPORTANT: After calling walk, wait for the walk to finish (the full duration) before calling walk or turn again. You can still call observation endpoints while walking.
+
+Response:
+
+    {
+      "duration": 2
     }
 
 ### Stop
@@ -451,91 +495,87 @@ Response:
       "success": true
     }
 
-## Example (JavaScript)
+## Example — Navigate to a Player
 
     const API = 'https://my-world.herokuapp.com'
     const headers = { 'Content-Type': 'application/json' }
 
-    // Spawn into the world
+    // Spawn
     const agent = await fetch(`${API}/api/agents`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ name: 'ClawBot' }),
+      method: 'POST', headers,
+      body: JSON.stringify({ name: 'Navigator' }),
     }).then(r => r.json())
-    console.log(`Spawned as ${agent.name} at ${agent.position}`)
 
-    // Lightweight tick — check state and summary
-    let state = await fetch(`${API}/api/agents/${agent.id}/state`).then(r => r.json())
-    console.log('Facing:', state.facing, '| Players:', state.summary.nearbyPlayerCount)
+    // Look for nearby players
+    const { nearby } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player`).then(r => r.json())
+    const target = nearby[0]
+    if (!target) { console.log('No players nearby'); process.exit() }
 
-    // If there are players nearby, get details
-    if (state.summary.nearbyPlayerCount > 0) {
-      const { nearby } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player&detail=high`).then(r => r.json())
-      console.log('Nearby players:', nearby)
+    console.log(`Found ${target.name} at distance ${target.distance}, angle ${target.angle}`)
+
+    // Turn to face the target using the precise angle
+    if (Math.abs(target.angle) > 3) {
+      await fetch(`${API}/api/agents/${agent.id}/turn`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          direction: target.angle > 0 ? 'right' : 'left',
+          degrees: Math.abs(target.angle)
+        }),
+      })
     }
 
-    // If there are new chat messages, read them
-    let lastChat = ''
-    if (state.summary.newChatMessages > 0) {
-      const { chat } = await fetch(`${API}/api/agents/${agent.id}/chat?since=${lastChat}`).then(r => r.json())
-      for (const msg of chat) {
-        console.log(`${msg.from}: ${msg.body}`)
-        lastChat = msg.createdAt
-      }
-    }
-
-    // Scan what's directly in front of you
-    const { scan } = await fetch(`${API}/api/agents/${agent.id}/scan?angle=60&distance=20`).then(r => r.json())
-    console.log('In front of me:', scan)
-
-    // Walk forward for 3 seconds
+    // Walk toward them (speed ~2 m/s, stop a bit short)
+    const walkDuration = Math.max(0.5, (target.distance - 2) / 2)
     await fetch(`${API}/api/agents/${agent.id}/walk`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ duration: 3 }),
+      method: 'POST', headers,
+      body: JSON.stringify({ duration: walkDuration }),
     })
-    await new Promise(r => setTimeout(r, 3000))
 
-    // Turn right 90 degrees
-    await fetch(`${API}/api/agents/${agent.id}/turn`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ direction: 'right', degrees: 90 }),
-    })
+    // Wait for walk to finish
+    await new Promise(r => setTimeout(r, walkDuration * 1000 + 500))
+
+    // Check position — did we arrive?
+    const { nearby: after } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player`).then(r => r.json())
+    const updated = after.find(p => p.id === target.id)
+    if (updated) {
+      console.log(`Now ${updated.distance}m from ${updated.name} (angle ${updated.angle})`)
+    }
 
     // Say hello
     await fetch(`${API}/api/agents/${agent.id}/chat`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ message: 'Hello from ClawBot!' }),
+      method: 'POST', headers,
+      body: JSON.stringify({ message: `Hey ${target.name}!` }),
     })
 
-    // Get world info (call once, rarely changes)
-    const worldInfo = await fetch(`${API}/api/agents/${agent.id}/world`).then(r => r.json())
-    console.log(`World: ${worldInfo.title} (${worldInfo.playerCount} players)`)
+## Example — Efficient Observe Loop
 
-    // Efficient observe loop using events
     let lastEvent = new Date().toISOString()
+    let lastChat = ''
+
     setInterval(async () => {
-      // Check state (tiny payload)
-      state = await fetch(`${API}/api/agents/${agent.id}/state?since=${lastChat}`).then(r => r.json())
+      // Lightweight state check
+      const state = await fetch(`${API}/api/agents/${agent.id}/state?since=${lastChat}`).then(r => r.json())
 
       // Check events for what changed
       const { events } = await fetch(`${API}/api/agents/${agent.id}/events?since=${lastEvent}`).then(r => r.json())
       for (const event of events) {
         if (event.type === 'chat') {
           console.log(`${event.from}: ${event.body}`)
+          lastChat = event.at
         } else if (event.type === 'player_joined') {
-          console.log(`${event.name} joined the world`)
+          console.log(`${event.name} joined`)
         } else if (event.type === 'player_left') {
-          console.log(`${event.name} left the world`)
+          console.log(`${event.name} left`)
         }
         lastEvent = event.at
       }
-    }, 2000)
 
-    // Leave when done
-    await fetch(`${API}/api/agents/${agent.id}`, { method: 'DELETE' })
+      // Only fetch nearby details when needed
+      if (state.summary.nearbyPlayerCount > 0) {
+        const { nearby } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player&radius=10`).then(r => r.json())
+        // React to nearby players...
+      }
+    }, 2000)
 
 ## Error Responses
 

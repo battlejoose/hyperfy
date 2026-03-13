@@ -103,33 +103,35 @@ export default async function agentAPI(fastify, { world }) {
     return Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10
   }
 
-  function getDotProduct(agentPos, forward, targetPos) {
+  function getTargetVector(agentPos, forward, targetPos) {
     const dx = targetPos[0] - agentPos[0]
     const dz = targetPos[2] - agentPos[2]
     const len = Math.sqrt(dx * dx + dz * dz)
-    if (len < 0.01) return 1
-    const nx = dx / len
-    const nz = dz / len
-    return forward[0] * nx + forward[1] * nz
-  }
-
-  function getRelativeDirection(agentPos, forward, targetPos) {
-    const dx = targetPos[0] - agentPos[0]
-    const dz = targetPos[2] - agentPos[2]
-    const len = Math.sqrt(dx * dx + dz * dz)
-    if (len < 0.01) return 'here'
+    if (len < 0.01) return { dot: 1, cross: 0, angle: 0 }
     const nx = dx / len
     const nz = dz / len
     // dot product: positive = ahead, negative = behind
     const dot = forward[0] * nx + forward[1] * nz
     // cross product (2D): positive = right, negative = left
     const cross = forward[0] * nz - forward[1] * nx
+    // signed angle in degrees: positive = right, negative = left
+    const angle = Math.round(Math.atan2(cross, dot) * 180 / Math.PI)
+    return { dot, cross, angle }
+  }
+
+  function getRelativeDirection(agentPos, forward, targetPos) {
+    const { dot, cross, angle } = getTargetVector(agentPos, forward, targetPos)
+    if (Math.abs(angle) < 1 && dot > 0.99) return 'here'
     const fb = dot > 0.4 ? 'ahead' : dot < -0.4 ? 'behind' : ''
     const lr = cross > 0.4 ? 'right' : cross < -0.4 ? 'left' : ''
     if (fb && lr) return `${fb}-${lr}`
     if (fb) return fb
     if (lr) return lr
     return 'ahead'
+  }
+
+  function getAngleToTarget(agentPos, forward, targetPos) {
+    return getTargetVector(agentPos, forward, targetPos).angle
   }
 
   function getCompassFacing(forward) {
@@ -159,6 +161,7 @@ export default async function agentAPI(fastify, { world }) {
       name: player.data.name,
       distance: dist,
       direction: getRelativeDirection(agentPos, forward, player.data.position),
+      angle: getAngleToTarget(agentPos, forward, player.data.position),
     }
     if (detail === 'high') {
       info.position = player.data.position
@@ -177,6 +180,7 @@ export default async function agentAPI(fastify, { world }) {
       name: blueprint?.name || 'Unknown',
       distance: dist,
       direction: getRelativeDirection(agentPos, forward, item.data.position),
+      angle: getAngleToTarget(agentPos, forward, item.data.position),
     }
     if (detail === 'high') {
       info.position = item.data.position
@@ -422,6 +426,7 @@ export default async function agentAPI(fastify, { world }) {
       name: player.data.name,
       distance: dist,
       direction: getRelativeDirection(agentPos, forward, player.data.position),
+      angle: getAngleToTarget(agentPos, forward, player.data.position),
       position: player.data.position,
       quaternion: player.data.quaternion,
       health: player.data.health ?? 100,
@@ -539,7 +544,7 @@ export default async function agentAPI(fastify, { world }) {
       if (player.data.id === req.params.id) continue
       const dist = getDistance(agentPos, player.data.position)
       if (dist > distance) continue
-      const dot = getDotProduct(agentPos, forward, player.data.position)
+      const { dot } = getTargetVector(agentPos, forward, player.data.position)
       if (dot >= dotThreshold) {
         results.push(buildPlayerInfo(player, agentPos, forward, detail))
       }
@@ -549,7 +554,7 @@ export default async function agentAPI(fastify, { world }) {
       if (!item.isApp) continue
       const dist = getDistance(agentPos, item.data.position)
       if (dist > distance) continue
-      const dot = getDotProduct(agentPos, forward, item.data.position)
+      const { dot } = getTargetVector(agentPos, forward, item.data.position)
       if (dot >= dotThreshold) {
         const blueprint = world.blueprints.get(item.data.blueprint)
         results.push(buildObjectInfo(item, blueprint, agentPos, forward, detail))
@@ -609,6 +614,17 @@ export default async function agentAPI(fastify, { world }) {
     const player = agent.world.entities.player
     const radians = (degrees * Math.PI) / 180
     player.cam.rotation.y += direction === 'left' ? radians : -radians
+
+    // Also update the character's actual facing (base quaternion) immediately
+    // Without this, the character only visually turns when it starts walking
+    const halfY = player.cam.rotation.y / 2
+    player.base.quaternion.set(0, Math.sin(halfY), 0, Math.cos(halfY))
+
+    // Push the rotation update to the server so /state reflects it immediately
+    agent.world.network.send('entityModified', {
+      id: player.data.id,
+      q: player.base.quaternion.toArray(),
+    })
 
     return { direction, degrees }
   })
