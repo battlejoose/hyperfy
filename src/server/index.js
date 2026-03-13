@@ -162,7 +162,7 @@ fastify.get('/.well-known/llms.txt', async (req, reply) => {
 fastify.get('/llms.txt', async (req, reply) => {
   const title = world.settings.title || 'Hyperfy World'
   const host = req.hostname
-  const proto = req.protocol
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https'
   const baseUrl = `${proto}://${host}`
   const content = [
     `# ${title}`,
