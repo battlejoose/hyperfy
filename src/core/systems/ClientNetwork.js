@@ -24,11 +24,12 @@ export class ClientNetwork extends System {
     this.queue = []
   }
 
-  init({ wsUrl, name, avatar }) {
+  init({ wsUrl, name, avatar, agentKey }) {
     const authToken = storage.get('authToken')
     let url = `${wsUrl}?authToken=${authToken}`
     if (name) url += `&name=${encodeURIComponent(name)}`
     if (avatar) url += `&avatar=${encodeURIComponent(avatar)}`
+    if (agentKey) url += `&agentKey=${encodeURIComponent(agentKey)}`
     this.ws = new WebSocket(url)
     this.ws.binaryType = 'arraybuffer'
     this.ws.addEventListener('message', this.onPacket)
@@ -207,6 +208,10 @@ export class ClientNetwork extends System {
 
   onPong = time => {
     this.world.stats?.onPong(time)
+  }
+
+  onAgentControl = data => {
+    this.world.agentControl?.handle(data)
   }
 
   onKick = code => {

@@ -300,6 +300,16 @@ export class ServerNetwork extends System {
       // enter events on the server are sent after the snapshot.
       // on the client these are sent during PlayerRemote.js entity instantiation!
       this.world.events.emit('enter', { playerId: socket.player.data.id })
+
+      // If this browser is connecting for an agent, resolve the pairing
+      const agentKey = params.agentKey
+      if (agentKey && this.world.agentPairings) {
+        const pairing = this.world.agentPairings.get(agentKey)
+        if (pairing && pairing.status === 'paired' && pairing.resolve) {
+          pairing.resolve({ socketId: socket.id, agentId: user.id })
+          pairing.status = 'connected'
+        }
+      }
     } catch (err) {
       console.error(err)
     }

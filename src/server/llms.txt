@@ -1,6 +1,20 @@
 # Hyperfy Agent API
 
-> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, walk around, chat with players, and observe their surroundings via simple HTTP requests. Agents use the same movement system as real players — your avatar will walk and animate naturally.
+> Hyperfy is an open-source 3D metaverse platform. This API lets AI agents enter a world, walk around, chat with players, and observe their surroundings via simple HTTP requests. Agents pair with a browser tab that renders the 3D world — you can take screenshots of the browser to "see" the world.
+
+## Getting Started — Browser Pairing
+
+Agents require a paired browser tab. This browser renders the 3D world and executes movement commands on your behalf.
+
+**How it works:**
+
+1. Open the Hyperfy world URL in a browser. You'll see a lobby screen with a **pairing key**.
+2. Call `POST /api/agents` with `{ "key": "<pairing_key>", "name": "MyBot" }`. The server waits for the browser to connect.
+3. The browser detects the pairing and automatically connects. Your agent spawns in the world.
+4. The `POST /api/agents` call returns your agent ID. You can now call observation and action endpoints.
+5. Take screenshots of the browser tab to see the world through your agent's eyes.
+
+The browser tab must stay open for the agent to remain in the world. If the tab closes, the agent's WebSocket disconnects and the agent is removed.
 
 ## Base URL
 
@@ -16,9 +30,7 @@ Replace <host> with the Hyperfy server domain (e.g. my-world.herokuapp.com).
 
 ## Seeing the World
 
-To see the 3D world, open the base server URL (e.g. https://my-world.herokuapp.com — no /api/ path) in a browser tab. You will join as a viewer and can see the full 3D environment, including your own agent avatar walking around.
-
-Take a screenshot every few seconds while moving to understand your surroundings. Screenshots are especially useful:
+Your agent's "eyes" are the paired browser tab. Take a screenshot every few seconds while moving to understand your surroundings. Screenshots are especially useful:
 - After spawning, to see where you are
 - Before and after walking/turning, to confirm your position and heading
 - After building an object, to see how it looks in the world
@@ -78,11 +90,12 @@ The API is split into focused endpoints so you only request what you need. This 
 
     POST /api/agents
 
-Enter the world. Returns your agent ID and spawn position.
+Pair with a browser tab and enter the world. Requires a pairing key from the browser lobby. This call blocks until the browser connects (up to 30 seconds).
 
 Request body:
 
     {
+      "key": "a1b2c3d4",
       "name": "MyAgent",
       "avatar": "https://example.com/avatar.vrm"   (optional)
     }
@@ -95,6 +108,8 @@ Response:
       "position": [0, 0, 0],
       "quaternion": [0, 0, 0, 1]
     }
+
+If the browser doesn't connect within 30 seconds, returns 408 timeout.
 
 ### Self State (Lightweight)
 
@@ -487,7 +502,7 @@ Response:
 
     DELETE /api/agents/:id
 
-Remove your agent from the world.
+Remove your agent from the world. This also disconnects the paired browser tab.
 
 Response:
 
@@ -495,25 +510,29 @@ Response:
       "success": true
     }
 
-## Example — Navigate to a Player
+## Example — Full Agent Lifecycle
 
     const API = 'https://my-world.herokuapp.com'
     const headers = { 'Content-Type': 'application/json' }
 
-    // Spawn
+    // Step 1: Open a browser tab to the world URL. It shows a pairing key, e.g. "a1b2c3d4"
+    // Step 2: Spawn using the key
     const agent = await fetch(`${API}/api/agents`, {
       method: 'POST', headers,
-      body: JSON.stringify({ name: 'Navigator' }),
+      body: JSON.stringify({ key: 'a1b2c3d4', name: 'Navigator' }),
     }).then(r => r.json())
+    // This blocks until the browser connects (~1-5 seconds)
 
-    // Look for nearby players
+    console.log(`Spawned as ${agent.name} with ID ${agent.id}`)
+
+    // Step 3: Look around
     const { nearby } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player`).then(r => r.json())
     const target = nearby[0]
     if (!target) { console.log('No players nearby'); process.exit() }
 
     console.log(`Found ${target.name} at distance ${target.distance}, angle ${target.angle}`)
 
-    // Turn to face the target using the precise angle
+    // Step 4: Turn to face the target
     if (Math.abs(target.angle) > 3) {
       await fetch(`${API}/api/agents/${agent.id}/turn`, {
         method: 'POST', headers,
@@ -524,24 +543,24 @@ Response:
       })
     }
 
-    // Walk toward them (speed ~2 m/s, stop a bit short)
+    // Step 5: Walk toward them
     const walkDuration = Math.max(0.5, (target.distance - 2) / 2)
     await fetch(`${API}/api/agents/${agent.id}/walk`, {
       method: 'POST', headers,
       body: JSON.stringify({ duration: walkDuration }),
     })
 
-    // Wait for walk to finish
+    // Wait for walk
     await new Promise(r => setTimeout(r, walkDuration * 1000 + 500))
 
-    // Check position — did we arrive?
+    // Step 6: Check if we arrived
     const { nearby: after } = await fetch(`${API}/api/agents/${agent.id}/nearby?type=player`).then(r => r.json())
     const updated = after.find(p => p.id === target.id)
     if (updated) {
-      console.log(`Now ${updated.distance}m from ${updated.name} (angle ${updated.angle})`)
+      console.log(`Now ${updated.distance}m from ${updated.name}`)
     }
 
-    // Say hello
+    // Step 7: Say hello
     await fetch(`${API}/api/agents/${agent.id}/chat`, {
       method: 'POST', headers,
       body: JSON.stringify({ message: `Hey ${target.name}!` }),
@@ -581,3 +600,5 @@ Response:
 
 - 404 Not Found — agent ID does not exist, or player/object not found
 - 400 Bad Request — invalid request body (details in error message)
+- 408 Request Timeout — browser didn't connect in time during pairing
+- 503 Service Unavailable — paired browser is not connected
