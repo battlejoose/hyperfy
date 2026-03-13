@@ -17,6 +17,10 @@
     <meta name="twitter:description" content="{desc}" />
     <meta name="twitter:image" content="{image}" />
 
+    <meta name="ai-docs" content="/skills.md" />
+    <meta name="ai-api" content="/api/agents" />
+    <link rel="ai-plugin" href="/skills.md" />
+
     <meta
       name="viewport"
       content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
@@ -33,6 +37,22 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <noscript>
+      <h1>{title} - Hyperfy Virtual World</h1>
+      <p>This is a 3D virtual world powered by Hyperfy where AI agents can enter,
+      walk around, chat with players, and build 3D objects.</p>
+
+      <h2>AI Agents</h2>
+      <p>If you are an AI agent, read the full API documentation at
+      <a href="/skills.md">/skills.md</a></p>
+      <p>Quick start: Open this URL in a browser to get a pairing key,
+      then POST to /api/agents with the key to enter the world.</p>
+
+      <h2>Humans</h2>
+      <p>Enable JavaScript to enter the 3D world.</p>
+    </noscript>
+
     <script src="/env.js?v={buildId}"></script>
     <script src="{jsPath}" type="module"></script>
   </body>

@@ -96,7 +96,7 @@ fastify.register(cors)
 fastify.register(compress)
 fastify.get('/', async (req, reply) => {
   const title = world.settings.title || 'World'
-  const desc = world.settings.desc || ''
+  const desc = world.settings.desc || 'A 3D virtual world powered by Hyperfy. AI agents can join via the API — read /skills.md for documentation.'
   const image = world.resolveURL(world.settings.image?.url) || ''
   const url = process.env.ASSETS_BASE_URL
   const filePath = path.join(__dirname, 'public', 'index.html')
@@ -159,10 +159,59 @@ fastify.get('/.well-known/llms.txt', async (req, reply) => {
   reply.type('text/plain').send(content)
 })
 
+fastify.get('/llms.txt', async (req, reply) => {
+  const title = world.settings.title || 'Hyperfy World'
+  const host = req.hostname
+  const proto = req.protocol
+  const baseUrl = `${proto}://${host}`
+  const content = [
+    `# ${title}`,
+    ``,
+    `> This is a 3D virtual world powered by Hyperfy. AI agents can enter this world,`,
+    `> walk around, chat with players, and build 3D objects using a REST API.`,
+    ``,
+    `## Agent Documentation`,
+    ``,
+    `- Full API docs: ${baseUrl}/skills.md`,
+    `- API base URL: ${baseUrl}/api/agents`,
+    ``,
+    `## Quick Start`,
+    ``,
+    `1. Open ${baseUrl} in a browser tab (you need a paired browser)`,
+    `2. The lobby screen shows a pairing key`,
+    `3. POST /api/agents with {"key": "<pairing_key>", "name": "YourName"}`,
+    `4. Control your character via REST API endpoints documented in /skills.md`,
+    ``,
+    `## Capabilities`,
+    ``,
+    `- Enter the world with a 3D avatar`,
+    `- Walk, turn, and navigate`,
+    `- Chat with other players and agents`,
+    `- Build 3D objects with AI prompts`,
+    `- Read and write JavaScript scripts on objects`,
+    `- Observe nearby players and objects`,
+    ``,
+  ].join('\n')
+  reply.type('text/plain').send(content)
+})
+
 fastify.get('/skills.md', async (req, reply) => {
   const filePath = path.join(__dirname, 'skills.md')
   const content = fs.readFileSync(filePath, 'utf-8')
   reply.type('text/markdown').send(content)
+})
+
+fastify.get('/robots.txt', async (req, reply) => {
+  const content = [
+    'User-agent: *',
+    'Allow: /',
+    '',
+    '# AI Agent Documentation',
+    '# Full API: /skills.md',
+    '# Machine-readable: /llms.txt',
+    '',
+  ].join('\n')
+  reply.type('text/plain').send(content)
 })
 
 fastify.post('/api/upload', async (req, reply) => {
