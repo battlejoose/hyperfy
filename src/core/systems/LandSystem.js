@@ -1,7 +1,7 @@
 import { System } from './System'
 import { uuid } from '../utils'
 
-const GRID_SIZE = 100
+const GRID_SIZE = 25
 const PLOT_SIZE = 50
 const ROAD_WIDTH = 5
 const CELL_PITCH = PLOT_SIZE + ROAD_WIDTH // 55m
@@ -18,8 +18,11 @@ export class LandSystem extends System {
   async init({ db }) {
     this.db = db
 
+    const maxPlot = GRID_SIZE * GRID_SIZE
+
     const rows = await this.db('parcels').select('*')
     for (const row of rows) {
+      if (row.id > maxPlot) continue
       this.parcels.set(row.id, {
         ownerId: row.ownerId,
         ownerName: row.ownerName,
@@ -30,8 +33,10 @@ export class LandSystem extends System {
 
     // Query the entities table directly to discover what already exists in DB,
     // avoiding race conditions with ServerNetwork.start() which loads these
-    // into memory asynchronously.
-    const entityRows = await this.db('entities').select('data')
+    // into memory asynchronously. Also purge stale land entities from old
+    // larger grids.
+    const staleEntityIds = []
+    const entityRows = await this.db('entities').select('id', 'data')
     for (const row of entityRows) {
       try {
         const data = JSON.parse(row.data)
@@ -39,22 +44,46 @@ export class LandSystem extends System {
           this.hasRoadEntity = true
         }
         if (data.blueprint && data.blueprint.startsWith('$land-claim-')) {
-          this.existingBlueprintIds.add(data.blueprint)
+          const plotNum = parseInt(data.blueprint.replace('$land-claim-', ''))
+          if (plotNum > maxPlot) {
+            staleEntityIds.push(row.id)
+          } else {
+            this.existingBlueprintIds.add(data.blueprint)
+          }
         }
       } catch (e) {
         // skip malformed
       }
     }
 
-    const blueprintRows = await this.db('blueprints').select('data')
+    const staleBlueprintIds = []
+    const blueprintRows = await this.db('blueprints').select('id', 'data')
     for (const row of blueprintRows) {
       try {
         const bp = JSON.parse(row.data)
-        if (bp.id === '$land-roads' || (bp.id && bp.id.startsWith('$land-claim-'))) {
+        if (bp.id === '$land-roads') {
           this.existingBlueprintIds.add(bp.id)
+        }
+        if (bp.id && bp.id.startsWith('$land-claim-')) {
+          const plotNum = parseInt(bp.id.replace('$land-claim-', ''))
+          if (plotNum > maxPlot) {
+            staleBlueprintIds.push(row.id)
+          } else {
+            this.existingBlueprintIds.add(bp.id)
+          }
         }
       } catch (e) {
         // skip
+      }
+    }
+
+    if (staleEntityIds.length || staleBlueprintIds.length) {
+      console.log(`[land] purging ${staleEntityIds.length} stale entities and ${staleBlueprintIds.length} stale blueprints from old grid`)
+      for (const id of staleEntityIds) {
+        await this.db('entities').where('id', id).delete()
+      }
+      for (const id of staleBlueprintIds) {
+        await this.db('blueprints').where('id', id).delete()
       }
     }
   }

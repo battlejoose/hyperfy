@@ -1,4 +1,4 @@
-const GRID_SIZE = 100
+const GRID_SIZE = 25
 const PLOT_SIZE = 50
 const ROAD_WIDTH = 5
 const CELL_PITCH = PLOT_SIZE + ROAD_WIDTH
