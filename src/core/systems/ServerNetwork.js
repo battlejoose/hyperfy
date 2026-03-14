@@ -258,7 +258,10 @@ export class ServerNetwork extends System {
       // create socket
       const socket = new Socket({ id: user.id, ws, network: this })
 
+      const isAgent = !!params.agentKey
+
       // spawn player
+      const defaultAvatar = isAgent ? 'asset://lobster.vrm' : (this.world.settings.avatar?.url || 'asset://avatar.vrm')
       socket.player = this.world.entities.add(
         {
           id: user.id,
@@ -269,7 +272,7 @@ export class ServerNetwork extends System {
           userId: user.id, // deprecated, same as userId
           name: name || user.name,
           health: HEALTH_MAX,
-          avatar: user.avatar || this.world.settings.avatar?.url || 'asset://avatar.vrm',
+          avatar: user.avatar || defaultAvatar,
           sessionAvatar: avatar || null,
           rank: user.rank,
           enteredAt: Date.now(),
