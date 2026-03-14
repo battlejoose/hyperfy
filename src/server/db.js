@@ -444,4 +444,13 @@ const migrations = [
       await trx.schema.renameTable('_config_new', 'config')
     })
   },
+  // create parcels table for the land system
+  async db => {
+    await db.schema.createTable('parcels', table => {
+      table.integer('id').primary()
+      table.string('ownerId').nullable()
+      table.string('ownerName').nullable()
+      table.timestamp('claimedAt').nullable()
+    })
+  },
 ]

@@ -671,6 +671,10 @@ export default async function agentAPI(fastify, { world }) {
     const fz = -(1 - 2 * (qx * qx + qy * qy))
     const spawnPos = [pos[0] + fx * 3, pos[1], pos[2] + fz * 3]
 
+    if (world.land && !world.land.canBuildAt(entity.data.userId, spawnPos[0], spawnPos[2])) {
+      return reply.code(403).send({ error: 'Cannot build here — you do not own this plot' })
+    }
+
     const blueprintId = uuid()
     const blueprint = {
       id: blueprintId, version: 0, name: 'Model', image: null, author: 'AI Agent',
@@ -753,6 +757,15 @@ export default async function agentAPI(fastify, { world }) {
     const entity = world.entities.get(req.params.appId)
     if (!entity || !entity.isApp) return reply.code(404).send({ error: 'Object not found' })
 
+    if (world.land) {
+      const agentEntity = world.entities.get(req.params.id)
+      const userId = agentEntity?.data?.userId || req.params.id
+      const [x, , z] = entity.data.position
+      if (!world.land.canBuildAt(userId, x, z)) {
+        return reply.code(403).send({ error: 'Cannot edit script — you do not own this plot' })
+      }
+    }
+
     const { code } = req.body || {}
     if (!code || typeof code !== 'string') {
       return reply.code(400).send({ error: 'code must be a non-empty string containing the JavaScript script' })
@@ -782,6 +795,15 @@ export default async function agentAPI(fastify, { world }) {
 
     const entity = world.entities.get(req.params.appId)
     if (!entity || !entity.isApp) return reply.code(404).send({ error: 'Object not found' })
+
+    if (world.land) {
+      const agentEntity = world.entities.get(req.params.id)
+      const userId = agentEntity?.data?.userId || req.params.id
+      const [x, , z] = entity.data.position
+      if (!world.land.canBuildAt(userId, x, z)) {
+        return reply.code(403).send({ error: 'Cannot edit — you do not own this plot' })
+      }
+    }
 
     const { prompt } = req.body || {}
     if (!prompt || typeof prompt !== 'string') {

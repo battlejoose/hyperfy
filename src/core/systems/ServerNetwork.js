@@ -454,15 +454,22 @@ export class ServerNetwork extends System {
     if (!socket.player.isBuilder()) {
       return console.error('player attempted to modify blueprint without builder permission')
     }
+    if (this.world.land && !socket.player.isAdmin()) {
+      for (const [, entity] of this.world.entities.items) {
+        if (entity.isApp && entity.data.blueprint === data.id) {
+          const [x, , z] = entity.data.position
+          if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
+            return console.error('player attempted to modify blueprint of entity on land they do not own')
+          }
+        }
+      }
+    }
     const blueprint = this.world.blueprints.get(data.id)
-    // if new version is greater than current version, allow it
     if (data.version > blueprint.version) {
       this.world.blueprints.modify(data)
       this.send('blueprintModified', data, socket.id)
       this.dirtyBlueprints.add(data.id)
-    }
-    // otherwise, send a revert back to client, because someone else modified before them
-    else {
+    } else {
       socket.send('blueprintModified', blueprint)
     }
   }
@@ -470,6 +477,12 @@ export class ServerNetwork extends System {
   onEntityAdded = (socket, data) => {
     if (!socket.player.isBuilder()) {
       return console.error('player attempted to add entity without builder permission')
+    }
+    if (this.world.land && data.position && !socket.player.isAdmin()) {
+      const [x, , z] = data.position
+      if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
+        return console.error('player attempted to add entity on land they do not own')
+      }
     }
     const entity = this.world.entities.add(data)
     this.send('entityAdded', data, socket.id)
@@ -479,14 +492,23 @@ export class ServerNetwork extends System {
   onEntityModified = async (socket, data) => {
     const entity = this.world.entities.get(data.id)
     if (!entity) return console.error('onEntityModified: no entity found', data)
+    if (this.world.land && entity.isApp && !socket.player.isAdmin()) {
+      const oldPos = entity.data.position
+      const newPos = data.position || oldPos
+      const userId = socket.player.data.userId
+      if (!this.world.land.canBuildAt(userId, oldPos[0], oldPos[2])) {
+        return console.error('player attempted to modify entity on land they do not own')
+      }
+      if (data.position && !this.world.land.canBuildAt(userId, newPos[0], newPos[2])) {
+        return console.error('player attempted to move entity to land they do not own')
+      }
+    }
     entity.modify(data)
     this.send('entityModified', data, socket.id)
     if (entity.isApp) {
-      // mark for saving
       this.dirtyApps.add(entity.data.id)
     }
     if (entity.isPlayer) {
-      // persist player name and avatar changes
       const changes = {}
       let changed
       if (data.hasOwnProperty('name')) {
@@ -512,6 +534,12 @@ export class ServerNetwork extends System {
   onEntityRemoved = (socket, id) => {
     if (!socket.player.isBuilder()) return console.error('player attempted to remove entity without builder permission')
     const entity = this.world.entities.get(id)
+    if (this.world.land && entity?.isApp && !socket.player.isAdmin()) {
+      const [x, , z] = entity.data.position
+      if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
+        return console.error('player attempted to remove entity on land they do not own')
+      }
+    }
     this.world.entities.remove(id)
     this.send('entityRemoved', id, socket.id)
     if (entity.isApp) this.dirtyApps.add(id)
