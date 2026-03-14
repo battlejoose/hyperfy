@@ -4,19 +4,19 @@ const ownerName = app.props.ownerName
 
 const isClaimed = !!ownerId
 
-const POST_HEIGHT = 2
-const POST_WIDTH = 0.1
-const SIGN_WIDTH = 1.6
-const SIGN_HEIGHT = 0.8
-const SIGN_DEPTH = 0.06
+const POST_HEIGHT = 4
+const POST_WIDTH = 0.15
+const SIGN_WIDTH = 2.5
+const SIGN_HEIGHT = 1.4
+const SIGN_DEPTH = 0.08
 
 const $post = app.create('prim', {
   type: 'box',
   size: [POST_WIDTH, POST_HEIGHT, POST_WIDTH],
-  color: '#666666',
+  color: '#444444',
   position: [0, POST_HEIGHT / 2, 0],
-  metalness: 0.6,
-  roughness: 0.4,
+  metalness: 0.4,
+  roughness: 0.6,
   castShadow: true,
   receiveShadow: true,
   physics: 'static',
@@ -28,39 +28,39 @@ const $sign = app.create('prim', {
   size: [SIGN_WIDTH, SIGN_HEIGHT, SIGN_DEPTH],
   color: isClaimed ? '#2d5a27' : '#1a3a5c',
   position: [0, POST_HEIGHT - SIGN_HEIGHT / 2 + 0.1, SIGN_DEPTH / 2 + POST_WIDTH / 2],
-  metalness: 0.3,
-  roughness: 0.7,
+  metalness: 0.2,
+  roughness: 0.8,
   castShadow: true,
   receiveShadow: true,
 })
 app.add($sign)
 
 const $ui = app.create('ui', {
-  width: 200,
-  height: 140,
-  size: 0.007,
+  width: 300,
+  height: 200,
+  size: 0.008,
   position: [0, POST_HEIGHT - SIGN_HEIGHT / 2 + 0.1, SIGN_DEPTH + POST_WIDTH / 2 + 0.01],
   billboard: 'none',
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: 8,
+  padding: 12,
 })
 
 const $title = app.create('uitext', {
   value: `Lot #${plotId}`,
-  fontSize: 18,
+  fontSize: 24,
   fontWeight: 700,
   color: 'white',
   textAlign: 'center',
-  margin: [0, 0, 6, 0],
+  margin: [0, 0, 8, 0],
 })
 $ui.add($title)
 
 if (isClaimed) {
   const $owner = app.create('uitext', {
     value: `Owned by ${ownerName}`,
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: 400,
     color: '#aaffaa',
     textAlign: 'center',
@@ -69,7 +69,7 @@ if (isClaimed) {
 } else {
   const $status = app.create('uitext', {
     value: 'Available',
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: 400,
     color: '#aaddff',
     textAlign: 'center',
@@ -83,7 +83,7 @@ if (!isClaimed) {
   const $claimAction = app.create('action', {
     label: 'Claim Lot',
     position: [0, POST_HEIGHT / 2, 0],
-    distance: 5,
+    distance: 8,
     duration: 0.5,
     onTrigger: () => {
       app.send('claim', { plotId })
@@ -98,7 +98,7 @@ if (isClaimed && world.isClient) {
     const $unclaimAction = app.create('action', {
       label: 'Unclaim Lot',
       position: [0, POST_HEIGHT / 2, 0],
-      distance: 5,
+      distance: 8,
       duration: 0.5,
       onTrigger: () => {
         app.send('unclaim', { plotId })
