@@ -32,10 +32,6 @@ export class LandSystem extends System {
     }
     console.log(`[land] loaded ${this.parcels.size} claimed parcels`)
 
-    // Query DB directly to discover what already exists, avoiding race
-    // conditions with ServerNetwork.start(). Track entities and blueprints
-    // separately so we can detect orphaned blueprints without entities.
-    const staleEntityIds = []
     const entityRows = await this.db('entities').select('id', 'data')
     for (const row of entityRows) {
       try {
@@ -45,47 +41,25 @@ export class LandSystem extends System {
         }
         if (data.blueprint && data.blueprint.startsWith('$land-claim-')) {
           const plotNum = parseInt(data.blueprint.replace('$land-claim-', ''))
-          if (plotNum > maxPlot) {
-            staleEntityIds.push(row.id)
-          } else {
+          if (plotNum <= maxPlot) {
             this.existingSignPlots.add(plotNum)
           }
         }
-      } catch (e) {
-        // skip malformed
-      }
+      } catch (e) {}
     }
 
-    const staleBlueprintIds = []
     const blueprintRows = await this.db('blueprints').select('id', 'data')
     for (const row of blueprintRows) {
       try {
         const bp = JSON.parse(row.data)
-        if (bp.id === '$land-roads') {
+        if (bp.id === '$land-roads' || (bp.id && bp.id.startsWith('$land-claim-'))) {
           this.existingBlueprints.add(bp.id)
         }
-        if (bp.id && bp.id.startsWith('$land-claim-')) {
-          const plotNum = parseInt(bp.id.replace('$land-claim-', ''))
-          if (plotNum > maxPlot) {
-            staleBlueprintIds.push(row.id)
-          } else {
-            this.existingBlueprints.add(bp.id)
-          }
-        }
-      } catch (e) {
-        // skip
-      }
+      } catch (e) {}
     }
 
-    if (staleEntityIds.length || staleBlueprintIds.length) {
-      console.log(`[land] purging ${staleEntityIds.length} stale entities and ${staleBlueprintIds.length} stale blueprints from old grid`)
-      for (const id of staleEntityIds) {
-        await this.db('entities').where('id', id).delete()
-      }
-      for (const id of staleBlueprintIds) {
-        await this.db('blueprints').where('id', id).delete()
-      }
-    }
+    console.log(`[land] found ${this.existingSignPlots.size} sign entities and ${this.existingBlueprints.size} blueprints in DB`)
+    console.log(`[land] hasRoadEntity: ${this.hasRoadEntity}`)
   }
 
   start() {
@@ -192,7 +166,7 @@ export class LandSystem extends System {
 
   ensureRoads() {
     if (!this.existingBlueprints.has('$land-roads')) {
-      const bp = {
+      this.world.blueprints.add({
         id: '$land-roads',
         version: 0,
         name: 'Land Roads',
@@ -204,9 +178,9 @@ export class LandSystem extends System {
         locked: true,
         unique: true,
         disabled: false,
-      }
-      this.world.blueprints.add(bp, true)
-      this.world.network.dirtyBlueprints.add(bp.id)
+      }, true)
+      this.world.network.dirtyBlueprints.add('$land-roads')
+      console.log('[land] created roads blueprint')
     }
 
     if (!this.hasRoadEntity) {
@@ -224,13 +198,14 @@ export class LandSystem extends System {
       }
       this.world.entities.add(data, true)
       this.world.network.dirtyApps.add(data.id)
-      console.log('[land] spawned road grid entity')
+      console.log('[land] created roads entity')
     }
   }
 
   ensureClaimSigns() {
     const total = GRID_SIZE * GRID_SIZE
-    let spawned = 0
+    let newBp = 0
+    let newEnt = 0
     for (let plotId = 1; plotId <= total; plotId++) {
       const bpId = `$land-claim-${plotId}`
       const parcel = this.parcels.get(plotId)
@@ -254,6 +229,7 @@ export class LandSystem extends System {
           disabled: false,
         }, true)
         this.world.network.dirtyBlueprints.add(bpId)
+        newBp++
       }
 
       if (!this.existingSignPlots.has(plotId)) {
@@ -272,12 +248,10 @@ export class LandSystem extends System {
         }
         this.world.entities.add(data, true)
         this.world.network.dirtyApps.add(data.id)
-        spawned++
+        newEnt++
       }
     }
-    if (spawned > 0) {
-      console.log(`[land] spawned ${spawned} claim sign entities`)
-    }
+    console.log(`[land] signs: ${newBp} new blueprints, ${newEnt} new entities (${this.existingSignPlots.size} already in DB)`)
   }
 
   listenForEvents() {
