@@ -481,7 +481,9 @@ export class ServerNetwork extends System {
     if (this.world.land && data.position && socket.player.data.rank < 2) {
       const [x, , z] = data.position
       if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
-        return console.error('player attempted to add entity on land they do not own')
+        console.error('player attempted to add entity on land they do not own')
+        socket.send('entityRemoved', data.id)
+        return
       }
     }
     const entity = this.world.entities.add(data)
@@ -497,10 +499,14 @@ export class ServerNetwork extends System {
       const newPos = data.position || oldPos
       const userId = socket.player.data.userId
       if (!this.world.land.canBuildAt(userId, oldPos[0], oldPos[2])) {
-        return console.error('player attempted to modify entity on land they do not own')
+        console.error('player attempted to modify entity on land they do not own')
+        socket.send('entityModified', entity.data)
+        return
       }
       if (data.position && !this.world.land.canBuildAt(userId, newPos[0], newPos[2])) {
-        return console.error('player attempted to move entity to land they do not own')
+        console.error('player attempted to move entity to land they do not own')
+        socket.send('entityModified', entity.data)
+        return
       }
     }
     entity.modify(data)
@@ -598,6 +604,15 @@ export class ServerNetwork extends System {
   onAi = (socket, action) => {
     if (!socket.player.isBuilder()) {
       return console.error('player attempted to use ai but they are not a builder')
+    }
+    if (this.world.land && socket.player.data.rank < 2 && action.appId) {
+      const entity = this.world.entities.get(action.appId)
+      if (entity?.isApp) {
+        const [x, , z] = entity.data.position
+        if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
+          return console.error('player attempted to use ai on land they do not own')
+        }
+      }
     }
     this.world.ai.onAction(action)
   }
