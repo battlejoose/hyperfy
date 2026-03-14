@@ -454,7 +454,7 @@ export class ServerNetwork extends System {
     if (!socket.player.isBuilder()) {
       return console.error('player attempted to modify blueprint without builder permission')
     }
-    if (this.world.land && !socket.player.isAdmin()) {
+    if (this.world.land && socket.player.data.rank < 2) {
       for (const [, entity] of this.world.entities.items) {
         if (entity.isApp && entity.data.blueprint === data.id) {
           const [x, , z] = entity.data.position
@@ -478,7 +478,7 @@ export class ServerNetwork extends System {
     if (!socket.player.isBuilder()) {
       return console.error('player attempted to add entity without builder permission')
     }
-    if (this.world.land && data.position && !socket.player.isAdmin()) {
+    if (this.world.land && data.position && socket.player.data.rank < 2) {
       const [x, , z] = data.position
       if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
         return console.error('player attempted to add entity on land they do not own')
@@ -492,7 +492,7 @@ export class ServerNetwork extends System {
   onEntityModified = async (socket, data) => {
     const entity = this.world.entities.get(data.id)
     if (!entity) return console.error('onEntityModified: no entity found', data)
-    if (this.world.land && entity.isApp && !socket.player.isAdmin()) {
+    if (this.world.land && entity.isApp && socket.player.data.rank < 2) {
       const oldPos = entity.data.position
       const newPos = data.position || oldPos
       const userId = socket.player.data.userId
@@ -534,7 +534,7 @@ export class ServerNetwork extends System {
   onEntityRemoved = (socket, id) => {
     if (!socket.player.isBuilder()) return console.error('player attempted to remove entity without builder permission')
     const entity = this.world.entities.get(id)
-    if (this.world.land && entity?.isApp && !socket.player.isAdmin()) {
+    if (this.world.land && entity?.isApp && socket.player.data.rank < 2) {
       const [x, , z] = entity.data.position
       if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
         return console.error('player attempted to remove entity on land they do not own')
