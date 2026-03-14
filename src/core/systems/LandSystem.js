@@ -5,25 +5,23 @@ const GRID_SIZE = 25
 const PLOT_SIZE = 50
 const ROAD_WIDTH = 5
 const CELL_PITCH = PLOT_SIZE + ROAD_WIDTH // 55m
-const HALF_GRID = (GRID_SIZE * CELL_PITCH) / 2 // 2750m
+const HALF_GRID = (GRID_SIZE * CELL_PITCH) / 2 // 687.5m
 
 export class LandSystem extends System {
   constructor(world) {
     super(world)
     this.parcels = new Map()
-    this.existingSignPlots = new Set()
-    this.existingBlueprints = new Set()
     this.hasRoadEntity = false
+    this.hasRoadBlueprint = false
   }
 
   async init({ db }) {
     this.db = db
 
-    const maxPlot = GRID_SIZE * GRID_SIZE
-
+    // Load ownership data
     const rows = await this.db('parcels').select('*')
     for (const row of rows) {
-      if (row.id > maxPlot) continue
+      if (row.id > GRID_SIZE * GRID_SIZE) continue
       this.parcels.set(row.id, {
         ownerId: row.ownerId,
         ownerName: row.ownerName,
@@ -32,18 +30,18 @@ export class LandSystem extends System {
     }
     console.log(`[land] loaded ${this.parcels.size} claimed parcels`)
 
+    // Check what already exists in DB
     const entityRows = await this.db('entities').select('id', 'data')
+    const staleEntityIds = []
     for (const row of entityRows) {
       try {
         const data = JSON.parse(row.data)
         if (data.blueprint === '$land-roads') {
           this.hasRoadEntity = true
         }
+        // Old sign entities from the previous per-plot approach — remove them
         if (data.blueprint && data.blueprint.startsWith('$land-claim-')) {
-          const plotNum = parseInt(data.blueprint.replace('$land-claim-', ''))
-          if (plotNum <= maxPlot) {
-            this.existingSignPlots.add(plotNum)
-          }
+          staleEntityIds.push(row.id)
         }
       } catch (e) {}
     }
@@ -52,20 +50,36 @@ export class LandSystem extends System {
     for (const row of blueprintRows) {
       try {
         const bp = JSON.parse(row.data)
-        if (bp.id === '$land-roads' || (bp.id && bp.id.startsWith('$land-claim-'))) {
-          this.existingBlueprints.add(bp.id)
+        if (bp.id === '$land-roads') {
+          this.hasRoadBlueprint = true
         }
       } catch (e) {}
     }
 
-    console.log(`[land] found ${this.existingSignPlots.size} sign entities and ${this.existingBlueprints.size} blueprints in DB`)
-    console.log(`[land] hasRoadEntity: ${this.hasRoadEntity}`)
+    // Clean up old per-plot sign entities and blueprints
+    if (staleEntityIds.length > 0) {
+      for (const id of staleEntityIds) {
+        await this.db('entities').where('id', id).delete()
+      }
+      console.log(`[land] removed ${staleEntityIds.length} old sign entities`)
+    }
+    const staleResult = await this.db('blueprints').where('id', 'like', '$land-claim-%').delete()
+    if (staleResult > 0) {
+      console.log(`[land] removed ${staleResult} old sign blueprints`)
+    }
   }
 
   start() {
     this.ensureRoads()
-    this.ensureClaimSigns()
     this.listenForEvents()
+  }
+
+  serializeParcels() {
+    const obj = {}
+    for (const [plotId, data] of this.parcels) {
+      obj[String(plotId)] = { ownerId: data.ownerId, ownerName: data.ownerName }
+    }
+    return obj
   }
 
   getPlotCenter(plotId) {
@@ -86,7 +100,7 @@ export class LandSystem extends System {
     const cellX = gx % CELL_PITCH
     const cellZ = gz % CELL_PITCH
     if (cellX >= PLOT_SIZE || cellZ >= PLOT_SIZE) {
-      return null // on a road
+      return null
     }
     const col = Math.floor(gx / CELL_PITCH)
     const row = Math.floor(gz / CELL_PITCH)
@@ -157,31 +171,32 @@ export class LandSystem extends System {
     return { ok: true }
   }
 
-  getSignPosition(plotId) {
-    const center = this.getPlotCenter(plotId)
-    const halfPlot = PLOT_SIZE / 2
-    const roadOffset = ROAD_WIDTH / 2
-    return [center.x - halfPlot - roadOffset, 0, center.z - halfPlot - roadOffset]
-  }
-
   ensureRoads() {
-    if (!this.existingBlueprints.has('$land-roads')) {
-      this.world.blueprints.add({
-        id: '$land-roads',
-        version: 0,
-        name: 'Land Roads',
-        model: null,
-        script: 'asset://land-roads.js',
-        props: {},
-        preload: false,
-        public: false,
-        locked: true,
-        unique: true,
-        disabled: false,
-      }, true)
-      this.world.network.dirtyBlueprints.add('$land-roads')
-      console.log('[land] created roads blueprint')
+    const bpData = {
+      id: '$land-roads',
+      version: 0,
+      name: 'Land Roads & Signs',
+      model: null,
+      script: 'asset://land-roads.js',
+      props: { parcels: this.serializeParcels() },
+      preload: false,
+      public: false,
+      locked: true,
+      unique: true,
+      disabled: false,
     }
+
+    if (this.hasRoadBlueprint) {
+      // Update existing blueprint with current parcel data
+      const existing = this.world.blueprints.get('$land-roads')
+      if (existing) {
+        bpData.version = existing.version
+      }
+      this.world.blueprints.modify(bpData)
+    } else {
+      this.world.blueprints.add(bpData, true)
+    }
+    this.world.network.dirtyBlueprints.add('$land-roads')
 
     if (!this.hasRoadEntity) {
       const data = {
@@ -202,58 +217,6 @@ export class LandSystem extends System {
     }
   }
 
-  ensureClaimSigns() {
-    const total = GRID_SIZE * GRID_SIZE
-    let newBp = 0
-    let newEnt = 0
-    for (let plotId = 1; plotId <= total; plotId++) {
-      const bpId = `$land-claim-${plotId}`
-      const parcel = this.parcels.get(plotId)
-
-      if (!this.existingBlueprints.has(bpId)) {
-        this.world.blueprints.add({
-          id: bpId,
-          version: 0,
-          name: `Lot #${plotId}`,
-          model: null,
-          script: 'asset://land-claim.js',
-          props: {
-            plotId,
-            ownerId: parcel?.ownerId || null,
-            ownerName: parcel?.ownerName || null,
-          },
-          preload: false,
-          public: false,
-          locked: true,
-          unique: true,
-          disabled: false,
-        }, true)
-        this.world.network.dirtyBlueprints.add(bpId)
-        newBp++
-      }
-
-      if (!this.existingSignPlots.has(plotId)) {
-        const pos = this.getSignPosition(plotId)
-        const data = {
-          id: uuid(),
-          type: 'app',
-          blueprint: bpId,
-          position: pos,
-          quaternion: [0, 0, 0, 1],
-          scale: [1, 1, 1],
-          mover: null,
-          uploader: null,
-          pinned: true,
-          state: {},
-        }
-        this.world.entities.add(data, true)
-        this.world.network.dirtyApps.add(data.id)
-        newEnt++
-      }
-    }
-    console.log(`[land] signs: ${newBp} new blueprints, ${newEnt} new entities (${this.existingSignPlots.size} already in DB)`)
-  }
-
   listenForEvents() {
     this.world.events.on('landClaim', async ({ plotId, playerId }) => {
       await this.handleClaim(plotId, playerId)
@@ -268,7 +231,7 @@ export class LandSystem extends System {
     if (!player) return
     const result = await this.claim(plotId, player.data.userId, player.data.name)
     if (result.ok) {
-      this.updateSignBlueprint(plotId)
+      this.updateRoadsBlueprint()
     }
   }
 
@@ -277,25 +240,21 @@ export class LandSystem extends System {
     if (!player) return
     const result = await this.unclaim(plotId, player.data.userId)
     if (result.ok) {
-      this.updateSignBlueprint(plotId)
+      this.updateRoadsBlueprint()
     }
   }
 
-  updateSignBlueprint(plotId) {
-    const bpId = `$land-claim-${plotId}`
-    const parcel = this.parcels.get(plotId)
+  updateRoadsBlueprint() {
+    const bp = this.world.blueprints.get('$land-roads')
+    if (!bp) return
     const change = {
-      id: bpId,
-      version: (this.world.blueprints.get(bpId)?.version || 0) + 1,
-      props: {
-        plotId,
-        ownerId: parcel?.ownerId || null,
-        ownerName: parcel?.ownerName || null,
-      },
+      id: '$land-roads',
+      version: (bp.version || 0) + 1,
+      props: { parcels: this.serializeParcels() },
     }
     this.world.blueprints.modify(change)
     this.world.network.send('blueprintModified', change)
-    this.world.network.dirtyBlueprints.add(bpId)
+    this.world.network.dirtyBlueprints.add('$land-roads')
   }
 }
 

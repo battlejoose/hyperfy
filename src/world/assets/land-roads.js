@@ -4,7 +4,9 @@ var ROAD_WIDTH = 5
 var CELL_PITCH = PLOT_SIZE + ROAD_WIDTH
 var HALF_GRID = (GRID_SIZE * CELL_PITCH) / 2
 var GRID_SPAN = GRID_SIZE * CELL_PITCH
+var parcels = props.parcels || {}
 
+// Roads
 for (var i = 0; i < GRID_SIZE - 1; i++) {
   var offset = (i + 1) * CELL_PITCH - HALF_GRID - ROAD_WIDTH / 2
 
@@ -35,6 +37,7 @@ for (var i = 0; i < GRID_SIZE - 1; i++) {
   app.add(vRoad)
 }
 
+// Signs
 for (var plotId = 1; plotId <= GRID_SIZE * GRID_SIZE; plotId++) {
   var idx = plotId - 1
   var row = Math.floor(idx / GRID_SIZE)
@@ -44,19 +47,103 @@ for (var plotId = 1; plotId <= GRID_SIZE * GRID_SIZE; plotId++) {
   var sx = cx - PLOT_SIZE / 2 - ROAD_WIDTH / 2
   var sz = cz - PLOT_SIZE / 2 - ROAD_WIDTH / 2
 
-  var signPost = app.create('prim', {
+  var parcel = parcels[String(plotId)]
+  var isClaimed = !!(parcel && parcel.ownerId)
+
+  var post = app.create('prim', {
     type: 'box',
     size: [0.15, 4, 0.15],
-    color: '#ff0000',
+    color: isClaimed ? '#2d5a27' : '#cc3333',
     position: [sx, 2, sz],
+    metalness: 0.1,
+    roughness: 0.9,
   })
-  app.add(signPost)
+  app.add(post)
 
-  var signBoard = app.create('prim', {
+  var board = app.create('prim', {
     type: 'box',
-    size: [2, 1, 0.08],
-    color: '#1a3a5c',
-    position: [sx, 3.5, sz],
+    size: [2.5, 1.2, 0.08],
+    color: isClaimed ? '#1a4a1a' : '#1a3a5c',
+    position: [sx, 3.8, sz],
+    metalness: 0.2,
+    roughness: 0.8,
   })
-  app.add(signBoard)
+  app.add(board)
+
+  if (world.isClient) {
+    var ui = app.create('ui', {
+      width: 280,
+      height: 140,
+      size: 0.007,
+      position: [sx, 3.8, sz + 0.06],
+      billboard: 'none',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 10,
+    })
+    var title = app.create('uitext', {
+      value: 'Lot #' + plotId,
+      fontSize: 22,
+      fontWeight: 700,
+      color: 'white',
+      textAlign: 'center',
+      margin: [0, 0, 6, 0],
+    })
+    ui.add(title)
+
+    if (isClaimed) {
+      var ownerText = app.create('uitext', {
+        value: parcel.ownerName || 'Unknown',
+        fontSize: 15,
+        color: '#aaffaa',
+        textAlign: 'center',
+      })
+      ui.add(ownerText)
+    } else {
+      var availText = app.create('uitext', {
+        value: 'Available',
+        fontSize: 16,
+        color: '#aaddff',
+        textAlign: 'center',
+      })
+      ui.add(availText)
+    }
+    app.add(ui)
+
+    if (!isClaimed) {
+      var claimAct = app.create('action', {
+        label: 'Claim Lot #' + plotId,
+        position: [sx, 2, sz],
+        distance: 8,
+        duration: 0.5,
+        onTrigger: (function(pid) {
+          return function() { app.send('claim', { plotId: pid }) }
+        })(plotId),
+      })
+      app.add(claimAct)
+    }
+
+    if (isClaimed && world.networkId === parcel.ownerId) {
+      var unclaimAct = app.create('action', {
+        label: 'Unclaim Lot #' + plotId,
+        position: [sx, 2, sz],
+        distance: 8,
+        duration: 0.5,
+        onTrigger: (function(pid) {
+          return function() { app.send('unclaim', { plotId: pid }) }
+        })(plotId),
+      })
+      app.add(unclaimAct)
+    }
+  }
+}
+
+if (world.isServer) {
+  app.on('claim', function(data, networkId) {
+    app.emit('landClaim', { plotId: data.plotId, playerId: networkId })
+  })
+  app.on('unclaim', function(data, networkId) {
+    app.emit('landUnclaim', { plotId: data.plotId, playerId: networkId })
+  })
 }
