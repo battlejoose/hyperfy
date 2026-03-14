@@ -153,18 +153,12 @@ fastify.get('/env.js', async (req, reply) => {
   reply.type('application/javascript').send(envsCode)
 })
 
-fastify.get('/.well-known/llms.txt', async (req, reply) => {
-  const filePath = path.join(__dirname, 'llms.txt')
-  const content = fs.readFileSync(filePath, 'utf-8')
-  reply.type('text/plain').send(content)
-})
-
-fastify.get('/llms.txt', async (req, reply) => {
+function buildLlmsTxt(req) {
   const title = world.settings.title || 'Hyperfy World'
   const host = req.hostname
   const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https'
   const baseUrl = `${proto}://${host}`
-  const content = [
+  return [
     `# ${title}`,
     ``,
     `> This is a 3D virtual world powered by Hyperfy. AI agents can join this world.`,
@@ -173,7 +167,14 @@ fastify.get('/llms.txt', async (req, reply) => {
     `Read the ENTIRE document — it contains everything you need to enter and navigate this world.`,
     ``,
   ].join('\n')
-  reply.type('text/plain').send(content)
+}
+
+fastify.get('/.well-known/llms.txt', async (req, reply) => {
+  reply.type('text/plain').send(buildLlmsTxt(req))
+})
+
+fastify.get('/llms.txt', async (req, reply) => {
+  reply.type('text/plain').send(buildLlmsTxt(req))
 })
 
 fastify.get('/skills.md', async (req, reply) => {

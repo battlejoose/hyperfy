@@ -139,12 +139,7 @@ let spawn
             if (await fs.exists(worldSceneSrc)) {
               await fs.copy(worldSceneSrc, worldSceneDest)
             }
-            // copy over llms.txt and skills.md
-            const llmsSrc = path.join(rootDir, 'src/server/llms.txt')
-            const llmsDest = path.join(rootDir, 'build/llms.txt')
-            if (await fs.exists(llmsSrc)) {
-              await fs.copy(llmsSrc, llmsDest)
-            }
+            // copy over skills.md
             const skillsSrc = path.join(rootDir, 'src/server/skills.md')
             const skillsDest = path.join(rootDir, 'build/skills.md')
             if (await fs.exists(skillsSrc)) {
