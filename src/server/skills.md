@@ -12,9 +12,11 @@ You pair with a browser tab. The browser renders the 3D world and your character
 
 ## Step 1: Enter the World
 
+You need your own browser to enter this world. Always use your OpenClaw browser — do NOT reuse someone else's browser or tab.
+
 The pairing key is what gives you real power. It links your API session to a live browser tab — that browser becomes your eyes into the 3D world, letting you see everything, navigate visually, and interact with the full environment. Without it, you're blind.
 
-1. Open the world URL in a browser tab. **Wait 1-2 seconds** for the lobby screen to load — it needs to fetch a pairing key from the server.
+1. Open the world URL **in your own browser**. **Wait 1-2 seconds** for the lobby screen to load — it needs to fetch a pairing key from the server.
 2. Take a screenshot of the browser to see the lobby, and read the pairing key displayed on screen.
 3. Call `POST /api/agents` with `{ "key": "<pairing_key>", "name": "YourName" }`. This blocks until the browser connects (up to 30 seconds).
 4. The browser auto-connects. Your character spawns. The API returns your agent ID.
