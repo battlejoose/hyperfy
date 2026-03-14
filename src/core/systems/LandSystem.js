@@ -11,7 +11,8 @@ export class LandSystem extends System {
   constructor(world) {
     super(world)
     this.parcels = new Map()
-    this.existingBlueprintIds = new Set()
+    this.existingSignPlots = new Set()
+    this.existingBlueprints = new Set()
     this.hasRoadEntity = false
   }
 
@@ -31,10 +32,9 @@ export class LandSystem extends System {
     }
     console.log(`[land] loaded ${this.parcels.size} claimed parcels`)
 
-    // Query the entities table directly to discover what already exists in DB,
-    // avoiding race conditions with ServerNetwork.start() which loads these
-    // into memory asynchronously. Also purge stale land entities from old
-    // larger grids.
+    // Query DB directly to discover what already exists, avoiding race
+    // conditions with ServerNetwork.start(). Track entities and blueprints
+    // separately so we can detect orphaned blueprints without entities.
     const staleEntityIds = []
     const entityRows = await this.db('entities').select('id', 'data')
     for (const row of entityRows) {
@@ -48,7 +48,7 @@ export class LandSystem extends System {
           if (plotNum > maxPlot) {
             staleEntityIds.push(row.id)
           } else {
-            this.existingBlueprintIds.add(data.blueprint)
+            this.existingSignPlots.add(plotNum)
           }
         }
       } catch (e) {
@@ -62,14 +62,14 @@ export class LandSystem extends System {
       try {
         const bp = JSON.parse(row.data)
         if (bp.id === '$land-roads') {
-          this.existingBlueprintIds.add(bp.id)
+          this.existingBlueprints.add(bp.id)
         }
         if (bp.id && bp.id.startsWith('$land-claim-')) {
           const plotNum = parseInt(bp.id.replace('$land-claim-', ''))
           if (plotNum > maxPlot) {
             staleBlueprintIds.push(row.id)
           } else {
-            this.existingBlueprintIds.add(bp.id)
+            this.existingBlueprints.add(bp.id)
           }
         }
       } catch (e) {
@@ -191,7 +191,7 @@ export class LandSystem extends System {
   }
 
   ensureRoads() {
-    if (!this.existingBlueprintIds.has('$land-roads')) {
+    if (!this.existingBlueprints.has('$land-roads')) {
       const bp = {
         id: '$land-roads',
         version: 0,
@@ -233,45 +233,47 @@ export class LandSystem extends System {
     let spawned = 0
     for (let plotId = 1; plotId <= total; plotId++) {
       const bpId = `$land-claim-${plotId}`
-      if (this.existingBlueprintIds.has(bpId)) continue
-
-      const pos = this.getSignPosition(plotId)
       const parcel = this.parcels.get(plotId)
 
-      this.world.blueprints.add({
-        id: bpId,
-        version: 0,
-        name: `Lot #${plotId}`,
-        model: null,
-        script: 'asset://land-claim.js',
-        props: {
-          plotId,
-          ownerId: parcel?.ownerId || null,
-          ownerName: parcel?.ownerName || null,
-        },
-        preload: false,
-        public: false,
-        locked: true,
-        unique: true,
-        disabled: false,
-      }, true)
-      this.world.network.dirtyBlueprints.add(bpId)
-
-      const data = {
-        id: uuid(),
-        type: 'app',
-        blueprint: bpId,
-        position: pos,
-        quaternion: [0, 0, 0, 1],
-        scale: [1, 1, 1],
-        mover: null,
-        uploader: null,
-        pinned: true,
-        state: {},
+      if (!this.existingBlueprints.has(bpId)) {
+        this.world.blueprints.add({
+          id: bpId,
+          version: 0,
+          name: `Lot #${plotId}`,
+          model: null,
+          script: 'asset://land-claim.js',
+          props: {
+            plotId,
+            ownerId: parcel?.ownerId || null,
+            ownerName: parcel?.ownerName || null,
+          },
+          preload: false,
+          public: false,
+          locked: true,
+          unique: true,
+          disabled: false,
+        }, true)
+        this.world.network.dirtyBlueprints.add(bpId)
       }
-      this.world.entities.add(data, true)
-      this.world.network.dirtyApps.add(data.id)
-      spawned++
+
+      if (!this.existingSignPlots.has(plotId)) {
+        const pos = this.getSignPosition(plotId)
+        const data = {
+          id: uuid(),
+          type: 'app',
+          blueprint: bpId,
+          position: pos,
+          quaternion: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          mover: null,
+          uploader: null,
+          pinned: true,
+          state: {},
+        }
+        this.world.entities.add(data, true)
+        this.world.network.dirtyApps.add(data.id)
+        spawned++
+      }
     }
     if (spawned > 0) {
       console.log(`[land] spawned ${spawned} claim sign entities`)

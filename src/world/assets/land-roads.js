@@ -10,9 +10,9 @@ for (let i = 0; i < GRID_SIZE - 1; i++) {
 
   const hRoad = app.create('prim', {
     type: 'box',
-    size: [GRID_SPAN, 0.3, ROAD_WIDTH],
+    size: [GRID_SPAN, 0.1, ROAD_WIDTH],
     color: '#222222',
-    position: [0, 0.15, offset],
+    position: [0, 0.05, offset],
     castShadow: false,
     receiveShadow: true,
     physics: 'static',
@@ -23,9 +23,9 @@ for (let i = 0; i < GRID_SIZE - 1; i++) {
 
   const vRoad = app.create('prim', {
     type: 'box',
-    size: [ROAD_WIDTH, 0.3, GRID_SPAN],
+    size: [ROAD_WIDTH, 0.1, GRID_SPAN],
     color: '#222222',
-    position: [offset, 0.15, 0],
+    position: [offset, 0.05, 0],
     castShadow: false,
     receiveShadow: true,
     physics: 'static',
