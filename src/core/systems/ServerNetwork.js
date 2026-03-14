@@ -481,7 +481,7 @@ export class ServerNetwork extends System {
     if (this.world.land && data.position && socket.player.data.rank < 2) {
       const [x, , z] = data.position
       if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
-        console.error('player attempted to add entity on land they do not own')
+        console.log('[land] rejected entity add, sending entityRemoved to client:', data.id)
         socket.send('entityRemoved', data.id)
         return
       }
@@ -605,12 +605,17 @@ export class ServerNetwork extends System {
     if (!socket.player.isBuilder()) {
       return console.error('player attempted to use ai but they are not a builder')
     }
-    if (this.world.land && socket.player.data.rank < 2 && action.appId) {
-      const entity = this.world.entities.get(action.appId)
-      if (entity?.isApp) {
-        const [x, , z] = entity.data.position
-        if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
-          return console.error('player attempted to use ai on land they do not own')
+    if (this.world.land && socket.player.data.rank < 2) {
+      if (action.appId) {
+        const entity = this.world.entities.get(action.appId)
+        if (!entity) {
+          return console.error('player attempted to use ai on entity that does not exist (likely rejected by land system)')
+        }
+        if (entity.isApp) {
+          const [x, , z] = entity.data.position
+          if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
+            return console.error('player attempted to use ai on land they do not own')
+          }
         }
       }
     }
