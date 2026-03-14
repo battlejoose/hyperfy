@@ -12,7 +12,6 @@ export class LandSystem extends System {
     super(world)
     this.parcels = new Map()
     this.hasRoadEntity = false
-    this.hasRoadBlueprint = false
   }
 
   async init({ db }) {
@@ -42,16 +41,6 @@ export class LandSystem extends System {
         // Old sign entities from the previous per-plot approach — remove them
         if (data.blueprint && data.blueprint.startsWith('$land-claim-')) {
           staleEntityIds.push(row.id)
-        }
-      } catch (e) {}
-    }
-
-    const blueprintRows = await this.db('blueprints').select('id', 'data')
-    for (const row of blueprintRows) {
-      try {
-        const bp = JSON.parse(row.data)
-        if (bp.id === '$land-roads') {
-          this.hasRoadBlueprint = true
         }
       } catch (e) {}
     }
@@ -172,7 +161,11 @@ export class LandSystem extends System {
   }
 
   ensureRoads() {
-    const bpData = {
+    // Always add the blueprint with current parcel data.
+    // If ServerNetwork later loads the same ID from DB, it overwrites
+    // with the DB version, but that's fine — the props get refreshed
+    // on the next claim/unclaim via updateRoadsBlueprint().
+    this.world.blueprints.add({
       id: '$land-roads',
       version: 0,
       name: 'Land Roads & Signs',
@@ -184,18 +177,7 @@ export class LandSystem extends System {
       locked: true,
       unique: true,
       disabled: false,
-    }
-
-    if (this.hasRoadBlueprint) {
-      // Update existing blueprint with current parcel data
-      const existing = this.world.blueprints.get('$land-roads')
-      if (existing) {
-        bpData.version = existing.version
-      }
-      this.world.blueprints.modify(bpData)
-    } else {
-      this.world.blueprints.add(bpData, true)
-    }
+    }, true)
     this.world.network.dirtyBlueprints.add('$land-roads')
 
     if (!this.hasRoadEntity) {
