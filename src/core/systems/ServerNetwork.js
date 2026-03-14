@@ -261,7 +261,7 @@ export class ServerNetwork extends System {
       const isAgent = !!params.agentKey
 
       // spawn player
-      const defaultAvatar = isAgent ? 'asset://lobster.vrm' : (this.world.settings.avatar?.url || 'asset://avatar.vrm')
+      const defaultAvatar = 'asset://lobster.vrm'
       socket.player = this.world.entities.add(
         {
           id: user.id,
