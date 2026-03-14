@@ -476,15 +476,12 @@ export class ServerNetwork extends System {
 
   onEntityAdded = (socket, data) => {
     if (!socket.player.isBuilder()) {
-      return console.error(`[land] BLOCKED add: not a builder (rank=${socket.player.data.rank}, effective=${this.world.settings.effectiveRank})`)
+      return console.error('player attempted to add entity without builder permission')
     }
     if (this.world.land && data.position && !socket.player.isAdmin()) {
       const [x, , z] = data.position
       if (!this.world.land.canBuildAt(socket.player.data.userId, x, z)) {
-        const plot = this.world.land.getPlotAt(x, z)
-        const onRoad = this.world.land.isOnRoad(x, z)
-        const owner = plot ? this.world.land.getPlotOwner(plot) : null
-        return console.error(`[land] BLOCKED add: pos=[${x},${z}] plot=${plot} onRoad=${onRoad} owner=${owner} user=${socket.player.data.userId}`)
+        return console.error('player attempted to add entity on land they do not own')
       }
     }
     const entity = this.world.entities.add(data)

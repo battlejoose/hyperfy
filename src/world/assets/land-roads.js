@@ -62,9 +62,9 @@ for (var plotId = 1; plotId <= GRID_SIZE * GRID_SIZE; plotId++) {
 
   var board = app.create('prim', {
     type: 'box',
-    size: [7.5, 3.6, 0.16],
+    size: [2.5, 1.2, 0.08],
     color: isClaimed ? '#1a4a1a' : '#1a3a5c',
-    position: [sx, 4.8, sz],
+    position: [sx, 3.8, sz],
     metalness: 0.2,
     roughness: 0.8,
   })
@@ -74,8 +74,8 @@ for (var plotId = 1; plotId <= GRID_SIZE * GRID_SIZE; plotId++) {
     var ui = app.create('ui', {
       width: 280,
       height: 140,
-      size: 0.021,
-      position: [sx, 4.8, sz + 0.1],
+      size: 0.007,
+      position: [sx, 3.8, sz + 0.06],
       billboard: 'none',
       flexDirection: 'column',
       alignItems: 'center',

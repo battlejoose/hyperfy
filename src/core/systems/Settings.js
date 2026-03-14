@@ -24,8 +24,7 @@ export class Settings extends System {
   }
 
   get effectiveRank() {
-    if (!this.hasAdminCode) return Ranks.ADMIN
-    return this.rank ?? Ranks.BUILDER
+    return this.hasAdminCode ? this.rank : Ranks.ADMIN
   }
 
   deserialize(data) {
