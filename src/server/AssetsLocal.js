@@ -4,7 +4,7 @@ import { hashFile } from '../core/utils-server'
 
 export class AssetsLocal {
   constructor() {
-    this.url = process.env.ASSETS_BASE_URL
+    this.url = '/assets'
     this.dir = null
   }
 
