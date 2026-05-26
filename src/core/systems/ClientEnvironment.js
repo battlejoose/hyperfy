@@ -86,7 +86,7 @@ export class ClientEnvironment extends System {
 
   async start() {
     this.buildCSM()
-    this.updateSky()
+    this.updateSky().catch(err => console.error('[environment] updateSky failed:', err))
 
     this.world.prefs.on('change', this.onPrefsChange)
     this.world.graphics.on('resize', this.onViewportResize)
@@ -99,11 +99,11 @@ export class ClientEnvironment extends System {
         const idx = this.skys.indexOf(handle)
         if (idx === -1) return
         this.skys.splice(idx, 1)
-        this.updateSky()
+        this.updateSky().catch(err => console.error('[environment] updateSky failed:', err))
       },
     }
     this.skys.push(handle)
-    this.updateSky()
+    this.updateSky().catch(err => console.error('[environment] updateSky failed:', err))
     return handle
   }
 
@@ -261,7 +261,7 @@ export class ClientEnvironment extends System {
   onPrefsChange = changes => {
     if (changes.shadows) {
       this.buildCSM()
-      this.updateSky()
+      this.updateSky().catch(err => console.error('[environment] updateSky failed:', err))
     }
   }
 

@@ -104,6 +104,7 @@ export class ClientLoader extends System {
       return this.files.get(url)
     }
     const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`Failed to load asset: ${url} (${resp.status})`)
     const blob = await resp.blob()
     const file = new File([blob], url.split('/').pop(), { type: blob.type })
     this.files.set(url, file)
