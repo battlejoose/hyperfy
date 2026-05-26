@@ -29,17 +29,17 @@
     <link rel="stylesheet" type="text/css" href="/index.css?v={buildId}" />
     <script>
       window.PARTICLES_PATH = '{particlesPath}'
-      // Suppress null/undefined unhandled rejections before SES installs its handler.
-      // SES's lockdown-install.js unconditionally logs SES_UNCAUGHT_EXCEPTION for every
-      // unhandled rejection. Null rejections come from internal engine/physics callbacks
-      // and are harmless — preventing them here stops the console spam without hiding
-      // real errors (which always have a non-null reason).
-      window.addEventListener('unhandledrejection', function(e) {
-        if (e.reason == null) {
-          e.preventDefault()
-          e.stopImmediatePropagation()
+      // Suppress SES_UNCAUGHT_EXCEPTION spam for null rejections.
+      // SES's lockdown-install.js unconditionally logs these for every unhandled rejection.
+      // consoleTaming:'unsafe' in lockdown.js keeps SES from replacing console, so this
+      // wrapper stays active and can filter out the harmless null-reason noise.
+      ;(function() {
+        var _error = console.error.bind(console)
+        console.error = function() {
+          if (arguments[0] === 'SES_UNCAUGHT_EXCEPTION:' && arguments[1] == null) return
+          _error.apply(console, arguments)
         }
-      }, true)
+      })()
     </script>
   </head>
   <body>
