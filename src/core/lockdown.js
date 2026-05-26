@@ -2,8 +2,8 @@ lockdown({
   // TODO: in production we may want to flip these
   // but for now this lets us see errors during dev
   errorTaming: 'unsafe',
-  errorTrapping: 'report',
-  unhandledRejectionTrapping: 'report',
+  errorTrapping: 'none',
+  unhandledRejectionTrapping: 'none',
 
   //
   // regExpTaming: 'unsafe',
