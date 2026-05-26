@@ -1,10 +1,32 @@
 import 'dotenv-flow/config'
 import fs from 'fs-extra'
 import path from 'path'
+import { readFile } from 'fs/promises'
 import { fork, execSync } from 'child_process'
 import * as esbuild from 'esbuild'
 import { fileURLToPath } from 'url'
 import { polyfillNode } from 'esbuild-plugin-polyfill-node'
+
+// ESBuild plugin: patch SES source to add null guard on SES_UNCAUGHT_EXCEPTION logging.
+// SES's lockdown-install.js adds an unhandledrejection handler that unconditionally logs
+// null rejections. This plugin modifies the SES bundle at build time to suppress them.
+const patchSesSpamPlugin = {
+  name: 'patch-ses-spam',
+  setup(build) {
+    build.onLoad({ filter: /\.[cm]?js$/ }, async args => {
+      const normalizedPath = args.path.replace(/\\/g, '/')
+      if (!normalizedPath.includes('/node_modules/ses/')) return null
+      const source = await readFile(args.path, 'utf-8')
+      if (!source.includes('SES_UNCAUGHT_EXCEPTION')) return null
+      // Wrap the console.error call with a null guard so null rejections are silently dropped
+      const patched = source.replace(
+        /console\.error\((['"])SES_UNCAUGHT_EXCEPTION:\1,\s*([^)]+)\)/g,
+        '(($2) != null) && console.error($1SES_UNCAUGHT_EXCEPTION:$1, $2)'
+      )
+      return { contents: patched, loader: 'js' }
+    })
+  },
+}
 
 const dev = process.argv.includes('--dev')
 const dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -47,6 +69,7 @@ const clientHtmlDest = path.join(rootDir, 'build/public/index.html')
       react: 'react', // always use our own local react (jsx)
     },
     plugins: [
+      patchSesSpamPlugin,
       polyfillNode({}),
       {
         name: 'client-finalize-plugin',
