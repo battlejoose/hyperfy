@@ -48,7 +48,7 @@ export class App extends Entity {
     this.hitResultsPool = []
     this.hitResults = []
     this.deadHook = { dead: false }
-    this.build()
+    this.build().catch(err => console.error('[app] build failed:', err))
   }
 
   createNode(name, data) {
@@ -314,12 +314,12 @@ export class App extends Entity {
       rebuild = true
     }
     if (rebuild) {
-      this.build()
+      this.build().catch(err => console.error('[app] rebuild failed:', err))
     }
   }
 
   crash() {
-    this.build(true)
+    this.build(true).catch(err => console.error('[app] crash build failed:', err))
   }
 
   destroy(local) {
@@ -360,7 +360,10 @@ export class App extends Entity {
   emit(name, a1, a2) {
     if (!this.listeners[name]) return
     for (const callback of this.listeners[name]) {
-      callback(a1, a2)
+      const result = callback(a1, a2)
+      if (result instanceof Promise) {
+        result.catch(err => console.error(`[app] async "${name}" handler error:`, err))
+      }
     }
   }
 
@@ -419,7 +422,10 @@ export class App extends Entity {
     const hook = this.getDeadHook()
     const timerId = setTimeout(() => {
       if (hook.dead) return
-      fn()
+      const result = fn()
+      if (result instanceof Promise) {
+        result.catch(err => console.error('[app] async setTimeout handler error:', err))
+      }
     }, ms)
     return timerId
   }
