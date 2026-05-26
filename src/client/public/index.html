@@ -35,7 +35,10 @@
       // and are harmless — preventing them here stops the console spam without hiding
       // real errors (which always have a non-null reason).
       window.addEventListener('unhandledrejection', function(e) {
-        if (e.reason == null) e.preventDefault()
+        if (e.reason == null) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
       }, true)
     </script>
   </head>
