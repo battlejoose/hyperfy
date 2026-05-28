@@ -825,6 +825,7 @@ export class PlayerLocal extends Entity {
     this.earlyReleaseHoldActive = false
     this.currentAttackEmote = null
     this.currentAttackTag = null
+    this.resetAttackMouseInput()
 
     if (clearEffect) {
       this.setEffect(null)
@@ -853,6 +854,7 @@ export class PlayerLocal extends Entity {
     this.isBlocking = false
     this.currentBlockEmote = null
     this.currentBlockTag = null
+    this.resetBlockMouseInput()
 
     if (clearEffect) {
       this.setEffect(null)
@@ -870,6 +872,18 @@ export class PlayerLocal extends Entity {
     }
   }
 
+  resetAttackMouseInput() {
+    this.mouseDragStart = null
+    this.mouseDragAccumulated = null
+    this.isDragging = false
+  }
+
+  resetBlockMouseInput() {
+    this.blockDragStart = null
+    this.blockDragAccumulated = null
+    this.isBlockDragging = false
+  }
+
   startAttack(emote, chargeMode = false) {
     // Can't attack while sprinting
     if (this.running) {
@@ -880,7 +894,7 @@ export class PlayerLocal extends Entity {
     this.cancelBlock()
     this.cancelKick()
     this.cancelAttack()
-    
+    this.resetBlockMouseInput()
     // Set attack tag based on emote
     if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
     else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
@@ -1099,6 +1113,7 @@ export class PlayerLocal extends Entity {
     this.cancelAttack()
     this.cancelKick()
     this.cancelBlock()
+    this.resetAttackMouseInput()
     
     console.log('[Block] Starting block:', emote, 'holdMode:', holdMode)
     this.isBlocking = true
@@ -1915,9 +1930,13 @@ export class PlayerLocal extends Entity {
     }
 
     // handle attack animations (keys 1, 2, 3, 4, 5) and kick (key F)
-    // Use proper attack timing with windup, commit, and canceling
+    // Block/kick checked before attacks so they override on the same frame
     if (!xr && !this.isDead) {
-      if (this.control.digit1.pressed) {
+      if (this.control.digit5.pressed) {
+        this.startBlock()
+      } else if (this.control.keyF.pressed) {
+        this.startKick()
+      } else if (this.control.digit1.pressed) {
         this.startAttack(Emotes.ATTACK_LEFT)
       } else if (this.control.digit2.pressed) {
         this.startAttack(Emotes.ATTACK_RIGHT)
@@ -1925,24 +1944,29 @@ export class PlayerLocal extends Entity {
         this.startAttack(Emotes.ATTACK_HIGH)
       } else if (this.control.digit4.pressed) {
         this.startAttack(Emotes.ATTACK_LOW)
-      } else if (this.control.digit5.pressed) {
-        this.startBlock()
-      } else if (this.control.keyF.pressed) {
-        this.startKick()
       }
       
       // Mouse drag attack system
       // Left mouse: drag direction determines attack
       // Right mouse: block
       
-      // Right mouse down: start tracking block drag
+      const attackActive =
+        this.isChargingAttack || this.isInWindup || this.isCommitted || this.isKicking
+      const blockActive = this.isBlocking || this.isHoldingBlock
+
+      // Right mouse down: block immediately if interrupting attack/kick, else start drag tracking
       if (this.control.mouseRight.pressed && this.control.pointer.locked) {
-        this.blockDragStart = {
-          time: Date.now()
+        if (attackActive) {
+          this.resetAttackMouseInput()
+          this.startBlock()
+        } else {
+          this.blockDragStart = {
+            time: Date.now()
+          }
+          this.blockDragAccumulated = { x: 0, y: 0 }
+          this.isBlockDragging = false
+          console.log('[Mouse Block] Right mouse down - starting block drag tracking')
         }
-        this.blockDragAccumulated = { x: 0, y: 0 }
-        this.isBlockDragging = false
-        console.log('[Mouse Block] Right mouse down - starting block drag tracking')
       }
       
       // Track mouse movement while dragging (accumulate deltas)
@@ -1957,8 +1981,8 @@ export class PlayerLocal extends Entity {
           this.blockDragAccumulated.y * this.blockDragAccumulated.y
         )
         
-        // Once we've dragged enough and not already holding block, start directional block
-        if (distance > this.dragThreshold && !this.isHoldingBlock && !this.isBlockDragging) {
+        // Once we've dragged enough, start directional block (or switch block direction mid-hold)
+        if (distance > this.dragThreshold && !this.isBlockDragging) {
           this.isBlockDragging = true
           
           // Determine direction and start held block
@@ -2009,8 +2033,12 @@ export class PlayerLocal extends Entity {
         this.isBlockDragging = false
       }
       
-      // Left mouse down: start tracking drag
+      // Left mouse down: cancel block and start attack drag tracking
       if (this.control.mouseLeft.pressed && this.control.pointer.locked) {
+        if (blockActive) {
+          this.cancelBlock(true)
+          this.resetBlockMouseInput()
+        }
         this.mouseDragStart = {
           time: Date.now()
         }
@@ -2031,8 +2059,8 @@ export class PlayerLocal extends Entity {
           this.mouseDragAccumulated.y * this.mouseDragAccumulated.y
         )
         
-        // Once we've dragged enough and not already charging, start charged attack
-        if (distance > this.dragThreshold && !this.isChargingAttack && !this.isDragging) {
+        // Once we've dragged enough, start charged attack (or switch attack mid-charge)
+        if (distance > this.dragThreshold && !this.isDragging) {
           this.isDragging = true
           
           // Determine direction and start charged attack
