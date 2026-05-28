@@ -344,35 +344,6 @@ export class ServerNetwork extends System {
     this.send('entityModified', { id: targetId, health: newHealth })
   }
 
-  onBlockHit = async (socket, data) => {
-    const { blockerId, attackerId } = data
-    
-    // Validate blocker is the socket's player
-    if (socket.player.data.id !== blockerId) {
-      console.warn('[Server] Player', socket.player.data.id, 'tried to claim block as', blockerId)
-      return
-    }
-    
-    // Get attacker player
-    const attackerPlayer = this.world.entities.get(attackerId)
-    if (!attackerPlayer || !attackerPlayer.isPlayer) {
-      console.warn('[Server] Invalid attacker player:', attackerId)
-      return
-    }
-    
-    console.log('[Server] Player', blockerId, 'blocked attack from player', attackerId)
-    
-    // Tell the attacker's client to disable their sword collider
-    // Find the attacker's socket
-    for (const [, s] of this.sockets) {
-      if (s.player && s.player.data.id === attackerId) {
-        // Send message to attacker to disable sword
-        s.send('swordBlocked', { blockerId })
-        break
-      }
-    }
-  }
-
   onAttackCanceled = async (socket, data) => {
     const { playerId } = data
     

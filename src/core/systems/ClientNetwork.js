@@ -175,15 +175,6 @@ export class ClientNetwork extends System {
     entity.modify(data)
   }
 
-  onSwordBlocked = data => {
-    const { blockerId } = data
-    // Get local player
-    const localPlayer = this.world.local
-    if (localPlayer && localPlayer.onSwordBlocked) {
-      localPlayer.onSwordBlocked(blockerId)
-    }
-  }
-
   onAttackCanceled = data => {
     const { playerId } = data
     // Get the remote player who canceled

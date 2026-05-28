@@ -2,14 +2,12 @@
 
 ## Overview
 
-Combat is **client-predicted with server validation**:
+Combat is **client-predicted for hits and blocks, server-validated for health only**:
 
-1. Attacker's client detects the hit locally (physics trigger)
-2. Client sends `playerHit` packet to server
-3. Server validates the hit is legitimate, applies damage, broadcasts to all
-4. All clients update health bars / death state
-
-This means visual feedback (particles, audio) is instant on the attacker's machine; the actual health number comes a round-trip later from the server.
+1. Attacker's client detects sword contact locally (PhysX trigger)
+2. Block vs damage is decided on the attacker's client (tag match) — **no server packet for blocks**
+3. On damage only: client sends `playerHit` → server applies health → broadcasts `entityModified`
+4. All clients update health bars / death state from server; VFX (sparks/blood) from local PhysX
 
 ---
 
@@ -82,7 +80,7 @@ Called on the **attacker's client** when the sword trigger overlaps another coll
 1. Guard: collider active? collider ready?
 2. If otherHandle.tag === 'block':
    a. Read attacker's currentAttackTag vs blocker's currentBlockTag
-   b. Match → disable sword, sparks/audio, send blockHit (see Block System)
+   b. Match → disable sword, sparks/audio (no server packet)
    c. Mismatch → fall through — treat blocker as hit target (damage through wrong block)
 3. Guard: already hit this player this swing?
 4. spawnBloodParticles + playHitAudio
@@ -94,6 +92,8 @@ Server receives `playerHit`, validates, applies damage, broadcasts `entityModifi
 ---
 
 ## Block System
+
+Blocking is **fully client-authoritative** — the server is not involved in block outcomes. Only **`playerHit`** touches the server (when damage goes through).
 
 Blocking is **directional**: your block pose must match the incoming attack direction. A wrong block does not stop the sword — the attack deals damage as if it passed through the shield.
 
@@ -173,9 +173,7 @@ sequenceDiagram
     A->>A: PlayerLocal.onSwordHit — tag match?
     alt Tags match
         A->>A: Disable A's sword, sparks/audio
-        A->>S: blockHit {blockerId:B, attackerId:A}
-        S-->>A: Rejected (sender must be blocker)
-        Note over A: Sword already disabled locally
+        Note over A,S: No network — block is client-only
     else Tags mismatch
         A->>S: playerHit {attackerId:A, targetId:B, damage:25}
         S->>S: Apply health
@@ -184,14 +182,34 @@ sequenceDiagram
     end
 
     B->>B: B's block hit by A's remote sword
-    B->>B: PlayerRemote.onSwordHit — VFX only (no network send)
+    B->>B: PlayerRemote.onSwordHit — VFX only (no network)
 ```
 
-**Primary resolution path:** the **attacker's** `PlayerLocal.onSwordHit` when the sword trigger hits a `block`-tagged collider. This is where tag matching, sword disable, damage, and `playerHit` / `blockHit` packets are decided.
+**Per swing on the attacker, at most one server packet:**
 
-**Blocker-side VFX only:** on the blocker's client, the attacker's remote sword hitting the local block runs `PlayerRemote.onSwordHit` — sparks or blood for feedback, but **no** network packets.
+| Outcome | Server packet | When |
+|---------|---------------|------|
+| Successful block | *(none)* | Tags match — sword disabled locally only |
+| Damage | `playerHit` | Wrong block or body hit |
 
-**`PlayerLocal.onBlockHit`:** registered on the local block collider but PhysX only invokes callbacks on the **trigger** actor (the sword), not the simulation block shape. In practice block resolution does not run here; the logic mirrors `onSwordHit` for the same tag rules.
+**Primary resolution path:** the **attacker's** `PlayerLocal.onSwordHit` when the sword trigger hits a `block`-tagged collider. Tag matching, sword disable, and whether to send `playerHit` all happen here.
+
+**Blocker-side VFX (no network packet):** On the blocker's client, PhysX runs the same sword-vs-block overlap locally. The callback fires on the **attacker's** `PlayerRemote` entity (`PlayerRemote.onSwordHit`), not on the blocker's `PlayerLocal`. That handler re-runs the same tag match using:
+
+- `this.currentAttackTag` — attack direction synced onto the attacker's remote entity
+- `blocker.currentBlockTag` — the local blocker's own tag (from their active block)
+
+| Tag match on blocker's machine | What the blocker sees |
+|-------------------------------|------------------------|
+| Success | Spark particles + `audioblock.mp3` at chest height |
+| Failure | Blood particles + `audiohit.mp3` at chest height |
+| Failure (health) | Nametag drops when `entityModified { health }` arrives from server |
+
+The server is **not** in the block path. Blocker VFX comes from local PhysX immediately — same as the attacker.
+
+**Third-party spectators (player C):** C's client also simulates A's remote sword vs B's remote block. The same `PlayerRemote(A).onSwordHit` path runs on C's machine for VFX.
+
+**`PlayerLocal.onBlockHit`:** If this ever fired on the blocker, it would duplicate the same tag logic using `blocker.base` for VFX position. In practice PhysX invokes the sword trigger callback instead; the `PlayerRemote` path is what blockers rely on today.
 
 ### Successful block (tags match)
 
@@ -200,11 +218,11 @@ On **attacker's client** (`PlayerLocal.onSwordHit`):
 1. Add blocker to `hitPlayersThisSwing` (prevent double-processing)
 2. `setSwordColliderActive(false)` — end the swing immediately
 3. Spark particles + block audio at blocker's position
-4. Send `blockHit { blockerId, attackerId }` — **server rejects this** because `blockerId` must equal the sender's player id (attacker sent it, not blocker)
+4. **No server packet** — blocking is client-authoritative
 
-On **blocker's client** (`PlayerRemote.onSwordHit`): sparks + block audio only.
+On **blocker's client** (`PlayerRemote` for the attacker, when its sword hits the local block): same tag match → sparks + block audio, or blood + hit audio on mismatch. No network send.
 
-The attacker already disabled their sword locally in step 2. The server's `swordBlocked` packet (see below) is intended as a backup via the blocker's `blockHit`, but that path does not fire in current PhysX wiring.
+On **attacker's client**: VFX at blocker's synced position; send `playerHit` to server **only** if tags mismatch (wrong block).
 
 ### Failed block (tags mismatch)
 
@@ -293,27 +311,15 @@ Position is **not** reset on death — only health and animation state change.
 
 ## Network Packets (Combat)
 
+Only **`playerHit`** and **`attackCanceled`** are combat packets today. Blocking uses local PhysX only.
+
 ### `playerHit`  (Client → Server)
 ```js
 { attackerId: playerId, targetId: playerId, damage: 25 }
 ```
 Server validation: `attackerId` must be the sender's player. Applies damage, broadcasts `entityModified`.
 
-### `blockHit`  (Client → Server)
-```js
-{ blockerId: playerId, attackerId: playerId }
-```
-Server validation: **`blockerId` must be the sender's player** (only the blocker can send this).
-
-On success, server sends `swordBlocked` to the attacker's socket.
-
-In practice, the attacker's `onSwordHit` also sends `blockHit` after a successful block, but the server **rejects** it (wrong sender). The attacker already disabled their sword locally before sending. The `swordBlocked` backup path would require the blocker's `onBlockHit` to fire, but PhysX only invokes trigger callbacks on the sword actor — see Block System.
-
-### `swordBlocked`  (Server → attacker only)
-```js
-{ blockerId: playerId }
-```
-Calls `PlayerLocal.onSwordBlocked()` → `setSwordColliderActive(false)`. Belt-and-suspenders disable if the blocker's `blockHit` reached the server.
+Not sent on a successful block (tags match).
 
 ### `attackCanceled`  (Client → Server → all other Clients)
 ```js
@@ -329,8 +335,8 @@ Sent when a charged attack is released before the 500 ms threshold. Server valid
 |------|------------|
 | `src/core/entities/PlayerLocal.js` | All local player logic: input, physics, attack, block, particles, audio |
 | `src/core/entities/PlayerRemote.js` | Remote player: interpolation, animation sync, combat state display |
-| `src/core/systems/ServerNetwork.js` | `onPlayerHit`, `onBlockHit`, `onAttackCanceled` — authoritative validation |
-| `src/core/systems/ClientNetwork.js` | `onSwordBlocked`, `onAttackCanceled` receive-side handlers |
+| `src/core/systems/ServerNetwork.js` | `onPlayerHit`, `onAttackCanceled` — health validation |
+| `src/core/systems/ClientNetwork.js` | `onAttackCanceled` receive-side handler |
 | `src/core/packets.js` | Packet name constants |
 | `src/core/nodes/Collider.js` | PhysX collider node definition (world apps; combat uses inline PhysX actors) |
 

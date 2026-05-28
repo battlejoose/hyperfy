@@ -50,14 +50,14 @@ Transport: WebSocket binary MessagePack (`src/core/packets.js`).
 | Combat effects (ef) | Spawn, ranks, persistence |
 | Hit detection (PhysX triggers) | Teleport / push routing |
 
-Movement is **not** server-validated. Combat hits are **client-detected**; server only checks `attackerId === socket.player.id` and applies health.
+Movement is **not** server-validated. Damage is **server-authoritative** via `playerHit`. Blocking is **fully client-authoritative** — no server packet.
 
 ## Combat Quick Facts
 
 - Damage: 25 per hit, max health 100
 - Sword collider: trigger, `weapon` layer, 16 ms phantom-hit guard
 - Block collider: simulation shape (not trigger), directional tag matching on **attacker's client**
-- Block resolution: `PlayerLocal.onSwordHit` when sword hits `block` collider; wrong block → damage through
+- Block: client-only on tag match (no server packet); `playerHit` only on damage / wrong block
 - Input: keys 1–4 attacks, 5 generic block; mouse drag ≥ 30px for charged attack / held directional block
 - Death: fall anim → 5 s → getup → heal via `playerHit` with `damage: -100`
 

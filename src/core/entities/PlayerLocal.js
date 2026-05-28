@@ -445,12 +445,6 @@ export class PlayerLocal extends Entity {
       this.spawnSparkParticles(blockPos)
       this.playBlockAudio(blockPos)
       
-      // Notify the server that we blocked this attack
-      // The server will tell the attacker to disable their sword collider
-      this.world.network.send('blockHit', {
-        blockerId: this.data.id,
-        attackerId: attackerId,
-      })
     } else {
       console.log('[Block] Block does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack goes through, taking damage!')
       
@@ -606,12 +600,6 @@ export class PlayerLocal extends Entity {
     // Audio will automatically stop and clean up when finished (loop: false)
   }
 
-  onSwordBlocked(blockerId) {
-    // Our attack was blocked! Disable sword collider immediately
-    console.log('[Sword] Attack blocked by player:', blockerId, '- disabling sword collider')
-    this.setSwordColliderActive(false)
-  }
-
   onSwordHit(otherHandle) {
     // Check if it's a player first
     const playerId = otherHandle.playerId
@@ -679,11 +667,6 @@ export class PlayerLocal extends Entity {
           this.playBlockAudio(blockPos)
         }
         
-        // Notify server for logging
-        this.world.network.send('blockHit', {
-          blockerId: blockerId,
-          attackerId: this.data.id,
-        })
         return
       } else {
         // Block doesn't match attack direction - attack goes through!

@@ -27,8 +27,6 @@ const names = [
   'ping',
   'pong',
   'playerHit',
-  'blockHit',
-  'swordBlocked',
   'attackCanceled',
 ]
 
