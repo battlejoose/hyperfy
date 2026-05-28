@@ -131,7 +131,7 @@ Left/right mirror: you block left to stop a swing coming from your right.
 ### Block collider design
 
 ```
-Shape:   Box  ~0.75w × ~1.6h × 0.3d  (in front of player at chest height)
+Shape:   Box  ~0.9w × ~1.6h × 0.3d  (in front of player at chest height)
 Type:    SIMULATION_SHAPE  (not a trigger — sword triggers can detect it)
 Layer:   player group, weapon mask
 Position: 0.5 m in front of player, 60% of capsule height (lateUpdate)
