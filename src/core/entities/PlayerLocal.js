@@ -99,6 +99,7 @@ export class PlayerLocal extends Entity {
     this.isBlocking = false
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
+    this.kickDuration = 1.0 // Kick animation duration
     
     // Death/respawn state
     this.isDead = false
@@ -903,6 +904,17 @@ export class PlayerLocal extends Entity {
       this.isCommitted = false
       console.log('[Attack] Charged attack complete')
     }, (this.attackDuration - this.attackWindupTime) * 1000)
+  }
+
+  startKick() {
+    if (this.isDead) return
+    if (this.data.effect?.emote === Emotes.KICK) return
+
+    this.setEffect({
+      emote: Emotes.KICK,
+      duration: this.kickDuration,
+      cancellable: false,
+    })
   }
 
   startBlock(emote = Emotes.BLOCK, holdMode = false) {
@@ -1744,6 +1756,8 @@ export class PlayerLocal extends Entity {
         this.startAttack(Emotes.ATTACK_LOW)
       } else if (this.control.digit5.pressed) {
         this.startBlock()
+      } else if (this.control.keyF.pressed) {
+        this.startKick()
       }
       
       // Mouse drag attack system
