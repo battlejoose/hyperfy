@@ -785,39 +785,107 @@ export class PlayerLocal extends Entity {
     })
   }
 
+  cancelAttack(clearEffect = false) {
+    const active =
+      this.isInWindup ||
+      this.isCommitted ||
+      this.isChargingAttack ||
+      this.currentAttackEmote
+    if (!active) return
+
+    if (this.attackWindupTimeout) {
+      clearTimeout(this.attackWindupTimeout)
+      this.attackWindupTimeout = null
+    }
+    if (this.attackEndTimeout) {
+      clearTimeout(this.attackEndTimeout)
+      this.attackEndTimeout = null
+    }
+    if (this.attackFreezeTimeout) {
+      clearTimeout(this.attackFreezeTimeout)
+      this.attackFreezeTimeout = null
+    }
+    if (this.attackEarlyReleaseHoldTimeout) {
+      clearTimeout(this.attackEarlyReleaseHoldTimeout)
+      this.attackEarlyReleaseHoldTimeout = null
+    }
+
+    if (this.attackAnimationPaused) {
+      this.resumeAttackAnimation()
+      this.attackAnimationPaused = false
+    }
+
+    this.setSwordColliderActive(false)
+    this.isInWindup = false
+    this.isCommitted = false
+    this.isChargingAttack = false
+    this.chargedAttackEmote = null
+    this.chargeStartTime = null
+    this.pendingChargedRelease = false
+    this.earlyReleaseHoldActive = false
+    this.currentAttackEmote = null
+    this.currentAttackTag = null
+
+    if (clearEffect) {
+      this.setEffect(null)
+    }
+  }
+
+  cancelBlock(clearEffect = false) {
+    if (!this.isBlocking && !this.isHoldingBlock) return
+
+    if (this.blockTimeout) {
+      clearTimeout(this.blockTimeout)
+      this.blockTimeout = null
+    }
+    if (this.blockFreezeTimeout) {
+      clearTimeout(this.blockFreezeTimeout)
+      this.blockFreezeTimeout = null
+    }
+
+    if (this.blockAnimationPaused) {
+      this.blockAnimationPaused = false
+      this.resumeBlockAnimation()
+    }
+
+    this.setBlockColliderActive(false)
+    this.isHoldingBlock = false
+    this.isBlocking = false
+    this.currentBlockEmote = null
+    this.currentBlockTag = null
+
+    if (clearEffect) {
+      this.setEffect(null)
+    }
+  }
+
+  cancelKick(clearEffect = false) {
+    const kicking = this.isKicking || this.data.effect?.emote === Emotes.KICK
+    if (!kicking) return
+
+    this.clearKickColliderTimeouts()
+
+    if (clearEffect && this.data.effect?.emote === Emotes.KICK) {
+      this.setEffect(null)
+    }
+  }
+
   startAttack(emote, chargeMode = false) {
     // Can't attack while sprinting
     if (this.running) {
       console.log('[Attack] Cannot attack while sprinting')
       return
     }
-    
-    // If already charging, ignore
-    if (this.isChargingAttack) return
-    
-    // If we're already committed to an attack (past windup), ignore new input
-    if (this.isCommitted) {
-      return
-    }
+
+    this.cancelBlock()
+    this.cancelKick()
+    this.cancelAttack()
     
     // Set attack tag based on emote
     if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
     else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
     else if (emote === Emotes.ATTACK_RIGHT) this.currentAttackTag = 'right'
     else if (emote === Emotes.ATTACK_LOW) this.currentAttackTag = 'low'
-    
-    // If we're in windup, this is a cancel + new attack
-    if (this.isInWindup) {
-      // Cancel previous attack timers
-      if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
-      if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-      if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
-      if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
-      if (this.attackAnimationPaused) this.resumeAttackAnimation()
-      this.setSwordColliderActive(false)
-      this.pendingChargedRelease = false
-      this.earlyReleaseHoldActive = false
-    }
     
     // IMPORTANT: Clear hit tracking NOW, before any collider activation
     this.hitPlayersThisSwing.clear()
@@ -986,11 +1054,11 @@ export class PlayerLocal extends Entity {
   startKick() {
     if (this.isDead) return
     if (this.running) return
-    if (this.isBlocking || this.isHoldingBlock) return
-    if (this.isChargingAttack || this.isCommitted || this.isInWindup) return
-    if (this.data.effect?.emote === Emotes.KICK && this.data.effect?.duration > 0) return
 
-    this.clearKickColliderTimeouts()
+    this.cancelAttack()
+    this.cancelBlock()
+    this.cancelKick()
+
     this.hitPlayersThisKick.clear()
     this.isKicking = true
 
@@ -1027,9 +1095,10 @@ export class PlayerLocal extends Entity {
   startBlock(emote = Emotes.BLOCK, holdMode = false) {
     // Can't block while dead
     if (this.isDead) return
-    
-    // If already blocking or holding a block, ignore
-    if (this.isBlocking || this.isHoldingBlock) return
+
+    this.cancelAttack()
+    this.cancelKick()
+    this.cancelBlock()
     
     console.log('[Block] Starting block:', emote, 'holdMode:', holdMode)
     this.isBlocking = true
@@ -1121,61 +1190,15 @@ export class PlayerLocal extends Entity {
   
   stopBlock() {
     if (!this.isHoldingBlock) return
-    
     console.log('[Block] Stopping held block')
-    
-    // Clear any pending freeze timeout
-    if (this.blockFreezeTimeout) {
-      clearTimeout(this.blockFreezeTimeout)
-      this.blockFreezeTimeout = null
-    }
-    
-    // Resume the animation if it was paused
-    if (this.blockAnimationPaused) {
-      this.blockAnimationPaused = false
-      this.resumeBlockAnimation()
-    }
-    
-    // Clear the effect to return to idle
-    this.setEffect(null)
-    
-    // Deactivate block collider
-    this.setBlockColliderActive(false)
-    
-    // Reset state
-    this.isHoldingBlock = false
-    this.isBlocking = false
-    this.currentBlockEmote = null
-    this.currentBlockTag = null // Clear block tag
-    
+    this.cancelBlock(true)
     console.log('[Block] Block stopped, returning to idle')
   }
 
   breakBlockFromKick() {
     if (!this.isBlocking && !this.isHoldingBlock) return
-
     console.log('[Block] Block broken by kick')
-
-    if (this.blockTimeout) {
-      clearTimeout(this.blockTimeout)
-      this.blockTimeout = null
-    }
-    if (this.blockFreezeTimeout) {
-      clearTimeout(this.blockFreezeTimeout)
-      this.blockFreezeTimeout = null
-    }
-
-    if (this.blockAnimationPaused) {
-      this.blockAnimationPaused = false
-      this.resumeBlockAnimation()
-    }
-
-    this.setEffect(null)
-    this.setBlockColliderActive(false)
-    this.isHoldingBlock = false
-    this.isBlocking = false
-    this.currentBlockEmote = null
-    this.currentBlockTag = null
+    this.cancelBlock(true)
   }
 
   setSwordColliderActive(active) {
@@ -2131,34 +2154,7 @@ export class PlayerLocal extends Entity {
     // Cancel any active attacks when sprinting starts
     if (this.running && (this.isInWindup || this.isCommitted || this.isChargingAttack)) {
       console.log('[Attack] Sprinting started - canceling active attack')
-      
-      // Clear all attack timeouts
-      if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
-      if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-      if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
-      if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
-      
-      // Resume animation if paused
-      if (this.attackAnimationPaused) {
-        this.resumeAttackAnimation()
-        this.attackAnimationPaused = false
-      }
-      
-      // Deactivate sword collider
-      this.setSwordColliderActive(false)
-      
-      // Reset attack state
-      this.isInWindup = false
-      this.isCommitted = false
-      this.isChargingAttack = false
-      this.chargedAttackEmote = null
-      this.chargeStartTime = null
-      this.pendingChargedRelease = false
-      this.earlyReleaseHoldActive = false
-      this.currentAttackEmote = null
-      
-      // Clear effect to stop animation
-      this.setEffect(null)
+      this.cancelAttack(true)
     }
 
     // normalize direction (also prevents surfing)
@@ -2614,6 +2610,10 @@ export class PlayerLocal extends Entity {
     }
     this.data.effect = effect
     this.onEffectEnd = onEnd
+    this.emote = effect?.emote
+    if (this.avatar?.instance) {
+      this.avatar.instance.setEmote(this.emote, effect?.duration)
+    }
     // send network update
     this.world.network.send('entityModified', {
       id: this.data.id,

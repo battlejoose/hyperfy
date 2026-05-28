@@ -324,6 +324,17 @@ export function createVRMFactory(glb, setupMaterial) {
           }
           return // Don't reset animation if same attack is playing
         }
+
+        // Switching combat pose — stop whatever was playing (attack, block, or kick)
+        if (currentAttack && poses[currentAttack]) {
+          poses[currentAttack].target = 0
+          poses[currentAttack].active = false
+          if (poses[currentAttack].action) {
+            poses[currentAttack].action.fadeOut(0.1)
+          }
+        }
+
+        mixer.timeScale = 1
         
         console.log('[VRM] Attack detected:', attackKey, 'duration:', attackDuration, 'pose exists:', !!poses[attackKey])
         if (poses[attackKey]) {
@@ -337,6 +348,8 @@ export function createVRMFactory(glb, setupMaterial) {
             poses[attackKey].action.setEffectiveWeight(5.0) // Much higher weight to override locomotion
             poses[attackKey].action.play()
             poses[attackKey].active = true
+            poses[attackKey].target = 1
+            poses[attackKey].setWeight(1)
             console.log('[VRM] Attack action reset and playing with very high priority')
           } else {
             console.log('[VRM] Attack action not loaded yet')
