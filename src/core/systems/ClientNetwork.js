@@ -184,6 +184,13 @@ export class ClientNetwork extends System {
     }
   }
 
+  onBlockBroken = data => {
+    const { blockerId } = data
+    const player = this.world.entities.player
+    if (player?.data.id !== blockerId) return
+    player.breakBlockFromKick()
+  }
+
   onEntityEvent = event => {
     const [id, version, name, data] = event
     const entity = this.world.entities.get(id)

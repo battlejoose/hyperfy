@@ -7,6 +7,15 @@ import { createJWT, readJWT } from '../utils-server'
 import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
+import { Emotes } from '../extras/playerEmotes'
+
+const blockEmotes = [
+  Emotes.BLOCK,
+  Emotes.BLOCK_HIGH,
+  Emotes.BLOCK_LEFT,
+  Emotes.BLOCK_RIGHT,
+  Emotes.BLOCK_LOW,
+]
 
 const SAVE_INTERVAL = parseInt(process.env.SAVE_INTERVAL || '60') // seconds
 const PING_RATE = 10 // seconds
@@ -342,6 +351,30 @@ export class ServerNetwork extends System {
     
     // Broadcast health update to ALL clients (including attacker)
     this.send('entityModified', { id: targetId, health: newHealth })
+  }
+
+  onBlockBroken = async (socket, data) => {
+    const { kickerId, blockerId } = data
+
+    if (socket.player.data.id !== kickerId) {
+      console.warn('[Server] Player', socket.player.data.id, 'tried to claim kick break as', kickerId)
+      return
+    }
+
+    const blocker = this.world.entities.get(blockerId)
+    if (!blocker || !blocker.isPlayer) {
+      console.warn('[Server] Invalid blocker player:', blockerId)
+      return
+    }
+
+    const blockEmote = blocker.data.effect?.emote
+    if (!blockEmote || !blockEmotes.includes(blockEmote)) {
+      console.warn('[Server] blockBroken rejected — target not blocking:', blockerId)
+      return
+    }
+
+    console.log('[Server] Player', kickerId, 'broke block from player', blockerId)
+    this.sendTo(blockerId, 'blockBroken', { kickerId, blockerId })
   }
 
   onAttackCanceled = async (socket, data) => {

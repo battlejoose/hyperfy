@@ -392,60 +392,7 @@ export class PlayerRemote extends Entity {
   }
 
   onKickHit(otherHandle) {
-    if (!this.kickColliderActive) return
-
-    const playerId = otherHandle.playerId
-    if (!playerId) return
-
-    if (otherHandle.tag === 'block') {
-      const blockerId = otherHandle.playerId
-      if (!blockerId || blockerId === this.data.id) return
-
-      const blocker = this.world.entities.get(blockerId)
-      if (!blocker) return
-
-      const attackTag = this.currentAttackTag
-      const blockTag = blocker.currentBlockTag
-
-      let blockedSuccessfully = false
-      if (!blockTag) {
-        blockedSuccessfully = true
-      } else if (blockTag && attackTag) {
-        if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
-        else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
-        else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
-        else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
-      }
-
-      if (blockedSuccessfully) {
-        this.hitPlayersThisKick.add(blockerId)
-        this.setKickColliderActive(false)
-
-        if (blocker.base) {
-          const blockPos = new THREE.Vector3()
-          blockPos.copy(blocker.base.position)
-          blockPos.y += 1.8 * 0.6
-          this.spawnSparkParticles(blockPos)
-          this.playBlockAudio(blockPos)
-        }
-        return
-      }
-    }
-
-    if (playerId === this.data.id) return
-    if (this.hitPlayersThisKick.has(playerId)) return
-
-    this.hitPlayersThisKick.add(playerId)
-
-    if (this.kickBody) {
-      const hitPos = new THREE.Vector3()
-      const pose = this.kickBody.getGlobalPose()
-      hitPos.set(pose.p.x, pose.p.y, pose.p.z)
-      this.spawnBloodParticles(hitPos)
-      this.playHitAudio(hitPos)
-    }
-
-    console.log('[Kick Remote] Collision detected between', this.data.id, 'and', playerId)
+    // Block breaks are sent to the server; the blocker stops locally and syncs via entityModified
   }
 
   spawnBloodParticles(position) {
@@ -688,7 +635,6 @@ export class PlayerRemote extends Entity {
     else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
     else if (emote === Emotes.ATTACK_RIGHT) this.currentAttackTag = 'right'
     else if (emote === Emotes.ATTACK_LOW) this.currentAttackTag = 'low'
-    else if (emote === Emotes.KICK) this.currentAttackTag = 'low'
     else if (emote === Emotes.BLOCK_HIGH) this.currentBlockTag = 'high'
     else if (emote === Emotes.BLOCK_LEFT) this.currentBlockTag = 'left'
     else if (emote === Emotes.BLOCK_RIGHT) this.currentBlockTag = 'right'
@@ -846,7 +792,6 @@ export class PlayerRemote extends Entity {
       }, (this.kickColliderDelay + this.kickColliderDuration) * 1000)
     } else if (!isKicking && this.currentlyKicking) {
       this.clearKickColliderTimeouts()
-      if (this.currentAttackTag === 'low') this.currentAttackTag = null
     }
   }
 

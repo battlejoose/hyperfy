@@ -767,63 +767,21 @@ export class PlayerLocal extends Entity {
 
   onKickHit(otherHandle) {
     if (!this.kickColliderActive) return
+    if (otherHandle.tag !== 'block') return
 
-    const playerId = otherHandle.playerId
-    if (!playerId) return
+    const blockerId = otherHandle.playerId
+    if (!blockerId || blockerId === this.data.id) return
+    if (this.hitPlayersThisKick.has(blockerId)) return
 
-    if (otherHandle.tag === 'block') {
-      const blockerId = otherHandle.playerId
-      if (!blockerId || blockerId === this.data.id) return
+    const blocker = this.world.entities.get(blockerId)
+    if (!blocker?.isBlocking) return
 
-      const blocker = this.world.entities.get(blockerId)
-      if (!blocker) return
+    this.hitPlayersThisKick.add(blockerId)
 
-      const attackTag = this.currentAttackTag
-      const blockTag = blocker.currentBlockTag
-
-      let blockedSuccessfully = false
-      if (!blockTag) {
-        blockedSuccessfully = true
-      } else if (blockTag && attackTag) {
-        if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
-        else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
-        else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
-        else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
-      }
-
-      if (blockedSuccessfully) {
-        this.hitPlayersThisKick.add(blockerId)
-        this.setKickColliderActive(false)
-
-        if (blocker.base) {
-          const blockPos = new THREE.Vector3()
-          blockPos.copy(blocker.base.position)
-          blockPos.y += this.capsuleHeight * 0.6
-          this.spawnSparkParticles(blockPos)
-          this.playBlockAudio(blockPos)
-        }
-        return
-      }
-    }
-
-    if (playerId === this.data.id) return
-    if (this.hitPlayersThisKick.has(playerId)) return
-
-    this.hitPlayersThisKick.add(playerId)
-
-    if (this.kickBody) {
-      const hitPos = new THREE.Vector3()
-      const pose = this.kickBody.getGlobalPose()
-      hitPos.set(pose.p.x, pose.p.y, pose.p.z)
-      this.spawnBloodParticles(hitPos)
-      this.playHitAudio(hitPos)
-    }
-
-    console.log('[Kick] VALID HIT on player:', playerId, '- notifying server NOW')
-    this.world.network.send('playerHit', {
-      attackerId: this.data.id,
-      targetId: playerId,
-      damage: 25,
+    console.log('[Kick] Broke block from player:', blockerId, '- notifying server')
+    this.world.network.send('blockBroken', {
+      kickerId: this.data.id,
+      blockerId,
     })
   }
 
@@ -1035,7 +993,6 @@ export class PlayerLocal extends Entity {
     this.clearKickColliderTimeouts()
     this.hitPlayersThisKick.clear()
     this.isKicking = true
-    this.currentAttackTag = 'low'
 
     this.setEffect({
       emote: Emotes.KICK,
@@ -1192,6 +1149,33 @@ export class PlayerLocal extends Entity {
     this.currentBlockTag = null // Clear block tag
     
     console.log('[Block] Block stopped, returning to idle')
+  }
+
+  breakBlockFromKick() {
+    if (!this.isBlocking && !this.isHoldingBlock) return
+
+    console.log('[Block] Block broken by kick')
+
+    if (this.blockTimeout) {
+      clearTimeout(this.blockTimeout)
+      this.blockTimeout = null
+    }
+    if (this.blockFreezeTimeout) {
+      clearTimeout(this.blockFreezeTimeout)
+      this.blockFreezeTimeout = null
+    }
+
+    if (this.blockAnimationPaused) {
+      this.blockAnimationPaused = false
+      this.resumeBlockAnimation()
+    }
+
+    this.setEffect(null)
+    this.setBlockColliderActive(false)
+    this.isHoldingBlock = false
+    this.isBlocking = false
+    this.currentBlockEmote = null
+    this.currentBlockTag = null
   }
 
   setSwordColliderActive(active) {
@@ -2362,7 +2346,6 @@ export class PlayerLocal extends Entity {
       if (this.data.effect.duration <= 0) {
         if (this.data.effect.emote === Emotes.KICK) {
           this.clearKickColliderTimeouts()
-          this.currentAttackTag = null
         }
         this.setEffect(null)
       }
