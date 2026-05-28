@@ -3,7 +3,7 @@ import path from 'path'
 
 const KICK_PATH = path.join('src/world/assets/kick.glb')
 const BONE_NAME = 'mixamorig:RightForeArm'
-const STRAIGHTEN = 0.15 // reduce local bend angle by 15%
+const STRAIGHTEN_DEGREES = 10 // reduce local bend angle by this many degrees
 
 function readGlb(file) {
   const buf = fs.readFileSync(file)
@@ -52,7 +52,7 @@ function normalizeQuat(q) {
   return q.map(v => v / len)
 }
 
-function straightenQuat(q, amount) {
+function straightenQuatByDegrees(q, degrees) {
   const [x, y, z, w] = q
   const absW = Math.min(1, Math.abs(w))
   const angle = 2 * Math.acos(absW)
@@ -60,7 +60,7 @@ function straightenQuat(q, amount) {
 
   const sinHalf = Math.sin(angle / 2)
   const axis = [x / sinHalf, y / sinHalf, z / sinHalf]
-  const newAngle = angle * (1 - amount)
+  const newAngle = Math.max(0, angle - (degrees * Math.PI) / 180)
   const newSinHalf = Math.sin(newAngle / 2)
   const newCosHalf = Math.cos(newAngle / 2)
   const sign = w < 0 ? -1 : 1
@@ -71,6 +71,10 @@ function straightenQuat(q, amount) {
     axis[2] * newSinHalf,
     sign * newCosHalf,
   ])
+}
+
+function quatAngleDegrees(q) {
+  return (2 * Math.acos(Math.min(1, Math.abs(q[3])))) * (180 / Math.PI)
 }
 
 function patchKickForearm() {
@@ -94,15 +98,16 @@ function patchKickForearm() {
   const before = readVec4(buf, byteOffset)
   for (let i = 0; i < keyCount; i++) {
     const q = readVec4(buf, byteOffset + i * 16)
-    writeVec4(buf, byteOffset + i * 16, straightenQuat(q, STRAIGHTEN))
+    writeVec4(buf, byteOffset + i * 16, straightenQuatByDegrees(q, STRAIGHTEN_DEGREES))
   }
   const after = readVec4(buf, byteOffset)
 
   fs.writeFileSync(KICK_PATH, buf)
 
   console.log(`Patched ${keyCount} ${BONE_NAME} rotation keys in ${KICK_PATH}`)
-  console.log('Before:', before.map(v => v.toFixed(4)).join(', '))
-  console.log('After:', after.map(v => v.toFixed(4)).join(', '))
+  console.log(`Straightened by ${STRAIGHTEN_DEGREES}° on each keyframe`)
+  console.log('Sample before:', before.map(v => v.toFixed(4)).join(', '), `(${quatAngleDegrees(before).toFixed(1)}°)`)
+  console.log('Sample after:', after.map(v => v.toFixed(4)).join(', '), `(${quatAngleDegrees(after).toFixed(1)}°)`)
 }
 
 patchKickForearm()
