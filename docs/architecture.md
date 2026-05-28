@@ -73,33 +73,53 @@ world.register('key', SystemClass)
 
 ### Server-side systems
 
+Registered in `src/core/createServerWorld.js`:
+
 | System | Responsibility |
 |--------|---------------|
-| `Server` | HTTP/WS setup, asset serving |
-| `ServerNetwork` | Client connections, packet routing, authoritative damage |
-| `ServerLoader` | Asset loading/storage |
-| `ServerEnvironment` | Sky, lighting, spawn config |
-| `ServerMonitor` | Perf monitoring |
-| `ServerAI` | AI agent integration |
+| `server` | 30 Hz game loop |
+| `network` | Client connections, packet routing, combat health validation |
+| `loader` | Server-side asset loading |
+| `livekit` | Voice chat tokens |
+| `monitor` | CPU/memory stats |
+| `ai` | AI agent integration |
+
+Server has **no Physics or Graphics** — player entities are data-only `PlayerRemote` instances.
 
 ### Client-side systems
 
+Registered in `src/core/createClientWorld.js`:
+
 | System | Responsibility |
 |--------|---------------|
-| `ClientNetwork` | WebSocket, packet send/receive |
-| `ClientLoader` | Asset download, GLTF/VRM parsing, cache |
-| `ClientRenderer` | Three.js scene, post-processing |
-| `ClientInput` | Mouse, keyboard, gamepad |
-| `ClientAudio` | Spatial audio |
+| `client` | rAF loop, tab-visibility fallback |
+| `network` | WebSocket send/receive |
+| `graphics` | Three.js renderer + postprocessing |
+| `loader` | GLTF/VRM download + cache |
+| `controls` | Keyboard, mouse, gamepad input |
+| `environment` | Sky, HDR, CSM shadows, fog |
+| `audio` | Spatial audio groups |
+| `builder` | In-world editing tools |
+| `livekit` | Voice chat client |
+| `ui` | React overlay state |
 
 ### Shared systems (run on both sides)
 
 | System | Responsibility |
 |--------|---------------|
-| `Entities` | Entity lifecycle (create, modify, destroy) |
-| `Physics` | PhysX simulation |
-| `Scripts` | Sandboxed app script execution |
-| `Animation` | VRM animation playback |
+| `entities` | Entity lifecycle (create, modify, destroy) |
+| `physics` | PhysX simulation (**client only in practice**) |
+| `scripts` | SES sandboxed app script execution |
+| `blueprints`, `apps`, `settings`, `chat`, `collections`, … | World content |
+
+### Build targets
+
+| Target | Entry | Factory |
+|--------|-------|---------|
+| Server | `src/server/index.js` | `createServerWorld()` |
+| Browser client | `src/client/index.js` | `createClientWorld()` |
+| Headless client | `src/node-client/index.js` | `createNodeClientWorld()` |
+| Viewer | `scripts/build-viewer.mjs` | `createViewerWorld()` |
 
 ---
 
@@ -181,3 +201,12 @@ Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. `preload
 | `chat` | Message history |
 
 World state auto-saves every `SAVE_INTERVAL` seconds using upsert (`onConflict().merge()`).
+
+---
+
+## Related Docs
+
+- [Server / client networking](server-client.md)
+- [Character synchronization](character-sync.md)
+- [Combat system](combat.md)
+- [Documentation index](README.md)

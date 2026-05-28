@@ -2,12 +2,16 @@
 
 ## Authority Model
 
-The server is **authoritative**. The client predicts locally for responsiveness, but the server validates and broadcasts the canonical result.
+This fork uses a **split authority** model — not fully server-authoritative for movement.
 
-| Who decides | What |
-|-------------|------|
-| Server | Health changes, damage validation, spawn positions, ranks, persistence |
-| Client | Local input, animation playback, particle/audio feedback, rendering |
+| Authority | What |
+|-----------|------|
+| **Client (owner)** | Position, rotation, locomotion (`m`, `a`, `g`, `e`), combat effects (`ef`), hit detection, block detection, VFX/audio |
+| **Server** | Health/damage (validates `playerHit` sender), spawn, ranks, persistence, teleport/push routing |
+
+Movement is **client-trusted**: the server relays `entityModified` without validating physics. Combat hits and **block tag matching** are decided on the **attacker's client** when the sword trigger hits a block collider. The server only checks that `attackerId` / `blockerId` match the sending socket on `playerHit` / `blockHit`, then applies health or forwards `swordBlocked`.
+
+There is **no movement prediction or server reconciliation** — remote players use buffered interpolation (~187 ms delay). See [character-sync.md](character-sync.md).
 
 ---
 
@@ -60,9 +64,9 @@ All packet names are defined in `src/core/packets.js`.
 | `kick` | S→C | Disconnect a player |
 | `ping` / `pong` | both | Latency measurement |
 | `playerHit` | **C→S** | Client reports a sword hit |
-| `blockHit` | **C→S** | Client reports a successful block |
-| `swordBlocked` | **S→C** | Tell attacker their sword was blocked |
-| `attackCanceled` | **S→C** | Broadcast: player canceled their attack |
+| `blockHit` | **C→S** | Blocker reports a successful block (server validates `blockerId` is sender) |
+| `swordBlocked` | **S→attacker** | Tell attacker to disable sword collider (backup; attacker usually already disabled locally) |
+| `attackCanceled` | **C→S→others** | Charged attack released before 500 ms |
 
 ### Sending Packets
 
@@ -113,7 +117,7 @@ After the snapshot, only incremental packets are sent.
 | Update type | When sent |
 |-------------|-----------|
 | `entityAdded` | New player joins, new app placed |
-| `entityModified` | Health changes, effect/animation changes, position drift correction |
+| `entityModified` | Health, position, rotation, locomotion, effects — delta-compressed at 8 Hz (effects sent immediately) |
 | `entityEvent` | App script fires a custom event |
 
 `entityModified` is the workhorse — every server-side state change (health, death, animation effect) goes through it and triggers `onEntityModified` on all clients.
@@ -136,9 +140,11 @@ After the snapshot, only incremental packets are sent.
 5. Broadcast `entityModified` to all clients
 
 ### `onBlockHit(socket, { blockerId, attackerId })`
-1. Assert `blockerId` belongs to this socket
+1. Assert `blockerId` belongs to this socket (prevents spoofing)
 2. Find attacker's socket
-3. Send `swordBlocked` packet to attacker's socket only
+3. Send `swordBlocked` to attacker's socket only
+
+Does not change health. Block success/failure is decided on the **attacker's client** in `PlayerLocal.onSwordHit` before any damage packet is sent.
 
 ### `onAttackCanceled(socket, { playerId })`
 1. Assert `playerId` belongs to this socket
@@ -153,9 +159,6 @@ Builds the initial world from the full state package.
 
 ### `onEntityModified(data)`
 Finds the entity by `id` and calls `entity.modify(data)` — this propagates to the player's health bar, death state, animation, etc.
-
-### `onPlayerHit(attackerId, targetId, damage)`
-Client-side reaction to receiving a hit confirmation (particles, audio — these are often already spawned locally).
 
 ### `onSwordBlocked(blockerId)`
 Calls `playerLocal.setSwordColliderActive(false)` — stops the sword even if it hasn't physically contacted the defender yet.
@@ -186,3 +189,12 @@ On each `pong` reply the client computes:
 offset = serverTime - localTime - (roundTripTime / 2)
 ```
 `network.getTime()` returns `Date.now() + offset` for server-synchronized timestamps.
+
+---
+
+## Related Docs
+
+- [Character synchronization](character-sync.md) — detailed sync flow, interpolation, animation fields
+- [Combat system](combat.md) — combat packets and hit validation
+- [Architecture overview](architecture.md)
+- [Documentation index](README.md)
