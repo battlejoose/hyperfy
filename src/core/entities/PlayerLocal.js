@@ -787,11 +787,17 @@ export class PlayerLocal extends Entity {
   }
 
   cancelAttack(clearEffect = false) {
+    const hasAttackEffect =
+      this.data.effect?.emote === Emotes.ATTACK_LEFT ||
+      this.data.effect?.emote === Emotes.ATTACK_RIGHT ||
+      this.data.effect?.emote === Emotes.ATTACK_HIGH ||
+      this.data.effect?.emote === Emotes.ATTACK_LOW
     const active =
       this.isInWindup ||
       this.isCommitted ||
       this.isChargingAttack ||
-      this.currentAttackEmote
+      this.currentAttackEmote ||
+      hasAttackEffect
     if (!active) return
 
     if (this.attackWindupTimeout) {
@@ -833,7 +839,13 @@ export class PlayerLocal extends Entity {
   }
 
   cancelBlock(clearEffect = false) {
-    if (!this.isBlocking && !this.isHoldingBlock) return
+    const hasBlockEffect =
+      this.data.effect?.emote === Emotes.BLOCK ||
+      this.data.effect?.emote === Emotes.BLOCK_LEFT ||
+      this.data.effect?.emote === Emotes.BLOCK_RIGHT ||
+      this.data.effect?.emote === Emotes.BLOCK_HIGH ||
+      this.data.effect?.emote === Emotes.BLOCK_LOW
+    if (!this.isBlocking && !this.isHoldingBlock && !hasBlockEffect) return
 
     if (this.blockTimeout) {
       clearTimeout(this.blockTimeout)
@@ -895,6 +907,51 @@ export class PlayerLocal extends Entity {
     this.blockDragStart = { time: Date.now() }
     this.blockDragAccumulated = { x: 0, y: 0 }
     this.isBlockDragging = false
+  }
+
+  setMouseCombatMode(mode) {
+    if (mode !== 'attack' && mode !== 'block') return
+    this.mouseCombatMode = mode
+
+    if (mode === 'attack') {
+      this.cancelBlock(true)
+      this.resetMouseBlockDrag()
+      if (this.control.mouseLeft.down) {
+        this.beginMouseAttackDrag()
+      }
+    } else {
+      this.cancelAttack(true)
+      this.resetMouseAttackDrag()
+      if (this.control.mouseRight.down) {
+        this.beginMouseBlockDrag()
+      }
+    }
+  }
+
+  enforceMouseCombatMode() {
+    if (!this.mouseCombatMode) return
+
+    const hasAttackEffect =
+      this.data.effect?.emote === Emotes.ATTACK_LEFT ||
+      this.data.effect?.emote === Emotes.ATTACK_RIGHT ||
+      this.data.effect?.emote === Emotes.ATTACK_HIGH ||
+      this.data.effect?.emote === Emotes.ATTACK_LOW
+
+    if (this.mouseCombatMode === 'attack') {
+      if (this.isBlocking || this.isHoldingBlock) {
+        this.cancelBlock(true)
+      }
+    } else if (this.mouseCombatMode === 'block') {
+      if (
+        this.isChargingAttack ||
+        this.isInWindup ||
+        this.isCommitted ||
+        this.currentAttackEmote ||
+        hasAttackEffect
+      ) {
+        this.cancelAttack(true)
+      }
+    }
   }
 
   startAttack(emote, chargeMode = false) {
@@ -1958,168 +2015,121 @@ export class PlayerLocal extends Entity {
         this.startKick()
       }
       
-      // Mouse drag attack system
-      // Left mouse: drag direction determines attack
-      // Right mouse: block
-      // Last button pressed wins — holding both keeps the most recent action
-      
-      // Right mouse down: switch to block mode, cancel any mouse attack
-      if (this.control.mouseRight.pressed && this.control.pointer.locked) {
-        this.mouseCombatMode = 'block'
-        this.cancelAttack()
-        this.resetMouseAttackDrag()
-        this.beginMouseBlockDrag()
-        console.log('[Mouse Block] Right mouse down - starting block drag tracking')
-      }
-      
-      // Track mouse movement while dragging (accumulate deltas)
-      if (
-        this.mouseCombatMode === 'block' &&
-        this.control.mouseRight.down &&
-        this.blockDragStart &&
-        this.control.pointer.locked
-      ) {
-        const delta = this.control.pointer.delta
-        this.blockDragAccumulated.x += delta.x
-        this.blockDragAccumulated.y += delta.y
-        
-        const distance = Math.sqrt(
-          this.blockDragAccumulated.x * this.blockDragAccumulated.x + 
-          this.blockDragAccumulated.y * this.blockDragAccumulated.y
-        )
-        
-        if (distance > this.dragThreshold && !this.isHoldingBlock && !this.isBlockDragging) {
-          this.isBlockDragging = true
-          
-          const dx = this.blockDragAccumulated.x
-          const dy = this.blockDragAccumulated.y
-          const absX = Math.abs(dx)
-          const absY = Math.abs(dy)
-          
-          let blockEmote
-          if (absX > absY) {
-            if (dx > 0) {
-              blockEmote = Emotes.BLOCK_RIGHT
-              console.log('[Mouse Block] HOLDING RIGHT block')
+      // Mouse drag attack/block — last pressed button wins while either is held
+      if (this.control.pointer.locked) {
+        const lmb = this.control.mouseLeft
+        const rmb = this.control.mouseRight
+
+        // Process presses first (RMB after LMB so RMB wins if both fire same frame)
+        if (lmb.pressed) {
+          this.setMouseCombatMode('attack')
+        }
+        if (rmb.pressed) {
+          this.setMouseCombatMode('block')
+        }
+
+        // Prevent the held "losing" button from re-activating its action
+        if (lmb.down && rmb.down) {
+          this.enforceMouseCombatMode()
+        }
+
+        // Block drag (only in block mode)
+        if (this.mouseCombatMode === 'block' && rmb.down && this.blockDragStart) {
+          const delta = this.control.pointer.delta
+          this.blockDragAccumulated.x += delta.x
+          this.blockDragAccumulated.y += delta.y
+
+          const distance = Math.sqrt(
+            this.blockDragAccumulated.x * this.blockDragAccumulated.x +
+              this.blockDragAccumulated.y * this.blockDragAccumulated.y
+          )
+
+          if (distance > this.dragThreshold && !this.isHoldingBlock && !this.isBlockDragging) {
+            this.isBlockDragging = true
+
+            const dx = this.blockDragAccumulated.x
+            const dy = this.blockDragAccumulated.y
+            const absX = Math.abs(dx)
+            const absY = Math.abs(dy)
+
+            let blockEmote
+            if (absX > absY) {
+              blockEmote = dx > 0 ? Emotes.BLOCK_RIGHT : Emotes.BLOCK_LEFT
             } else {
-              blockEmote = Emotes.BLOCK_LEFT
-              console.log('[Mouse Block] HOLDING LEFT block')
+              blockEmote = dy > 0 ? Emotes.BLOCK_LOW : Emotes.BLOCK_HIGH
             }
+
+            this.startBlock(blockEmote, true)
+          }
+        }
+
+        // Right mouse released: stop held block
+        if (rmb.released) {
+          if (this.isHoldingBlock) {
+            this.stopBlock()
+          }
+
+          this.resetMouseBlockDrag()
+          if (lmb.down) {
+            this.setMouseCombatMode('attack')
           } else {
-            if (dy > 0) {
-              blockEmote = Emotes.BLOCK_LOW
-              console.log('[Mouse Block] HOLDING LOW block')
+            this.mouseCombatMode = null
+          }
+        }
+
+        // Attack drag (only in attack mode)
+        if (this.mouseCombatMode === 'attack' && lmb.down && this.mouseDragStart) {
+          const delta = this.control.pointer.delta
+          this.mouseDragAccumulated.x += delta.x
+          this.mouseDragAccumulated.y += delta.y
+
+          const distance = Math.sqrt(
+            this.mouseDragAccumulated.x * this.mouseDragAccumulated.x +
+              this.mouseDragAccumulated.y * this.mouseDragAccumulated.y
+          )
+
+          if (distance > this.dragThreshold && !this.isDragging) {
+            this.isDragging = true
+
+            const dx = this.mouseDragAccumulated.x
+            const dy = this.mouseDragAccumulated.y
+            const absX = Math.abs(dx)
+            const absY = Math.abs(dy)
+
+            let attackEmote
+            if (absX > absY) {
+              attackEmote = dx > 0 ? Emotes.ATTACK_RIGHT : Emotes.ATTACK_LEFT
             } else {
-              blockEmote = Emotes.BLOCK_HIGH
-              console.log('[Mouse Block] HOLDING HIGH block')
+              attackEmote = dy > 0 ? Emotes.ATTACK_LOW : Emotes.ATTACK_HIGH
+            }
+
+            this.startAttack(attackEmote, true)
+          }
+        }
+
+        // Left mouse released: complete charged attack if charging
+        if (lmb.released) {
+          if (this.mouseCombatMode === 'attack' && this.isChargingAttack) {
+            if (this.earlyReleaseHoldActive) {
+              // In early-release hold — swing fires automatically
+            } else {
+              const windupElapsed = this.chargeStartTime
+                ? (Date.now() - this.chargeStartTime) / 1000
+                : this.attackWindupTime
+              if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
+                this.completeChargedAttack()
+              } else {
+                this.pendingChargedRelease = true
+              }
             }
           }
-          
-          this.startBlock(blockEmote, true)
-        }
-      }
-      
-      // Right mouse released: stop held block
-      if (this.control.mouseRight.released && this.control.pointer.locked) {
-        if (this.isHoldingBlock) {
-          console.log('[Mouse Block] Right mouse released - stopping held block')
-          this.stopBlock()
-        } else {
-          console.log('[Mouse Block] Right mouse released - no held block (drag too short)')
-        }
-        
-        this.resetMouseBlockDrag()
-        if (this.control.mouseLeft.down) {
-          this.mouseCombatMode = 'attack'
-          this.beginMouseAttackDrag()
-        } else {
-          this.mouseCombatMode = null
-        }
-      }
-      
-      // Left mouse down: switch to attack mode, cancel any mouse block
-      if (this.control.mouseLeft.pressed && this.control.pointer.locked) {
-        this.mouseCombatMode = 'attack'
-        this.cancelBlock(true)
-        this.resetMouseBlockDrag()
-        this.beginMouseAttackDrag()
-        console.log('[Mouse Attack] Mouse down - starting drag tracking')
-      }
-      
-      // Track mouse movement while dragging (accumulate deltas)
-      if (
-        this.mouseCombatMode === 'attack' &&
-        this.control.mouseLeft.down &&
-        this.mouseDragStart &&
-        this.control.pointer.locked
-      ) {
-        const delta = this.control.pointer.delta
-        this.mouseDragAccumulated.x += delta.x
-        this.mouseDragAccumulated.y += delta.y
-        
-        const distance = Math.sqrt(
-          this.mouseDragAccumulated.x * this.mouseDragAccumulated.x + 
-          this.mouseDragAccumulated.y * this.mouseDragAccumulated.y
-        )
-        
-        if (distance > this.dragThreshold && !this.isDragging) {
-          this.isDragging = true
-          
-          const dx = this.mouseDragAccumulated.x
-          const dy = this.mouseDragAccumulated.y
-          const absX = Math.abs(dx)
-          const absY = Math.abs(dy)
-          
-          let attackEmote
-          if (absX > absY) {
-            if (dx > 0) {
-              attackEmote = Emotes.ATTACK_RIGHT
-              console.log('[Mouse Attack] CHARGING RIGHT attack')
-            } else {
-              attackEmote = Emotes.ATTACK_LEFT
-              console.log('[Mouse Attack] CHARGING LEFT attack')
-            }
+
+          this.resetMouseAttackDrag()
+          if (rmb.down) {
+            this.setMouseCombatMode('block')
           } else {
-            if (dy > 0) {
-              attackEmote = Emotes.ATTACK_LOW
-              console.log('[Mouse Attack] CHARGING LOW attack')
-            } else {
-              attackEmote = Emotes.ATTACK_HIGH
-              console.log('[Mouse Attack] CHARGING HIGH attack')
-            }
+            this.mouseCombatMode = null
           }
-          
-          this.startAttack(attackEmote, true)
-        }
-      }
-      
-      // Left mouse released: complete charged attack if charging
-      if (this.control.mouseLeft.released && this.control.pointer.locked) {
-        if (this.mouseCombatMode === 'attack' && this.isChargingAttack) {
-          if (this.earlyReleaseHoldActive) {
-            console.log('[Mouse Attack] In early-release hold — swing fires automatically')
-          } else {
-            const windupElapsed = this.chargeStartTime
-              ? (Date.now() - this.chargeStartTime) / 1000
-              : this.attackWindupTime
-            if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
-              console.log('[Mouse Attack] Mouse released - completing charged attack')
-              this.completeChargedAttack()
-            } else {
-              console.log('[Mouse Attack] Released early - will hold backswing then swing')
-              this.pendingChargedRelease = true
-            }
-          }
-        } else if (this.mouseCombatMode === 'attack') {
-          console.log('[Mouse Attack] Mouse released - no charged attack (drag too short)')
-        }
-        
-        this.resetMouseAttackDrag()
-        if (this.control.mouseRight.down) {
-          this.mouseCombatMode = 'block'
-          this.beginMouseBlockDrag()
-        } else {
-          this.mouseCombatMode = null
         }
       }
     }
