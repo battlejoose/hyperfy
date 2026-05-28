@@ -441,4 +441,69 @@ const migrations = [
       await trx.schema.renameTable('_config_new', 'config')
     })
   },
+  // add fight arena at player spawn
+  async db => {
+    const blueprintId = '$fightarena'
+    const existingBlueprint = await db('blueprints').where('id', blueprintId).first()
+    if (!existingBlueprint) {
+      const now = moment().toISOString()
+      await db('blueprints').insert({
+        id: blueprintId,
+        data: JSON.stringify({
+          id: blueprintId,
+          version: 0,
+          name: 'Fight Arena',
+          image: null,
+          author: null,
+          url: null,
+          desc: null,
+          model: 'asset://fightarena.glb',
+          script: null,
+          props: null,
+          preload: true,
+          public: false,
+          locked: true,
+          frozen: true,
+          unique: true,
+          scene: false,
+          disabled: false,
+        }),
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    const entityId = '$fightarena'
+    const existingEntity = await db('entities').where('id', entityId).first()
+    if (!existingEntity) {
+      const spawnRow = await db('config').where('key', 'spawn').first()
+      const spawn = JSON.parse(spawnRow?.value || '{ "position": [0, 0, 0], "quaternion": [0, 0, 0, 1] }')
+      // Derived from fightarena.glb bounds (Colosseum root scale 0.01)
+      const arenaCenter = [-25.828, 1.097, -10.312]
+      const arenaMinY = -26.988
+      const position = [
+        spawn.position[0] - arenaCenter[0],
+        spawn.position[1] - arenaMinY,
+        spawn.position[2] - arenaCenter[2],
+      ]
+      const now = moment().toISOString()
+      await db('entities').insert({
+        id: entityId,
+        data: JSON.stringify({
+          id: entityId,
+          type: 'app',
+          blueprint: blueprintId,
+          position,
+          quaternion: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          mover: null,
+          uploader: null,
+          pinned: true,
+          state: {},
+        }),
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+  },
 ]
