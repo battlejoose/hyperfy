@@ -100,8 +100,8 @@ export class PlayerLocal extends Entity {
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
     this.kickDuration = 2.8 // Matches kick.glb clip length (~2.8s)
-    this.kickColliderDelay = 2.0 // Activate kick hitbox 2s into animation
-    this.kickColliderDuration = 0.5 // Active window before kick ends at 2.5s
+    this.kickColliderDelay = 1.5 // Activate kick hitbox 1.5s into animation
+    this.kickColliderDuration = 0.5 // Active window ends at 2.0s
     this.kickColliderActive = false
     this.kickActivateTimeout = null
     this.kickDeactivateTimeout = null
@@ -414,9 +414,9 @@ export class PlayerLocal extends Entity {
 
   initKickCollider() {
     // 1x1m cross-section, 3m forward from block collider center
-    const width = 1
-    const height = 1
-    const depth = 3
+    const width = 0.5
+    const height = 0.5
+    const depth = 1.5
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
 
     const material = this.world.physics.physics.createMaterial(0, 0, 0)

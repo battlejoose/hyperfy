@@ -37,7 +37,7 @@ export class PlayerRemote extends Entity {
     
     // Kick state
     this.kickColliderActive = false
-    this.kickColliderDelay = 2.0
+    this.kickColliderDelay = 1.5
     this.kickColliderDuration = 0.5
     this.kickActivateTimeout = null
     this.kickDeactivateTimeout = null
@@ -273,9 +273,9 @@ export class PlayerRemote extends Entity {
 
   initKickCollider() {
     if (!PHYSX) return
-    const width = 1
-    const height = 1
-    const depth = 3
+    const width = 0.5
+    const height = 0.5
+    const depth = 1.5
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
 
     const material = this.world.physics.physics.createMaterial(0, 0, 0)
