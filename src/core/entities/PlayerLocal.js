@@ -99,7 +99,7 @@ export class PlayerLocal extends Entity {
     this.isBlocking = false
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
-    this.kickDuration = 1.0 // Kick animation duration
+    this.kickDuration = 2.8 // Matches kick.glb clip length (~2.8s)
     
     // Death/respawn state
     this.isDead = false
