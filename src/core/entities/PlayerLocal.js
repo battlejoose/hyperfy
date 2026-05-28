@@ -100,6 +100,13 @@ export class PlayerLocal extends Entity {
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
     this.kickDuration = 2.8 // Matches kick.glb clip length (~2.8s)
+    this.kickColliderDelay = 2.0 // Activate kick hitbox 2s into animation
+    this.kickColliderDuration = 0.5 // Active window before kick ends at 2.5s
+    this.kickColliderActive = false
+    this.kickActivateTimeout = null
+    this.kickDeactivateTimeout = null
+    this.hitPlayersThisKick = new Set()
+    this.isKicking = false
     
     // Death/respawn state
     this.isDead = false
@@ -292,6 +299,7 @@ export class PlayerLocal extends Entity {
         this.sword.activate({ world: this.world, entity: this })
         this.initSwordCollider()
         this.initBlockCollider()
+        this.initKickCollider()
       })
       .catch(err => {
         console.error('Failed to load sword:', err)
@@ -401,6 +409,55 @@ export class PlayerLocal extends Entity {
     // Start with collider disabled (disable simulation flag)
     this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
     
+    PHYSX.destroy(geometry)
+  }
+
+  initKickCollider() {
+    // 1x1m cross-section, 3m forward from block collider center
+    const width = 1
+    const height = 1
+    const depth = 3
+    const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
+
+    const material = this.world.physics.physics.createMaterial(0, 0, 0)
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
+
+    this.kickShape = this.world.physics.physics.createShape(geometry, material, true, flags)
+
+    const filterData = new PHYSX.PxFilterData(
+      Layers.weapon.group,
+      Layers.weapon.mask,
+      PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND | PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_LOST,
+      0
+    )
+
+    this.kickShape.setQueryFilterData(filterData)
+    this.kickShape.setSimulationFilterData(filterData)
+
+    const transform = new PHYSX.PxTransform(PHYSX.PxIDENTITYEnum.PxIdentity)
+    v1.copy(this.base.position).toPxTransform(transform)
+    q1.set(0, 0, 0, 1).toPxTransform(transform)
+
+    this.kickBody = this.world.physics.physics.createRigidDynamic(transform)
+    this.kickBody.setRigidBodyFlag(PHYSX.PxRigidBodyFlagEnum.eKINEMATIC, true)
+    this.kickBody.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_GRAVITY, true)
+    this.kickBody.attachShape(this.kickShape)
+
+    const self = this
+    this.kickHandle = this.world.physics.addActor(this.kickBody, {
+      tag: 'kick',
+      playerId: this.data.id,
+      onTriggerEnter: otherHandle => {
+        self.onKickHit(otherHandle)
+      },
+    })
+
+    this.kickWidth = width
+    this.kickHeight = height
+    this.kickDepth = depth
+    this.blockForwardOffset = 0.5
+    this.kickShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+
     PHYSX.destroy(geometry)
   }
 
@@ -708,6 +765,68 @@ export class PlayerLocal extends Entity {
     })
   }
 
+  onKickHit(otherHandle) {
+    if (!this.kickColliderActive) return
+
+    const playerId = otherHandle.playerId
+    if (!playerId) return
+
+    if (otherHandle.tag === 'block') {
+      const blockerId = otherHandle.playerId
+      if (!blockerId || blockerId === this.data.id) return
+
+      const blocker = this.world.entities.get(blockerId)
+      if (!blocker) return
+
+      const attackTag = this.currentAttackTag
+      const blockTag = blocker.currentBlockTag
+
+      let blockedSuccessfully = false
+      if (!blockTag) {
+        blockedSuccessfully = true
+      } else if (blockTag && attackTag) {
+        if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
+        else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
+        else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
+        else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
+      }
+
+      if (blockedSuccessfully) {
+        this.hitPlayersThisKick.add(blockerId)
+        this.setKickColliderActive(false)
+
+        if (blocker.base) {
+          const blockPos = new THREE.Vector3()
+          blockPos.copy(blocker.base.position)
+          blockPos.y += this.capsuleHeight * 0.6
+          this.spawnSparkParticles(blockPos)
+          this.playBlockAudio(blockPos)
+        }
+        return
+      }
+    }
+
+    if (playerId === this.data.id) return
+    if (this.hitPlayersThisKick.has(playerId)) return
+
+    this.hitPlayersThisKick.add(playerId)
+
+    if (this.kickBody) {
+      const hitPos = new THREE.Vector3()
+      const pose = this.kickBody.getGlobalPose()
+      hitPos.set(pose.p.x, pose.p.y, pose.p.z)
+      this.spawnBloodParticles(hitPos)
+      this.playHitAudio(hitPos)
+    }
+
+    console.log('[Kick] VALID HIT on player:', playerId, '- notifying server NOW')
+    this.world.network.send('playerHit', {
+      attackerId: this.data.id,
+      targetId: playerId,
+      damage: 25,
+    })
+  }
+
   startAttack(emote, chargeMode = false) {
     // Can't attack while sprinting
     if (this.running) {
@@ -913,11 +1032,39 @@ export class PlayerLocal extends Entity {
     if (this.isChargingAttack || this.isCommitted || this.isInWindup) return
     if (this.data.effect?.emote === Emotes.KICK && this.data.effect?.duration > 0) return
 
+    this.clearKickColliderTimeouts()
+    this.hitPlayersThisKick.clear()
+    this.isKicking = true
+    this.currentAttackTag = 'low'
+
     this.setEffect({
       emote: Emotes.KICK,
       duration: this.kickDuration,
       cancellable: false,
     })
+
+    this.kickActivateTimeout = setTimeout(() => {
+      if (this.isKicking) this.setKickColliderActive(true)
+      this.kickActivateTimeout = null
+    }, this.kickColliderDelay * 1000)
+
+    this.kickDeactivateTimeout = setTimeout(() => {
+      this.setKickColliderActive(false)
+      this.kickDeactivateTimeout = null
+    }, (this.kickColliderDelay + this.kickColliderDuration) * 1000)
+  }
+
+  clearKickColliderTimeouts() {
+    if (this.kickActivateTimeout) {
+      clearTimeout(this.kickActivateTimeout)
+      this.kickActivateTimeout = null
+    }
+    if (this.kickDeactivateTimeout) {
+      clearTimeout(this.kickDeactivateTimeout)
+      this.kickDeactivateTimeout = null
+    }
+    this.setKickColliderActive(false)
+    this.isKicking = false
   }
 
   startBlock(emote = Emotes.BLOCK, holdMode = false) {
@@ -1084,6 +1231,20 @@ export class PlayerLocal extends Entity {
     } else {
       console.log('[Block] Deactivating block collider')
       this.blockShape.setFlag(PHYSX.PxShapeFlagEnum.eSIMULATION_SHAPE, false)
+    }
+  }
+
+  setKickColliderActive(active) {
+    if (!this.kickShape) return
+
+    if (active && !this.kickColliderActive) {
+      console.log('[Kick] Activating kick collider (TRIGGER shape)')
+      this.kickShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
+      this.kickColliderActive = true
+    } else if (!active && this.kickColliderActive) {
+      console.log('[Kick] Deactivating kick collider')
+      this.kickShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+      this.kickColliderActive = false
     }
   }
 
@@ -2199,6 +2360,10 @@ export class PlayerLocal extends Entity {
     if (this.data.effect?.duration) {
       this.data.effect.duration -= delta
       if (this.data.effect.duration <= 0) {
+        if (this.data.effect.emote === Emotes.KICK) {
+          this.clearKickColliderTimeouts()
+          this.currentAttackTag = null
+        }
         this.setEffect(null)
       }
     }
@@ -2262,6 +2427,22 @@ export class PlayerLocal extends Entity {
         this.blockColliderMesh.visible = true
         this.world.stage.scene.add(this.blockColliderMesh)
         console.log('[PlayerLocal] Created block collider mesh (deferred)')
+      }
+
+      // Create kick mesh if it doesn't exist and we have the kick shape
+      if (!this.kickColliderMesh && this.kickShape) {
+        const kickGeom = new THREE.BoxGeometry(this.kickWidth, this.kickHeight, this.kickDepth)
+        const kickMat = new THREE.MeshBasicMaterial({
+          color: 0xff8800,
+          transparent: true,
+          opacity: 0.2,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.kickColliderMesh = new THREE.Mesh(kickGeom, kickMat)
+        this.kickColliderMesh.visible = true
+        this.world.stage.scene.add(this.kickColliderMesh)
+        console.log('[PlayerLocal] Created kick collider mesh (deferred)')
       }
     }
 
@@ -2371,6 +2552,40 @@ export class PlayerLocal extends Entity {
           material.opacity = 0.5
         } else {
           material.color.setHex(0xffff00) // Yellow when not blocking
+          material.opacity = 0.2
+        }
+      }
+    }
+
+    // Update kick collider position (extends forward from block collider center)
+    if (this.kickBody) {
+      const pose = this.kickBody.getGlobalPose()
+      const blockForwardOffset = this.blockForwardOffset ?? 0.5
+      const heightOffset = this.capsuleHeight * 0.6
+
+      v6.set(0, 0, -blockForwardOffset)
+      v6.applyQuaternion(this.base.quaternion)
+      v6.add(this.base.position)
+      v6.y += heightOffset
+
+      v3.set(0, 0, -this.kickDepth / 2)
+      v3.applyQuaternion(this.base.quaternion)
+      v6.add(v3)
+
+      v6.toPxTransform(pose)
+      this.base.quaternion.toPxTransform(pose)
+      this.kickBody.setGlobalPose(pose)
+
+      if (this.kickColliderMesh) {
+        this.kickColliderMesh.position.copy(v6)
+        this.kickColliderMesh.quaternion.copy(this.base.quaternion)
+
+        const material = this.kickColliderMesh.material
+        if (this.kickColliderActive) {
+          material.color.setHex(0xff4400)
+          material.opacity = 0.5
+        } else {
+          material.color.setHex(0xff8800)
           material.opacity = 0.2
         }
       }
@@ -2507,6 +2722,8 @@ export class PlayerLocal extends Entity {
     this.setBlockColliderActive(false)
     this.isBlocking = false
     this.currentBlockTag = null // Clear block tag
+    this.clearKickColliderTimeouts()
+    this.currentAttackTag = null
     
     // Cancel any held block state and resume animation mixer BEFORE death animation starts
     if (this.isHoldingBlock) {

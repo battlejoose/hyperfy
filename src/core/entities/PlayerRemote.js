@@ -33,6 +33,17 @@ export class PlayerRemote extends Entity {
     
     // Block state
     this.isBlocking = false
+    this.currentlyBlocking = false
+    
+    // Kick state
+    this.kickColliderActive = false
+    this.kickColliderDelay = 2.0
+    this.kickColliderDuration = 0.5
+    this.kickActivateTimeout = null
+    this.kickDeactivateTimeout = null
+    this.hitPlayersThisKick = new Set()
+    this.currentlyKicking = false
+    this.blockForwardOffset = 0.5
     
     // Attack and block tags for directional blocking system
     this.currentAttackTag = null // 'high', 'left', 'right', 'low'
@@ -150,6 +161,7 @@ export class PlayerRemote extends Entity {
         this.sword.activate({ world: this.world, entity: this })
         this.initSwordCollider()
         this.initBlockCollider()
+        this.initKickCollider()
       })
       .catch(err => {
         console.error('Failed to load sword:', err)
@@ -259,6 +271,56 @@ export class PlayerRemote extends Entity {
     PHYSX.destroy(geometry)
   }
 
+  initKickCollider() {
+    if (!PHYSX) return
+    const width = 1
+    const height = 1
+    const depth = 3
+    const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
+
+    const material = this.world.physics.physics.createMaterial(0, 0, 0)
+    const flags = new PHYSX.PxShapeFlags(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE)
+
+    this.kickShape = this.world.physics.physics.createShape(geometry, material, true, flags)
+
+    const filterData = new PHYSX.PxFilterData(
+      Layers.weapon.group,
+      Layers.weapon.mask,
+      PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_FOUND | PHYSX.PxPairFlagEnum.eNOTIFY_TOUCH_LOST,
+      0
+    )
+
+    this.kickShape.setQueryFilterData(filterData)
+    this.kickShape.setSimulationFilterData(filterData)
+
+    const transform = new PHYSX.PxTransform(PHYSX.PxIDENTITYEnum.PxIdentity)
+    const v1 = new THREE.Vector3()
+    const q1 = new THREE.Quaternion()
+    v1.copy(this.base.position).toPxTransform(transform)
+    q1.set(0, 0, 0, 1).toPxTransform(transform)
+
+    this.kickBody = this.world.physics.physics.createRigidDynamic(transform)
+    this.kickBody.setRigidBodyFlag(PHYSX.PxRigidBodyFlagEnum.eKINEMATIC, true)
+    this.kickBody.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_GRAVITY, true)
+    this.kickBody.attachShape(this.kickShape)
+
+    const self = this
+    this.kickHandle = this.world.physics.addActor(this.kickBody, {
+      tag: 'kick',
+      playerId: this.data.id,
+      onTriggerEnter: otherHandle => {
+        self.onKickHit(otherHandle)
+      },
+    })
+
+    this.kickWidth = width
+    this.kickHeight = height
+    this.kickDepth = depth
+    this.kickShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+
+    PHYSX.destroy(geometry)
+  }
+
   onSwordHit(otherHandle) {
     if (!this.swordColliderActive) return
     
@@ -327,6 +389,63 @@ export class PlayerRemote extends Entity {
     
     // Log collision for debugging (damage is handled by server via playerHit message)
     console.log('[Sword Remote] Collision detected between', this.data.id, 'and', playerId)
+  }
+
+  onKickHit(otherHandle) {
+    if (!this.kickColliderActive) return
+
+    const playerId = otherHandle.playerId
+    if (!playerId) return
+
+    if (otherHandle.tag === 'block') {
+      const blockerId = otherHandle.playerId
+      if (!blockerId || blockerId === this.data.id) return
+
+      const blocker = this.world.entities.get(blockerId)
+      if (!blocker) return
+
+      const attackTag = this.currentAttackTag
+      const blockTag = blocker.currentBlockTag
+
+      let blockedSuccessfully = false
+      if (!blockTag) {
+        blockedSuccessfully = true
+      } else if (blockTag && attackTag) {
+        if (blockTag === 'high' && attackTag === 'high') blockedSuccessfully = true
+        else if (blockTag === 'low' && attackTag === 'low') blockedSuccessfully = true
+        else if (blockTag === 'left' && attackTag === 'right') blockedSuccessfully = true
+        else if (blockTag === 'right' && attackTag === 'left') blockedSuccessfully = true
+      }
+
+      if (blockedSuccessfully) {
+        this.hitPlayersThisKick.add(blockerId)
+        this.setKickColliderActive(false)
+
+        if (blocker.base) {
+          const blockPos = new THREE.Vector3()
+          blockPos.copy(blocker.base.position)
+          blockPos.y += 1.8 * 0.6
+          this.spawnSparkParticles(blockPos)
+          this.playBlockAudio(blockPos)
+        }
+        return
+      }
+    }
+
+    if (playerId === this.data.id) return
+    if (this.hitPlayersThisKick.has(playerId)) return
+
+    this.hitPlayersThisKick.add(playerId)
+
+    if (this.kickBody) {
+      const hitPos = new THREE.Vector3()
+      const pose = this.kickBody.getGlobalPose()
+      hitPos.set(pose.p.x, pose.p.y, pose.p.z)
+      this.spawnBloodParticles(hitPos)
+      this.playHitAudio(hitPos)
+    }
+
+    console.log('[Kick Remote] Collision detected between', this.data.id, 'and', playerId)
   }
 
   spawnBloodParticles(position) {
@@ -499,6 +618,33 @@ export class PlayerRemote extends Entity {
     }
   }
 
+  setKickColliderActive(active) {
+    if (!this.kickShape) return
+
+    if (active && !this.kickColliderActive) {
+      console.log('[Kick Remote] Activating kick collider for player:', this.data.id)
+      this.kickShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
+      this.kickColliderActive = true
+    } else if (!active && this.kickColliderActive) {
+      console.log('[Kick Remote] Deactivating kick collider for player:', this.data.id)
+      this.kickShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
+      this.kickColliderActive = false
+    }
+  }
+
+  clearKickColliderTimeouts() {
+    if (this.kickActivateTimeout) {
+      clearTimeout(this.kickActivateTimeout)
+      this.kickActivateTimeout = null
+    }
+    if (this.kickDeactivateTimeout) {
+      clearTimeout(this.kickDeactivateTimeout)
+      this.kickDeactivateTimeout = null
+    }
+    this.setKickColliderActive(false)
+    this.currentlyKicking = false
+  }
+
   getAnchorMatrix() {
     if (this.data.effect?.anchorId) {
       return this.world.anchors.get(this.data.effect.anchorId)
@@ -542,6 +688,7 @@ export class PlayerRemote extends Entity {
     else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
     else if (emote === Emotes.ATTACK_RIGHT) this.currentAttackTag = 'right'
     else if (emote === Emotes.ATTACK_LOW) this.currentAttackTag = 'low'
+    else if (emote === Emotes.KICK) this.currentAttackTag = 'low'
     else if (emote === Emotes.BLOCK_HIGH) this.currentBlockTag = 'high'
     else if (emote === Emotes.BLOCK_LEFT) this.currentBlockTag = 'left'
     else if (emote === Emotes.BLOCK_RIGHT) this.currentBlockTag = 'right'
@@ -682,6 +829,25 @@ export class PlayerRemote extends Entity {
         this.blockTimeout = null
       }
     }
+
+    // Handle kick collider activation for kick animation
+    const isKicking = this.data.effect?.emote === Emotes.KICK
+
+    if (isKicking && !this.currentlyKicking) {
+      this.currentlyKicking = true
+      this.hitPlayersThisKick.clear()
+      this.kickActivateTimeout = setTimeout(() => {
+        if (this.currentlyKicking) this.setKickColliderActive(true)
+        this.kickActivateTimeout = null
+      }, this.kickColliderDelay * 1000)
+      this.kickDeactivateTimeout = setTimeout(() => {
+        this.setKickColliderActive(false)
+        this.kickDeactivateTimeout = null
+      }, (this.kickColliderDelay + this.kickColliderDuration) * 1000)
+    } else if (!isKicking && this.currentlyKicking) {
+      this.clearKickColliderTimeouts()
+      if (this.currentAttackTag === 'low') this.currentAttackTag = null
+    }
   }
 
   lateUpdate(delta) {
@@ -740,6 +906,22 @@ export class PlayerRemote extends Entity {
         this.blockColliderMesh.visible = true
         this.world.stage.scene.add(this.blockColliderMesh)
         console.log('[PlayerRemote] Created block collider mesh (deferred) for player:', this.data.id)
+      }
+
+      // Create kick mesh if it doesn't exist and we have the kick shape
+      if (!this.kickColliderMesh && this.kickShape) {
+        const kickGeom = new THREE.BoxGeometry(this.kickWidth, this.kickHeight, this.kickDepth)
+        const kickMat = new THREE.MeshBasicMaterial({
+          color: 0xff8800,
+          transparent: true,
+          opacity: 0.2,
+          wireframe: false,
+          depthTest: true,
+        })
+        this.kickColliderMesh = new THREE.Mesh(kickGeom, kickMat)
+        this.kickColliderMesh.visible = true
+        this.world.stage.scene.add(this.kickColliderMesh)
+        console.log('[PlayerRemote] Created kick collider mesh (deferred) for player:', this.data.id)
       }
     }
 
@@ -828,6 +1010,42 @@ export class PlayerRemote extends Entity {
           material.opacity = 0.5
         } else {
           material.color.setHex(0xffff00) // Yellow when not blocking
+          material.opacity = 0.2
+        }
+      }
+    }
+
+    // Update kick collider position (extends forward from block collider center)
+    if (this.kickBody) {
+      const v3 = new THREE.Vector3()
+      const v6 = new THREE.Vector3()
+      const pose = this.kickBody.getGlobalPose()
+      const blockForwardOffset = this.blockForwardOffset ?? 0.5
+      const heightOffset = 1.8 * 0.6
+
+      v6.set(0, 0, -blockForwardOffset)
+      v6.applyQuaternion(this.base.quaternion)
+      v6.add(this.base.position)
+      v6.y += heightOffset
+
+      v3.set(0, 0, -this.kickDepth / 2)
+      v3.applyQuaternion(this.base.quaternion)
+      v6.add(v3)
+
+      v6.toPxTransform(pose)
+      this.base.quaternion.toPxTransform(pose)
+      this.kickBody.setGlobalPose(pose)
+
+      if (this.kickColliderMesh) {
+        this.kickColliderMesh.position.copy(v6)
+        this.kickColliderMesh.quaternion.copy(this.base.quaternion)
+
+        const material = this.kickColliderMesh.material
+        if (this.kickColliderActive) {
+          material.color.setHex(0xff4400)
+          material.opacity = 0.5
+        } else {
+          material.color.setHex(0xff8800)
           material.opacity = 0.2
         }
       }
