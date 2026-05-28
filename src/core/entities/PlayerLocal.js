@@ -908,7 +908,10 @@ export class PlayerLocal extends Entity {
 
   startKick() {
     if (this.isDead) return
-    if (this.data.effect?.emote === Emotes.KICK) return
+    if (this.running) return
+    if (this.isBlocking || this.isHoldingBlock) return
+    if (this.isChargingAttack || this.isCommitted || this.isInWindup) return
+    if (this.data.effect?.emote === Emotes.KICK && this.data.effect?.duration > 0) return
 
     this.setEffect({
       emote: Emotes.KICK,
@@ -1743,7 +1746,7 @@ export class PlayerLocal extends Entity {
       this.jumpPressed = true
     }
 
-    // handle attack animations (keys 1, 2, 3, 4, 5)
+    // handle attack animations (keys 1, 2, 3, 4, 5) and kick (key F)
     // Use proper attack timing with windup, commit, and canceling
     if (!xr && !this.isDead) {
       if (this.control.digit1.pressed) {

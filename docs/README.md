@@ -58,6 +58,7 @@ Four runtimes share `src/core/`: server, browser client, headless node-client, o
 |-------|--------|
 | Keys 1–4 | Instant attacks: left, right, high, low |
 | Key 5 | Generic block |
+| Key F | Kick |
 | Left mouse drag ≥ 30px | Charged directional attack |
 | Right mouse drag ≥ 30px | Held directional block |
 
