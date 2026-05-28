@@ -90,6 +90,7 @@ export class PlayerLocal extends Entity {
     this.attackWindupTimeout = null
     this.attackEndTimeout = null
     this.attackFreezeTimeout = null
+    this.attackEarlyReleaseHoldTimeout = null
     this.isInWindup = false
     this.isCommitted = false
     this.attackAnimationPaused = false
@@ -114,7 +115,8 @@ export class PlayerLocal extends Entity {
     this.isChargingAttack = false // holding at backswing, waiting for release
     this.chargedAttackEmote = null // which attack is being charged
     this.chargeStartTime = null // when charged attack backswing started
-    this.pendingChargedRelease = false // mouse released early — swing after windup
+    this.pendingChargedRelease = false // mouse released early — pause at backswing then swing
+    this.earlyReleaseHoldActive = false // mandatory backswing hold after early release
     
     // Mouse drag block tracking
     this.blockDragStart = null // { time }
@@ -732,8 +734,11 @@ export class PlayerLocal extends Entity {
       if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
       if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
       if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+      if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
       if (this.attackAnimationPaused) this.resumeAttackAnimation()
       this.setSwordColliderActive(false)
+      this.pendingChargedRelease = false
+      this.earlyReleaseHoldActive = false
     }
     
     // IMPORTANT: Clear hit tracking NOW, before any collider activation
@@ -747,6 +752,7 @@ export class PlayerLocal extends Entity {
       this.chargedAttackEmote = emote
       this.chargeStartTime = Date.now()
       this.pendingChargedRelease = false
+      this.earlyReleaseHoldActive = false
       this.currentAttackEmote = emote
       this.isInWindup = true
       this.isCommitted = false
@@ -762,13 +768,22 @@ export class PlayerLocal extends Entity {
         cancellable: false,
       })
       
-      // After windup, pause at backswing — or complete swing if mouse was released early
+      // After windup, pause at backswing — early release gets a mandatory hold before swinging
       this.attackFreezeTimeout = setTimeout(() => {
         if (this.isChargingAttack && this.chargedAttackEmote === emote) {
           if (this.pendingChargedRelease) {
-            console.log('[Attack] Windup complete after early release — swinging')
             this.pendingChargedRelease = false
-            this.completeChargedAttack()
+            this.earlyReleaseHoldActive = true
+            this.attackAnimationPaused = true
+            this.pauseAttackAnimation()
+            console.log('[Attack] Early release — holding backswing 500ms before swing')
+            this.attackEarlyReleaseHoldTimeout = setTimeout(() => {
+              this.attackEarlyReleaseHoldTimeout = null
+              this.earlyReleaseHoldActive = false
+              if (this.isChargingAttack) {
+                this.completeChargedAttack()
+              }
+            }, this.attackWindupTime * 1000)
           } else {
             console.log('[Attack] Pausing animation at backswing pose - hold as long as you want!')
             this.attackAnimationPaused = true
@@ -845,10 +860,14 @@ export class PlayerLocal extends Entity {
     
     console.log('[Attack] RELEASING charged attack - resuming animation:', this.chargedAttackEmote)
     
-    // Clear any pending freeze timeout
+    // Clear any pending timeouts
     if (this.attackFreezeTimeout) {
       clearTimeout(this.attackFreezeTimeout)
       this.attackFreezeTimeout = null
+    }
+    if (this.attackEarlyReleaseHoldTimeout) {
+      clearTimeout(this.attackEarlyReleaseHoldTimeout)
+      this.attackEarlyReleaseHoldTimeout = null
     }
     
     const emote = this.chargedAttackEmote
@@ -856,6 +875,7 @@ export class PlayerLocal extends Entity {
     this.chargedAttackEmote = null
     this.chargeStartTime = null
     this.pendingChargedRelease = false
+    this.earlyReleaseHoldActive = false
     this.isInWindup = false
     this.isCommitted = true
     
@@ -1865,15 +1885,19 @@ export class PlayerLocal extends Entity {
       // Left mouse released: complete charged attack if charging
       if (this.control.mouseLeft.released && this.mouseDragStart && this.control.pointer.locked) {
         if (this.isChargingAttack) {
-          const windupElapsed = this.chargeStartTime
-            ? (Date.now() - this.chargeStartTime) / 1000
-            : this.attackWindupTime
-          if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
-            console.log('[Mouse Attack] Mouse released - completing charged attack')
-            this.completeChargedAttack()
+          if (this.earlyReleaseHoldActive) {
+            console.log('[Mouse Attack] In early-release hold — swing fires automatically')
           } else {
-            console.log('[Mouse Attack] Released early - will swing after windup')
-            this.pendingChargedRelease = true
+            const windupElapsed = this.chargeStartTime
+              ? (Date.now() - this.chargeStartTime) / 1000
+              : this.attackWindupTime
+            if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
+              console.log('[Mouse Attack] Mouse released - completing charged attack')
+              this.completeChargedAttack()
+            } else {
+              console.log('[Mouse Attack] Released early - will hold backswing then swing')
+              this.pendingChargedRelease = true
+            }
           }
         } else {
           console.log('[Mouse Attack] Mouse released - no charged attack (drag too short)')
@@ -1950,6 +1974,7 @@ export class PlayerLocal extends Entity {
       if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
       if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
       if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+      if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
       
       // Resume animation if paused
       if (this.attackAnimationPaused) {
@@ -1967,6 +1992,7 @@ export class PlayerLocal extends Entity {
       this.chargedAttackEmote = null
       this.chargeStartTime = null
       this.pendingChargedRelease = false
+      this.earlyReleaseHoldActive = false
       this.currentAttackEmote = null
       
       // Clear effect to stop animation
@@ -2447,6 +2473,11 @@ export class PlayerLocal extends Entity {
       this.chargedAttackEmote = null
       this.chargeStartTime = null
       this.pendingChargedRelease = false
+      this.earlyReleaseHoldActive = false
+      if (this.attackEarlyReleaseHoldTimeout) {
+        clearTimeout(this.attackEarlyReleaseHoldTimeout)
+        this.attackEarlyReleaseHoldTimeout = null
+      }
     }
     if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
       this.avatar.instance.mixer.timeScale = 1

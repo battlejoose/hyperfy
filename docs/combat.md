@@ -47,11 +47,12 @@ t = 0ms       Mouse drag triggers startAttack()
               [Player holds mouse button...]
 
 t = release   completeChargedAttack() OR pendingChargedRelease
-  ├─ before 500ms windup → queue swing when windup finishes (no cancel)
-  └─ after 500ms windup → animation resumes, sword collider activates
+  ├─ before 500ms windup → finish windup, pause at backswing 500ms, then auto-swing
+  └─ after 500ms windup (holding click) → swing immediately on release
 
-t = 500ms     If still holding: animation PAUSES at backswing
-              If released early: auto-complete swing + sword collider
+t = 500ms     Animation reaches backswing pose
+              ├─ still holding click → pause until release (can swing right away)
+              └─ released early → pause 500ms, then auto-swing
               hitPlayersThisSwing = new Set()
               
 t = 1000ms    Sword collider DEACTIVATES
@@ -357,11 +358,17 @@ Legacy packet for clearing remote attack state. Not sent by mouse charged attack
 ATTACK (charged):
 ─────────────────────────────────────────────────────────────
 0ms     Windup — animation plays to backswing
-        [hold mouse to pause at backswing, or release anytime]
-<500ms  Release early → swing auto-fires when windup completes
-≥500ms  Release while paused → swing immediately
-+500ms  Sword collider ACTIVE (after 16ms ready delay)
-+1000ms Sword collider DEACTIVATES (total attack duration)
+        [hold click to pause at backswing, release to swing]
+
+Early release (before 500ms windup):
+  windup completes → pause at backswing 500ms → auto-swing
+  (~1000ms from attack start minimum)
+
+Hold past windup, release immediately:
+  pause at 500ms → swing on release (~500ms+ from start)
+
++500ms  Sword collider ACTIVE (after 16ms ready delay) on swing
++1000ms Sword collider DEACTIVATES (total attack duration from swing)
 ─────────────────────────────────────────────────────────────
 
 BLOCK (key 5, normal mode):
