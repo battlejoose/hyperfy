@@ -416,7 +416,7 @@ export class PlayerLocal extends Entity {
     // 1x1m cross-section, 3m forward from block collider center
     const width = 0.5
     const height = 0.5
-    const depth = 1
+    const depth = 0.75
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
 
     const material = this.world.physics.physics.createMaterial(0, 0, 0)

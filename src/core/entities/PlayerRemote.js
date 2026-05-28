@@ -275,7 +275,7 @@ export class PlayerRemote extends Entity {
     if (!PHYSX) return
     const width = 0.5
     const height = 0.5
-    const depth = 1
+    const depth = 0.75
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
 
     const material = this.world.physics.physics.createMaterial(0, 0, 0)
