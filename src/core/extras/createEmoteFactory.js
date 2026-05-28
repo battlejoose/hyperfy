@@ -81,8 +81,10 @@ export function createEmoteFactory(glb, url) {
   // console.timeEnd('emote-init')
   // console.log(clip)
 
+  const hipsPositionBones = new Set(['Root', 'Hips', 'mixamorigHips'])
+
   return {
-    toClip({ rootToHips, version, getBoneName }) {
+    toClip({ rootToHips, version, getBoneName, inPlace = false }) {
       // we're going to resize animation to match vrm height
       const height = rootToHips
 
@@ -91,6 +93,17 @@ export function createEmoteFactory(glb, url) {
       clip.tracks.forEach(track => {
         const trackSplitted = track.name.split('.')
         const ogBoneName = trackSplitted[0]
+        const propertyName = trackSplitted[1]
+
+        if (
+          inPlace &&
+          track instanceof THREE.VectorKeyframeTrack &&
+          propertyName === 'position' &&
+          hipsPositionBones.has(ogBoneName)
+        ) {
+          return
+        }
+
         const vrmBoneName = normalizedBoneNames[ogBoneName]
         // TODO: use vrm.bones[name] not getBoneNode
         const vrmNodeName = getBoneName(vrmBoneName)
@@ -112,8 +125,6 @@ export function createEmoteFactory(glb, url) {
         const scaler = height * scale
 
         if (vrmNodeName !== undefined) {
-          const propertyName = trackSplitted[1]
-
           if (track instanceof THREE.QuaternionKeyframeTrack) {
             tracks.push(
               new THREE.QuaternionKeyframeTrack(

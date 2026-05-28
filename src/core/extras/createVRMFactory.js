@@ -667,10 +667,11 @@ export function createVRMFactory(glb, setupMaterial) {
           rootToHips,
           version,
           getBoneName,
+          inPlace: upperBodyOnly,
         })
         
-        // All animations use full body - no filtering
-        // Attacks will override locomotion via higher weight
+        // Combat poses play in place (rotation only) so bad hips/root motion in GLBs
+        // cannot shift the character. Locomotion keeps hips translation for foot sliding.
         
         pose.action = mixer.clipAction(clip)
         pose.action.timeScale = speed
