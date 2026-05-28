@@ -638,6 +638,8 @@ export class ClientControls extends System {
     this.pointer.position.y = offsetY
     this.pointer.delta.x += e.movementX
     this.pointer.delta.y += e.movementY
+    // Chorded mouse buttons (e.g. RMB while LMB held) often only update in move events
+    this.checkPointerChanges(e)
   }
 
   onPointerUp = e => {

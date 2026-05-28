@@ -132,6 +132,9 @@ export class PlayerLocal extends Entity {
     this.isBlockDragging = false
     this.isHoldingBlock = false // holding at block pose, waiting for release
     this.mouseCombatMode = null // 'attack' | 'block' — last mouse button pressed wins
+    this.lastMouseCombatPress = null // which button was pressed most recently
+    this._prevMouseLeftDown = false
+    this._prevMouseRightDown = false
     this.currentBlockEmote = null // which block direction is being held
     this.currentBlockTag = null // 'high', 'left', 'right', 'low'
     
@@ -911,20 +914,58 @@ export class PlayerLocal extends Entity {
 
   setMouseCombatMode(mode) {
     if (mode !== 'attack' && mode !== 'block') return
+    const changed = this.mouseCombatMode !== mode
     this.mouseCombatMode = mode
 
     if (mode === 'attack') {
       this.cancelBlock(true)
-      this.resetMouseBlockDrag()
-      if (this.control.mouseLeft.down) {
-        this.beginMouseAttackDrag()
+      if (changed) {
+        this.resetMouseBlockDrag()
+        if (this.control.mouseLeft.down) {
+          this.beginMouseAttackDrag()
+        }
       }
     } else {
       this.cancelAttack(true)
-      this.resetMouseAttackDrag()
-      if (this.control.mouseRight.down) {
-        this.beginMouseBlockDrag()
+      if (changed) {
+        this.resetMouseAttackDrag()
+        if (this.control.mouseRight.down) {
+          this.beginMouseBlockDrag()
+        }
       }
+    }
+  }
+
+  updateMouseCombatMode() {
+    const lmb = this.control.mouseLeft
+    const rmb = this.control.mouseRight
+
+    if (lmb.down && !this._prevMouseLeftDown) {
+      this.lastMouseCombatPress = 'attack'
+    }
+    if (rmb.down && !this._prevMouseRightDown) {
+      this.lastMouseCombatPress = 'block'
+    }
+    this._prevMouseLeftDown = lmb.down
+    this._prevMouseRightDown = rmb.down
+
+    let targetMode = null
+    if (lmb.down && rmb.down) {
+      targetMode = this.lastMouseCombatPress || this.mouseCombatMode
+    } else if (lmb.down) {
+      targetMode = 'attack'
+    } else if (rmb.down) {
+      targetMode = 'block'
+    }
+
+    if (targetMode) {
+      if (targetMode !== this.mouseCombatMode) {
+        this.setMouseCombatMode(targetMode)
+      } else if (lmb.down && rmb.down) {
+        this.enforceMouseCombatMode()
+      }
+    } else {
+      this.mouseCombatMode = null
     }
   }
 
@@ -937,8 +978,15 @@ export class PlayerLocal extends Entity {
       this.data.effect?.emote === Emotes.ATTACK_HIGH ||
       this.data.effect?.emote === Emotes.ATTACK_LOW
 
+    const hasBlockEffect =
+      this.data.effect?.emote === Emotes.BLOCK ||
+      this.data.effect?.emote === Emotes.BLOCK_LEFT ||
+      this.data.effect?.emote === Emotes.BLOCK_RIGHT ||
+      this.data.effect?.emote === Emotes.BLOCK_HIGH ||
+      this.data.effect?.emote === Emotes.BLOCK_LOW
+
     if (this.mouseCombatMode === 'attack') {
-      if (this.isBlocking || this.isHoldingBlock) {
+      if (this.isBlocking || this.isHoldingBlock || hasBlockEffect) {
         this.cancelBlock(true)
       }
     } else if (this.mouseCombatMode === 'block') {
@@ -2020,18 +2068,7 @@ export class PlayerLocal extends Entity {
         const lmb = this.control.mouseLeft
         const rmb = this.control.mouseRight
 
-        // Process presses first (RMB after LMB so RMB wins if both fire same frame)
-        if (lmb.pressed) {
-          this.setMouseCombatMode('attack')
-        }
-        if (rmb.pressed) {
-          this.setMouseCombatMode('block')
-        }
-
-        // Prevent the held "losing" button from re-activating its action
-        if (lmb.down && rmb.down) {
-          this.enforceMouseCombatMode()
-        }
+        this.updateMouseCombatMode()
 
         // Block drag (only in block mode)
         if (this.mouseCombatMode === 'block' && rmb.down && this.blockDragStart) {
@@ -2071,6 +2108,7 @@ export class PlayerLocal extends Entity {
 
           this.resetMouseBlockDrag()
           if (lmb.down) {
+            this.lastMouseCombatPress = 'attack'
             this.setMouseCombatMode('attack')
           } else {
             this.mouseCombatMode = null
@@ -2126,6 +2164,7 @@ export class PlayerLocal extends Entity {
 
           this.resetMouseAttackDrag()
           if (rmb.down) {
+            this.lastMouseCombatPress = 'block'
             this.setMouseCombatMode('block')
           } else {
             this.mouseCombatMode = null
