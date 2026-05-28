@@ -21,7 +21,7 @@ Combat is **client-predicted for hits and blocks, server-validated for health on
 | Key 2 | Instant attack right |
 | Key 3 | Instant attack high |
 | Key 4 | Instant attack low |
-| Left mouse drag ≥ 30px (pointer locked) | Charged directional attack — hold backswing, release to swing |
+| Left mouse drag ≥ 30px (pointer locked) | Charged directional attack — drag starts backswing; release triggers swing (early release waits for windup) |
 
 Drag direction picks emote (dominant axis: horizontal vs vertical, sign of dx/dy). Guards: not sprinting, not already charging, not committed mid-swing.
 
@@ -46,11 +46,12 @@ t = 0ms       Mouse drag triggers startAttack()
 
               [Player holds mouse button...]
 
-t = release   completeChargedAttack() called
-  ├─ held < 500ms → attackCanceled sent, no collider, cancel animation
-  └─ held ≥ 500ms → animation resumes, proceed to active phase
+t = release   completeChargedAttack() OR pendingChargedRelease
+  ├─ before 500ms windup → queue swing when windup finishes (no cancel)
+  └─ after 500ms windup → animation resumes, sword collider activates
 
-t = 500ms     Sword collider ACTIVATES (after 16ms phantom-hit delay)
+t = 500ms     If still holding: animation PAUSES at backswing
+              If released early: auto-complete swing + sword collider
               hitPlayersThisSwing = new Set()
               
 t = 1000ms    Sword collider DEACTIVATES
@@ -311,7 +312,7 @@ Position is **not** reset on death — only health and animation state change.
 
 ## Network Packets (Combat)
 
-Only **`playerHit`** and **`attackCanceled`** are combat packets today. Blocking uses local PhysX only.
+Only **`playerHit`** is used for combat damage today. **`attackCanceled`** remains in the protocol but is no longer sent by mouse charged attacks. Blocking uses local PhysX only.
 
 ### `playerHit`  (Client → Server)
 ```js
@@ -325,7 +326,7 @@ Not sent on a successful block (tags match).
 ```js
 { playerId: playerId }
 ```
-Sent when a charged attack is released before the 500 ms threshold. Server validates sender identity, then broadcasts to all other clients. Remote clients clear attack state and disable sword collider.
+Legacy packet for clearing remote attack state. Not sent by mouse charged attacks anymore (early release completes the swing instead).
 
 ---
 
@@ -355,12 +356,12 @@ Sent when a charged attack is released before the 500 ms threshold. Server valid
 ```
 ATTACK (charged):
 ─────────────────────────────────────────────────────────────
-0ms     Windup — animation pauses at backswing
-        [hold mouse...]
-<500ms  Release early → attackCanceled, nothing happens
-≥500ms  Release → animation resumes
-+16ms   Sword collider ACTIVE + ready
-+500ms  Sword collider DEACTIVATES
+0ms     Windup — animation plays to backswing
+        [hold mouse to pause at backswing, or release anytime]
+<500ms  Release early → swing auto-fires when windup completes
+≥500ms  Release while paused → swing immediately
++500ms  Sword collider ACTIVE (after 16ms ready delay)
++1000ms Sword collider DEACTIVATES (total attack duration)
 ─────────────────────────────────────────────────────────────
 
 BLOCK (key 5, normal mode):
