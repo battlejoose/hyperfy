@@ -6,6 +6,7 @@ import { css } from '@firebolt-dev/css'
 
 import { createClientWorld } from '../core/createClientWorld'
 import { CoreUI } from './components/CoreUI'
+import { TitleScreen } from './components/TitleScreen'
 
 export { System } from '../core/systems/System'
 
@@ -14,13 +15,18 @@ export function Client({ wsUrl, onSetup }) {
   const uiRef = useRef()
   const world = useMemo(() => createClientWorld(), [])
   const [ui, setUI] = useState(world.ui.state)
+  const [session, setSession] = useState(null)
+
   useEffect(() => {
     world.on('ui', setUI)
     return () => {
       world.off('ui', setUI)
     }
   }, [])
+
   useEffect(() => {
+    if (!session) return
+
     const init = async () => {
       const viewport = viewportRef.current
       const ui = uiRef.current
@@ -36,16 +42,29 @@ export function Client({ wsUrl, onSetup }) {
         fogFar: null,
         fogColor: null,
       }
-      if (typeof wsUrl === 'function') {
-        wsUrl = wsUrl()
-        if (wsUrl instanceof Promise) wsUrl = await wsUrl
+      let resolvedWsUrl = wsUrl
+      if (typeof resolvedWsUrl === 'function') {
+        resolvedWsUrl = resolvedWsUrl()
+        if (resolvedWsUrl instanceof Promise) resolvedWsUrl = await resolvedWsUrl
       }
-      const config = { viewport, ui, wsUrl, baseEnvironment }
+      const config = {
+        viewport,
+        ui,
+        wsUrl: resolvedWsUrl,
+        baseEnvironment,
+        name: session.name,
+        avatar: session.avatar,
+      }
       onSetup?.(world, config)
       world.init(config)
     }
     init()
-  }, [])
+  }, [session])
+
+  if (!session) {
+    return <TitleScreen onStart={setSession} />
+  }
+
   return (
     <div
       className='App'

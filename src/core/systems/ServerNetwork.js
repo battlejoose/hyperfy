@@ -253,6 +253,14 @@ export class ServerNetwork extends System {
         authToken = await createJWT({ userId: user.id })
       }
 
+      if (name && typeof name === 'string') {
+        name = name.trim().slice(0, 24)
+        if (name) {
+          await this.db('users').where('id', user.id).update({ name })
+          user.name = name
+        }
+      }
+
       // disconnect if user already in this world
       if (this.sockets.has(user.id)) {
         const packet = writePacket('kick', 'duplicate_user')
