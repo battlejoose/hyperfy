@@ -28,6 +28,7 @@ const names = [
   'pong',
   'playerHit',
   'blockBroken',
+  'scoreboard',
   'attackCanceled',
 ]
 

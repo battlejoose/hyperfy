@@ -142,6 +142,9 @@ export class ClientNetwork extends System {
     this.world.blueprints.deserialize(data.blueprints)
     this.world.entities.deserialize(data.entities)
     this.world.livekit?.deserialize(data.livekit)
+    if (data.scoreboard) {
+      this.world.emit('scoreboard', data.scoreboard)
+    }
     storage.set('authToken', data.authToken)
   }
 
@@ -189,6 +192,10 @@ export class ClientNetwork extends System {
     const player = this.world.entities.player
     if (player?.data.id !== blockerId) return
     player.breakBlockFromKick()
+  }
+
+  onScoreboard = data => {
+    this.world.emit('scoreboard', data)
   }
 
   onEntityEvent = event => {

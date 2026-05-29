@@ -42,6 +42,7 @@ export class ServerNetwork extends System {
     this.dirtyApps = new Set()
     this.isServer = true
     this.queue = []
+    this.scoreboard = new Map()
   }
 
   init({ db }) {
@@ -115,6 +116,39 @@ export class ServerNetwork extends System {
 
   enqueue(socket, method, data) {
     this.queue.push([socket, method, data])
+  }
+
+  getScoreboardArray() {
+    return [...this.scoreboard.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    )
+  }
+
+  broadcastScoreboard() {
+    this.send('scoreboard', this.getScoreboardArray())
+  }
+
+  addScoreboardPlayer(id, name) {
+    const entry = this.scoreboard.get(id)
+    if (entry) {
+      entry.name = name
+    } else {
+      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0 })
+    }
+  }
+
+  removeScoreboardPlayer(id) {
+    if (!this.scoreboard.delete(id)) return
+    this.broadcastScoreboard()
+  }
+
+  recordKill(attackerId, targetId) {
+    if (attackerId === targetId) return
+    const killer = this.scoreboard.get(attackerId)
+    const victim = this.scoreboard.get(targetId)
+    if (killer) killer.kills += 1
+    if (victim) victim.deaths += 1
+    this.broadcastScoreboard()
   }
 
   flush() {
@@ -294,6 +328,8 @@ export class ServerNetwork extends System {
         true
       )
 
+      this.addScoreboardPlayer(socket.player.data.id, socket.player.data.name)
+
       // send snapshot
       socket.send('snapshot', {
         id: socket.id,
@@ -310,9 +346,12 @@ export class ServerNetwork extends System {
         livekit,
         authToken,
         hasAdminCode: !!process.env.ADMIN_CODE,
+        scoreboard: this.getScoreboardArray(),
       })
 
       this.sockets.set(socket.id, socket)
+
+      this.broadcastScoreboard()
 
       // enter events on the server are sent after the snapshot.
       // on the client these are sent during PlayerRemote.js entity instantiation!
@@ -356,6 +395,10 @@ export class ServerNetwork extends System {
     
     // Update target player's health
     targetPlayer.modify({ health: newHealth })
+
+    if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
+      this.recordKill(attackerId, targetId)
+    }
     
     // Broadcast health update to ALL clients (including attacker)
     this.send('entityModified', { id: targetId, health: newHealth })
@@ -569,6 +612,10 @@ export class ServerNetwork extends System {
       if (data.hasOwnProperty('name')) {
         changes.name = data.name
         changed = true
+        if (this.scoreboard.has(data.id)) {
+          this.scoreboard.get(data.id).name = data.name
+          this.broadcastScoreboard()
+        }
       }
       if (data.hasOwnProperty('avatar')) {
         changes.avatar = data.avatar
@@ -657,6 +704,7 @@ export class ServerNetwork extends System {
   }
 
   onDisconnect = (socket, code) => {
+    this.removeScoreboardPlayer(socket.player.data.id)
     this.world.livekit.clearModifiers(socket.id)
     socket.player.destroy(true)
     this.sockets.delete(socket.id)
