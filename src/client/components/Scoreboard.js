@@ -18,8 +18,8 @@ export function Scoreboard({ world }) {
 
   useEffect(() => {
     const control = world.controls.bind({ priority: ControlPriorities.CORE_UI })
-    control.tab.onPress = () => setVisible(true)
-    control.tab.onRelease = () => setVisible(false)
+    control.backquote.onPress = () => setVisible(true)
+    control.backquote.onRelease = () => setVisible(false)
     return () => control.release()
   }, [world])
 
