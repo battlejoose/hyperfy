@@ -4,7 +4,7 @@ import * as THREE from './three'
 import { DEG2RAD } from './general'
 import { getTrianglesFromGeometry } from './getTrianglesFromGeometry'
 import { getTextureBytesFromMaterial } from './getTextureBytesFromMaterial'
-import { Emotes } from './playerEmotes'
+import { Emotes, KickTiming } from './playerEmotes'
 
 const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
@@ -645,7 +645,7 @@ export function createVRMFactory(glb, setupMaterial) {
 
     const poses = {}
     
-    function addPose(key, url, upperBodyOnly = false) {
+    function addPose(key, url, upperBodyOnly = false, clipOptions = {}) {
       const opts = getQueryParams(url)
       const speed = parseFloat(opts.s || 1)
       const pose = {
@@ -689,6 +689,7 @@ export function createVRMFactory(glb, setupMaterial) {
           version,
           getBoneName,
           inPlace: upperBodyOnly,
+          ...clipOptions,
         })
         
         // Combat poses play in place (rotation only) so bad hips/root motion in GLBs
@@ -746,7 +747,7 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('blockRight', Emotes.BLOCK_RIGHT, true)
     addPose('blockHigh', Emotes.BLOCK_HIGH, true)
     addPose('blockLow', Emotes.BLOCK_LOW, true)
-    addPose('kick', Emotes.KICK, true)
+    addPose('kick', Emotes.KICK, true, { trimStart: KickTiming.trimStart })
     addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation

@@ -7,7 +7,7 @@ import { DEG2RAD, RAD2DEG } from '../extras/general'
 import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
-import { Emotes } from '../extras/playerEmotes'
+import { Emotes, KickTiming } from '../extras/playerEmotes'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
@@ -99,9 +99,9 @@ export class PlayerLocal extends Entity {
     this.isBlocking = false
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
-    this.kickDuration = 2.8 // Matches kick.glb clip length (~2.8s)
-    this.kickColliderDelay = 1.2 // Activate kick hitbox 1.2s into animation
-    this.kickColliderDuration = 0.5 // Active window ends at 1.7s
+    this.kickDuration = KickTiming.duration
+    this.kickColliderDelay = KickTiming.colliderDelay
+    this.kickColliderDuration = KickTiming.colliderDuration
     this.kickColliderActive = false
     this.kickActivateTimeout = null
     this.kickDeactivateTimeout = null

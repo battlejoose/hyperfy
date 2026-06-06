@@ -84,7 +84,7 @@ export function createEmoteFactory(glb, url) {
   const hipsPositionBones = new Set(['Root', 'Hips', 'mixamorigHips'])
 
   return {
-    toClip({ rootToHips, version, getBoneName, inPlace = false }) {
+    toClip({ rootToHips, version, getBoneName, inPlace = false, trimStart = 0, trimEnd = null }) {
       // we're going to resize animation to match vrm height
       const height = rootToHips
 
@@ -147,13 +147,76 @@ export function createEmoteFactory(glb, url) {
         }
       })
 
-      return new THREE.AnimationClip(
+      let result = new THREE.AnimationClip(
         clip.name, // todo: name variable?
         clip.duration,
         tracks
       )
+
+      if (trimStart > 0 || trimEnd !== null) {
+        result = trimClip(result, trimStart, trimEnd ?? clip.duration)
+      }
+
+      return result
     },
   }
+}
+
+function trimClip(sourceClip, trimStart, trimEnd) {
+  const duration = trimEnd - trimStart
+  const tracks = sourceClip.tracks
+    .map(track => trimTrack(track, trimStart, trimEnd))
+    .filter(Boolean)
+
+  return new THREE.AnimationClip(sourceClip.name, duration, tracks)
+}
+
+function trimTrack(track, trimStart, trimEnd) {
+  const valueSize = track.getValueSize()
+  const times = []
+  const values = []
+
+  let i = 0
+  while (i < track.times.length && track.times[i] < trimStart) i++
+
+  if (i > 0) {
+    const prevIdx = i - 1
+    const t0 = track.times[prevIdx]
+    const t1 = i < track.times.length ? track.times[i] : t0
+    const alpha = t1 === t0 ? 0 : (trimStart - t0) / (t1 - t0)
+    times.push(0)
+    for (let j = 0; j < valueSize; j++) {
+      const v0 = track.values[prevIdx * valueSize + j]
+      const v1 = i < track.times.length ? track.values[i * valueSize + j] : v0
+      values.push(v0 + (v1 - v0) * alpha)
+    }
+  } else if (track.times.length > 0 && track.times[0] >= trimStart) {
+    times.push(0)
+    for (let j = 0; j < valueSize; j++) {
+      values.push(track.values[j])
+    }
+  }
+
+  for (; i < track.times.length; i++) {
+    const t = track.times[i]
+    if (t > trimEnd) break
+    if (t >= trimStart) {
+      times.push(t - trimStart)
+      for (let j = 0; j < valueSize; j++) {
+        values.push(track.values[i * valueSize + j])
+      }
+    }
+  }
+
+  if (times.length === 0) return null
+
+  if (track instanceof THREE.QuaternionKeyframeTrack) {
+    return new THREE.QuaternionKeyframeTrack(track.name, times, values)
+  }
+  if (track instanceof THREE.VectorKeyframeTrack) {
+    return new THREE.VectorKeyframeTrack(track.name, times, values)
+  }
+  return null
 }
 
 const normalizedBoneNames = {

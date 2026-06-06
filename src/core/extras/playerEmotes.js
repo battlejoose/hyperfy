@@ -28,6 +28,14 @@ export const Emotes = {
   GETUP: 'asset://getup.glb',
 }
 
+// Kick clip is ~2.8s; first 0.5s is windup and skipped in playback
+export const KickTiming = {
+  trimStart: 0.5,
+  duration: 2.3,
+  colliderDelay: 0.7,
+  colliderDuration: 0.5,
+}
+
 export const emoteUrls = [
   Emotes.IDLE,
   Emotes.WALK,

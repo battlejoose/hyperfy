@@ -7,7 +7,7 @@ import { hasRank, Ranks } from '../extras/ranks'
 import { BufferedLerpVector3 } from '../extras/BufferedLerpVector3'
 import { BufferedLerpQuaternion } from '../extras/BufferedLerpQuaternion'
 import { Layers } from '../extras/Layers'
-import { Emotes } from '../extras/playerEmotes'
+import { Emotes, KickTiming } from '../extras/playerEmotes'
 
 let capsuleGeometry
 {
@@ -37,8 +37,8 @@ export class PlayerRemote extends Entity {
     
     // Kick state
     this.kickColliderActive = false
-    this.kickColliderDelay = 1.2
-    this.kickColliderDuration = 0.5
+    this.kickColliderDelay = KickTiming.colliderDelay
+    this.kickColliderDuration = KickTiming.colliderDuration
     this.kickActivateTimeout = null
     this.kickDeactivateTimeout = null
     this.hitPlayersThisKick = new Set()
