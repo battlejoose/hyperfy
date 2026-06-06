@@ -1018,6 +1018,40 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisSwing.clear()
   }
 
+  interruptAttackFromHit() {
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    const hasAttackEffect = attackEmotes.includes(this.data.effect?.emote)
+    if (
+      !this.isInWindup &&
+      !this.isCommitted &&
+      !this.isChargingAttack &&
+      !this.currentAttackEmote &&
+      !this.currentAttackTag &&
+      !hasAttackEffect
+    ) {
+      return
+    }
+
+    console.log('[Attack] Interrupted by hit')
+
+    this.cancelAttack()
+
+    if (hasAttackEffect) {
+      this.setEffect(null)
+      this.emote = null
+      if (this.avatar?.instance?.mixer) {
+        this.avatar.instance.mixer.timeScale = 1
+      }
+      if (this.avatar?.instance) {
+        this.avatar.instance.setEmote(null, undefined, { immediate: true })
+      }
+    }
+
+    this.mouseDragStart = null
+    this.mouseDragAccumulated = null
+    this.isDragging = false
+  }
+
   cancelBlock() {
     const blockEmotes = [Emotes.BLOCK, Emotes.BLOCK_HIGH, Emotes.BLOCK_LEFT, Emotes.BLOCK_RIGHT, Emotes.BLOCK_LOW]
     const hasBlockEffect = blockEmotes.includes(this.data.effect?.emote)
@@ -2892,6 +2926,10 @@ export class PlayerLocal extends Entity {
       changed = true
     }
     if (data.hasOwnProperty('health')) {
+      const prevHealth = this.data.health !== undefined ? this.data.health : 100
+      if (data.health < prevHealth) {
+        this.interruptAttackFromHit()
+      }
       this.data.health = data.health
       this.nametag.health = data.health
       console.log('[Health] Local player health updated to:', data.health)
