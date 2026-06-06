@@ -7,7 +7,7 @@ import { DEG2RAD, RAD2DEG } from '../extras/general'
 import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
-import { Emotes, KickTiming } from '../extras/playerEmotes'
+import { Emotes, KickTiming, AttackTiming } from '../extras/playerEmotes'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
@@ -100,6 +100,7 @@ export class PlayerLocal extends Entity {
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
     this.blockBreakCooldownUntil = 0
+    this.attackBlockCooldownUntil = 0
     this.kickDuration = KickTiming.duration
     this.kickColliderDelay = KickTiming.colliderDelay
     this.kickColliderDuration = KickTiming.colliderDuration
@@ -718,6 +719,7 @@ export class PlayerLocal extends Entity {
         
         // Deactivate sword for rest of swing
         this.setSwordColliderActive(false)
+        this.attackBlockCooldownUntil = Date.now() + AttackTiming.cooldownAfterBlock * 1000
         
         // Play block sound and spawn spark particles at block position
         if (blocker.base) {
@@ -790,6 +792,11 @@ export class PlayerLocal extends Entity {
     // Can't attack while sprinting
     if (this.running) {
       console.log('[Attack] Cannot attack while sprinting')
+      return
+    }
+
+    if (Date.now() < this.attackBlockCooldownUntil) {
+      console.log('[Attack] Attack on cooldown after block')
       return
     }
     

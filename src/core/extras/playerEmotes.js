@@ -37,6 +37,10 @@ export const KickTiming = {
   blockCooldownAfterBreak: 1,
 }
 
+export const AttackTiming = {
+  cooldownAfterBlock: 1,
+}
+
 export const emoteUrls = [
   Emotes.IDLE,
   Emotes.WALK,
