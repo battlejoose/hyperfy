@@ -974,12 +974,96 @@ export class PlayerLocal extends Entity {
     }, (this.attackDuration - this.attackWindupTime) * 1000)
   }
 
+  cancelAttack() {
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    const hasAttackEffect = attackEmotes.includes(this.data.effect?.emote)
+    if (
+      !this.isInWindup &&
+      !this.isCommitted &&
+      !this.isChargingAttack &&
+      !this.currentAttackEmote &&
+      !this.currentAttackTag &&
+      !hasAttackEffect
+    ) {
+      return
+    }
+
+    console.log('[Attack] Canceling active attack')
+
+    if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
+    if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+    if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+    if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
+    this.attackWindupTimeout = null
+    this.attackEndTimeout = null
+    this.attackFreezeTimeout = null
+    this.attackEarlyReleaseHoldTimeout = null
+
+    if (this.attackAnimationPaused) {
+      this.resumeAttackAnimation()
+      this.attackAnimationPaused = false
+    }
+
+    this.setSwordColliderActive(false)
+    this.isInWindup = false
+    this.isCommitted = false
+    this.isChargingAttack = false
+    this.chargedAttackEmote = null
+    this.chargeStartTime = null
+    this.pendingChargedRelease = false
+    this.earlyReleaseHoldActive = false
+    this.currentAttackEmote = null
+    this.currentAttackTag = null
+    this.hitPlayersThisSwing.clear()
+  }
+
+  cancelBlock() {
+    const blockEmotes = [Emotes.BLOCK, Emotes.BLOCK_HIGH, Emotes.BLOCK_LEFT, Emotes.BLOCK_RIGHT, Emotes.BLOCK_LOW]
+    const hasBlockEffect = blockEmotes.includes(this.data.effect?.emote)
+    if (!this.isBlocking && !this.isHoldingBlock && !hasBlockEffect) return
+
+    console.log('[Block] Canceling active block')
+
+    if (this.blockTimeout) {
+      clearTimeout(this.blockTimeout)
+      this.blockTimeout = null
+    }
+    if (this.blockFreezeTimeout) {
+      clearTimeout(this.blockFreezeTimeout)
+      this.blockFreezeTimeout = null
+    }
+
+    if (this.blockAnimationPaused) {
+      this.blockAnimationPaused = false
+      this.resumeBlockAnimation()
+    }
+
+    this.setBlockColliderActive(false)
+    this.isHoldingBlock = false
+    this.isBlocking = false
+    this.currentBlockEmote = null
+    this.currentBlockTag = null
+  }
+
   startKick() {
     if (this.isDead) return
     if (this.running) return
-    if (this.isBlocking || this.isHoldingBlock) return
-    if (this.isChargingAttack || this.isCommitted || this.isInWindup) return
     if (this.data.effect?.emote === Emotes.KICK && this.data.effect?.duration > 0) return
+
+    this.cancelAttack()
+    this.cancelBlock()
+
+    // Clear drag tracking so canceled attack/block input doesn't fire on release
+    this.mouseDragStart = null
+    this.mouseDragAccumulated = null
+    this.isDragging = false
+    this.blockDragStart = null
+    this.blockDragAccumulated = null
+    this.isBlockDragging = false
+
+    if (this.avatar?.instance?.mixer && this.avatar.instance.mixer.timeScale === 0) {
+      this.avatar.instance.mixer.timeScale = 1
+    }
 
     this.clearKickColliderTimeouts()
     this.hitPlayersThisKick.clear()
