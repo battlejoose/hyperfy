@@ -34,6 +34,7 @@ export const KickTiming = {
   duration: 2.3,
   colliderDelay: 0.7,
   colliderDuration: 0.5,
+  blockCooldownAfterBreak: 1,
 }
 
 export const emoteUrls = [

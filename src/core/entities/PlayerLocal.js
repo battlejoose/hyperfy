@@ -99,6 +99,7 @@ export class PlayerLocal extends Entity {
     this.isBlocking = false
     this.blockTimeout = null
     this.blockDuration = 1.0 // Block animation duration
+    this.blockBreakCooldownUntil = 0
     this.kickDuration = KickTiming.duration
     this.kickColliderDelay = KickTiming.colliderDelay
     this.kickColliderDuration = KickTiming.colliderDuration
@@ -1133,6 +1134,11 @@ export class PlayerLocal extends Entity {
   startBlock(emote = Emotes.BLOCK, holdMode = false) {
     // Can't block while dead
     if (this.isDead) return
+
+    if (Date.now() < this.blockBreakCooldownUntil) {
+      console.log('[Block] Block on cooldown after kick break')
+      return
+    }
     
     // If already blocking or holding a block, ignore
     if (this.isBlocking || this.isHoldingBlock) return
@@ -1282,6 +1288,10 @@ export class PlayerLocal extends Entity {
     this.isBlocking = false
     this.currentBlockEmote = null
     this.currentBlockTag = null
+    this.blockBreakCooldownUntil = Date.now() + KickTiming.blockCooldownAfterBreak * 1000
+    this.blockDragStart = null
+    this.blockDragAccumulated = null
+    this.isBlockDragging = false
   }
 
   setSwordColliderActive(active) {
