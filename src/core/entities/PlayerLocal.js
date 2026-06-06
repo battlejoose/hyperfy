@@ -123,7 +123,7 @@ export class PlayerLocal extends Entity {
     this.isChargingAttack = false // holding at backswing, waiting for release
     this.chargedAttackEmote = null // which attack is being charged
     this.chargeStartTime = null // when charged attack backswing started
-    this.pendingChargedRelease = false // mouse released early — pause at backswing then swing
+    this.pendingChargedRelease = false // mouse released early — swing when windup completes
     this.earlyReleaseHoldActive = false // mandatory backswing hold after early release
     
     // Mouse drag block tracking
@@ -846,22 +846,13 @@ export class PlayerLocal extends Entity {
         cancellable: false,
       })
       
-      // After windup, pause at backswing — early release gets a mandatory hold before swinging
+      // After windup, pause at backswing — early release swings as soon as windup completes
       this.attackFreezeTimeout = setTimeout(() => {
         if (this.isChargingAttack && this.chargedAttackEmote === emote) {
           if (this.pendingChargedRelease) {
             this.pendingChargedRelease = false
-            this.earlyReleaseHoldActive = true
-            this.attackAnimationPaused = true
-            this.pauseAttackAnimation()
-            console.log('[Attack] Early release — holding backswing 500ms before swing')
-            this.attackEarlyReleaseHoldTimeout = setTimeout(() => {
-              this.attackEarlyReleaseHoldTimeout = null
-              this.earlyReleaseHoldActive = false
-              if (this.isChargingAttack) {
-                this.completeChargedAttack()
-              }
-            }, this.attackWindupTime * 1000)
+            console.log('[Attack] Early release — swinging at windup completion')
+            this.completeChargedAttack()
           } else {
             console.log('[Attack] Pausing animation at backswing pose - hold as long as you want!')
             this.attackAnimationPaused = true
@@ -2047,22 +2038,21 @@ export class PlayerLocal extends Entity {
       // Left mouse released: complete charged attack if charging
       if (this.control.mouseLeft.released && this.mouseDragStart && this.control.pointer.locked) {
         if (this.isChargingAttack) {
-          if (this.earlyReleaseHoldActive) {
-            console.log('[Mouse Attack] In early-release hold — swing fires automatically')
+          const windupElapsed = this.chargeStartTime
+            ? (Date.now() - this.chargeStartTime) / 1000
+            : this.attackWindupTime
+          if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
+            console.log('[Mouse Attack] Mouse released - completing charged attack')
+            this.completeChargedAttack()
           } else {
-            const windupElapsed = this.chargeStartTime
-              ? (Date.now() - this.chargeStartTime) / 1000
-              : this.attackWindupTime
-            if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
-              console.log('[Mouse Attack] Mouse released - completing charged attack')
-              this.completeChargedAttack()
-            } else {
-              console.log('[Mouse Attack] Released early - will hold backswing then swing')
-              this.pendingChargedRelease = true
-            }
+            console.log('[Mouse Attack] Released early - will swing when windup completes')
+            this.pendingChargedRelease = true
           }
+        } else if (!this.isDragging) {
+          console.log('[Mouse Attack] Click without drag - right attack')
+          this.startAttack(Emotes.ATTACK_RIGHT)
         } else {
-          console.log('[Mouse Attack] Mouse released - no charged attack (drag too short)')
+          console.log('[Mouse Attack] Mouse released - drag ended without charged attack')
         }
         
         // Reset drag tracking
