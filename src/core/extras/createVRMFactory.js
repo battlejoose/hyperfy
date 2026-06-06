@@ -259,11 +259,35 @@ export function createVRMFactory(glb, setupMaterial) {
     let currentEmote
     let isInDeathState = false // Track if player is dead (affects locomotion)
     
+    const stopCombatPose = (poseKey, { immediate = false } = {}) => {
+      const pose = poses[poseKey]
+      if (!pose) return
+      pose.target = 0
+      pose.active = false
+      if (immediate) {
+        pose.weight = 0
+        pose.setWeight(0)
+        if (pose.action) {
+          pose.action.stop()
+        }
+      } else if (pose.action) {
+        pose.action.fadeOut(0.1)
+      }
+    }
+
+    const clearCurrentCombatPose = ({ immediate = false } = {}) => {
+      if (!currentAttack) return
+      const prevKey = currentAttack
+      currentAttack = null
+      attackEndTime = 0
+      stopCombatPose(prevKey, { immediate })
+    }
+    
     const setDeathState = (isDead) => {
       isInDeathState = isDead
     }
     
-    const setEmote = (url, duration) => {
+    const setEmote = (url, duration, options = {}) => {
       // Check if this is a death effect (fall or getup) - treat like attacks
       if (url && (url === Emotes.DEATH_FALL || url === Emotes.GETUP)) {
         const deathKey = deathUrlToKey[url]
@@ -298,16 +322,7 @@ export function createVRMFactory(glb, setupMaterial) {
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
         if (poses.getup) poses.getup.target = 0
-        // Clear any active attack
-        if (currentAttack) {
-          const attackKey = currentAttack
-          currentAttack = null
-          attackEndTime = 0
-          if (poses[attackKey]?.action) {
-            poses[attackKey].action.fadeOut(0.1)
-            poses[attackKey].active = false
-          }
-        }
+        clearCurrentCombatPose({ immediate: options.immediate })
       }
       
       // Check if this is an attack animation
@@ -324,6 +339,12 @@ export function createVRMFactory(glb, setupMaterial) {
           }
           return // Don't reset animation if same attack is playing
         }
+
+        if (currentAttack) {
+          clearCurrentCombatPose({ immediate: true })
+        }
+
+        mixer.timeScale = 1
         
         console.log('[VRM] Attack detected:', attackKey, 'duration:', attackDuration, 'pose exists:', !!poses[attackKey])
         if (poses[attackKey]) {

@@ -1045,6 +1045,32 @@ export class PlayerLocal extends Entity {
     this.currentBlockTag = null
   }
 
+  clearCombatAnimation() {
+    const combatEmotes = [
+      Emotes.ATTACK_LEFT,
+      Emotes.ATTACK_RIGHT,
+      Emotes.ATTACK_HIGH,
+      Emotes.ATTACK_LOW,
+      Emotes.BLOCK,
+      Emotes.BLOCK_LEFT,
+      Emotes.BLOCK_RIGHT,
+      Emotes.BLOCK_HIGH,
+      Emotes.BLOCK_LOW,
+      Emotes.KICK,
+    ]
+    if (!combatEmotes.includes(this.data.effect?.emote)) return
+
+    this.setEffect(null)
+    this.emote = null
+
+    if (this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+    }
+    if (this.avatar?.instance) {
+      this.avatar.instance.setEmote(null, undefined, { immediate: true })
+    }
+  }
+
   startKick() {
     if (this.isDead) return
     if (this.running) return
@@ -1052,6 +1078,7 @@ export class PlayerLocal extends Entity {
 
     this.cancelAttack()
     this.cancelBlock()
+    this.clearCombatAnimation()
 
     // Clear drag tracking so canceled attack/block input doesn't fire on release
     this.mouseDragStart = null
@@ -1069,11 +1096,15 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisKick.clear()
     this.isKicking = true
 
+    this.emote = Emotes.KICK
     this.setEffect({
       emote: Emotes.KICK,
       duration: this.kickDuration,
       cancellable: false,
     })
+    if (this.avatar?.instance) {
+      this.avatar.instance.setEmote(Emotes.KICK, this.kickDuration)
+    }
 
     this.kickActivateTimeout = setTimeout(() => {
       if (this.isKicking) this.setKickColliderActive(true)
