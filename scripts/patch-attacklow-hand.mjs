@@ -3,8 +3,13 @@ import path from 'path'
 
 const ATTACK_LOW_PATH = path.join('src/world/assets/attacklow.glb')
 const HAND_BONE = 'mixamorig:RightHand'
-const HAND_FORWARD_DEGREES = 20 // local +X: extend wrist so sword points out more
-const HAND_TWIST_DEGREES = 10 // local +Z: roll hand
+
+// Tune per axis (degrees). 0 = no change. Restore original GLB from git before re-patching.
+const HAND_FORWARD_DEGREES = 0 // local +X — extend wrist / sword forward
+const HAND_TWIST_DEGREES = 0 // local +Z — roll hand (use negative for opposite direction)
+
+const FORWARD_AXIS = [1, 0, 0]
+const TWIST_AXIS = [0, 0, 1]
 
 function readGlb(file) {
   const buf = fs.readFileSync(file)
@@ -68,6 +73,19 @@ function multiplyQuat(a, b) {
   ])
 }
 
+function buildHandOffset() {
+  const identity = quatFromAxisAngle([0, 1, 0], 0)
+  const forwardOffset =
+    HAND_FORWARD_DEGREES !== 0
+      ? quatFromAxisAngle(FORWARD_AXIS, (HAND_FORWARD_DEGREES * Math.PI) / 180)
+      : identity
+  const twistOffset =
+    HAND_TWIST_DEGREES !== 0
+      ? quatFromAxisAngle(TWIST_AXIS, (HAND_TWIST_DEGREES * Math.PI) / 180)
+      : identity
+  return multiplyQuat(twistOffset, forwardOffset)
+}
+
 function patchRotationChannel({ buf, json, binStart, anim, boneName, transform }) {
   const channel = anim.channels.find(ch => {
     const node = json.nodes[ch.target.node]
@@ -91,13 +109,17 @@ function patchRotationChannel({ buf, json, binStart, anim, boneName, transform }
 }
 
 function patchAttackLowHand() {
+  if (HAND_FORWARD_DEGREES === 0 && HAND_TWIST_DEGREES === 0) {
+    console.log('No angle changes configured (both axes are 0). Skipping patch.')
+    console.log(`Restore ${ATTACK_LOW_PATH} from git if it was previously patched.`)
+    return
+  }
+
   const { buf, json, binStart } = readGlb(ATTACK_LOW_PATH)
   const anim = json.animations[0]
   if (!anim) throw new Error('No animation found in attacklow.glb')
 
-  const forwardOffset = quatFromAxisAngle([1, 0, 0], (HAND_FORWARD_DEGREES * Math.PI) / 180)
-  const twistOffset = quatFromAxisAngle([0, 0, 1], (-HAND_TWIST_DEGREES * Math.PI) / 180)
-  const handOffset = multiplyQuat(twistOffset, forwardOffset)
+  const handOffset = buildHandOffset()
 
   const handKeys = patchRotationChannel({
     buf,
@@ -111,8 +133,13 @@ function patchAttackLowHand() {
   fs.writeFileSync(ATTACK_LOW_PATH, buf)
 
   console.log(`Patched ${ATTACK_LOW_PATH}`)
-  console.log(`  ${HAND_BONE}: ${handKeys} keys, +${HAND_FORWARD_DEGREES}° local X forward`)
-  console.log(`  ${HAND_BONE}: ${handKeys} keys, -${HAND_TWIST_DEGREES}° local +Z`)
+  console.log(`  ${HAND_BONE}: ${handKeys} keys`)
+  if (HAND_FORWARD_DEGREES !== 0) {
+    console.log(`    X: ${HAND_FORWARD_DEGREES > 0 ? '+' : ''}${HAND_FORWARD_DEGREES}° local +X`)
+  }
+  if (HAND_TWIST_DEGREES !== 0) {
+    console.log(`    Z: ${HAND_TWIST_DEGREES > 0 ? '+' : ''}${HAND_TWIST_DEGREES}° local +Z`)
+  }
 }
 
 patchAttackLowHand()
