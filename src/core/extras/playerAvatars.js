@@ -6,6 +6,10 @@ export const AVATAR_SARACEN = 'asset://saladin.vrm'
 /** Saracen spawns this many meters in front of the crusader spawn, facing back toward it. */
 export const SARACEN_SPAWN_FORWARD_OFFSET = 20
 
+export function getTeamFromAvatar(sessionAvatar) {
+  return sessionAvatar === AVATAR_SARACEN ? 'saracen' : 'crusader'
+}
+
 const FORWARD = new THREE.Vector3(0, 0, -1)
 const UP = new THREE.Vector3(0, 1, 0)
 const flipY = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI)

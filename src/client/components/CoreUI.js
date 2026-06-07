@@ -18,6 +18,7 @@ import { ControlPriorities } from '../../core/extras/ControlPriorities'
 import { ChevronDoubleUpIcon, HandIcon } from './Icons'
 import { Sidebar } from './Sidebar'
 import { Scoreboard } from './Scoreboard'
+import { TeamScore } from './TeamScore'
 
 export function CoreUI({ world }) {
   const ref = useRef()
@@ -96,6 +97,7 @@ export function CoreUI({ world }) {
       {!ui.reticleSuppressors && <Reticle world={world} />}
       {<Toast world={world} />}
       {ready && <AvatarSwitcher world={world} player={player} />}
+      {ready && <TeamScore world={world} />}
       {ready && <Scoreboard world={world} />}
       {ready && <ActionsBlock world={world} />}
       {ready && <Sidebar world={world} ui={ui} />}

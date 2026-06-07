@@ -8,7 +8,7 @@ import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
-import { getPlayerSpawn } from '../extras/playerAvatars'
+import { getPlayerSpawn, getTeamFromAvatar } from '../extras/playerAvatars'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -129,12 +129,13 @@ export class ServerNetwork extends System {
     this.send('scoreboard', this.getScoreboardArray())
   }
 
-  addScoreboardPlayer(id, name) {
+  addScoreboardPlayer(id, name, team = 'crusader') {
     const entry = this.scoreboard.get(id)
     if (entry) {
       entry.name = name
+      entry.team = team
     } else {
-      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0 })
+      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team })
     }
   }
 
@@ -332,7 +333,11 @@ export class ServerNetwork extends System {
         true
       )
 
-      this.addScoreboardPlayer(socket.player.data.id, socket.player.data.name)
+      this.addScoreboardPlayer(
+        socket.player.data.id,
+        socket.player.data.name,
+        getTeamFromAvatar(sessionAvatar)
+      )
 
       // send snapshot
       socket.send('snapshot', {
