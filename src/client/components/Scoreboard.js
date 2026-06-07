@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 import { ControlPriorities } from '../../core/extras/ControlPriorities'
+import { getScoreboardPlayers } from '../../core/extras/scoreboardUtils'
 
 export function Scoreboard({ world }) {
   const [rows, setRows] = useState([])
@@ -8,10 +9,12 @@ export function Scoreboard({ world }) {
 
   useEffect(() => {
     const onScoreboard = data => {
-      const rows = Array.isArray(data) ? data : data?.players ?? []
-      setRows(rows)
+      setRows(getScoreboardPlayers(data))
     }
     world.on('scoreboard', onScoreboard)
+    if (world.network?.scoreboard) {
+      onScoreboard(world.network.scoreboard)
+    }
     return () => {
       world.off('scoreboard', onScoreboard)
     }

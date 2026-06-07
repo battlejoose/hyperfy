@@ -160,7 +160,7 @@ export class ServerNetwork extends System {
     this.broadcastScoreboard()
   }
 
-  recordKill(attackerId, targetId) {
+  recordKill = async (attackerId, targetId) => {
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
@@ -168,7 +168,11 @@ export class ServerNetwork extends System {
       killer.kills += 1
       const team = killer.team ?? 'crusader'
       this.teamKills[team] = (this.teamKills[team] ?? 0) + 1
-      this.saveTeamKills().catch(err => console.error('failed to save teamKills:', err))
+      try {
+        await this.saveTeamKills()
+      } catch (err) {
+        console.error('failed to save teamKills:', err)
+      }
     }
     if (victim) victim.deaths += 1
     this.broadcastScoreboard()
@@ -440,7 +444,7 @@ export class ServerNetwork extends System {
     targetPlayer.modify({ health: newHealth })
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
-      this.recordKill(attackerId, targetId)
+      await this.recordKill(attackerId, targetId)
     }
     
     // Broadcast health update to ALL clients (including attacker)

@@ -1,19 +1,33 @@
 import { useEffect, useState } from 'react'
 import { css } from '@firebolt-dev/css'
+import { getTeamKills } from '../../core/extras/scoreboardUtils'
+
+function readTeamKills(data) {
+  const teamKills = getTeamKills(data)
+  return {
+    crusader: teamKills?.crusader ?? 0,
+    saracen: teamKills?.saracen ?? 0,
+  }
+}
 
 export function TeamScore({ world }) {
-  const [crusaderKills, setCrusaderKills] = useState(0)
-  const [saracenKills, setSaracenKills] = useState(0)
+  const [crusaderKills, setCrusaderKills] = useState(
+    () => readTeamKills(world.network?.scoreboard).crusader
+  )
+  const [saracenKills, setSaracenKills] = useState(
+    () => readTeamKills(world.network?.scoreboard).saracen
+  )
 
   useEffect(() => {
     const onScoreboard = data => {
-      const teamKills = Array.isArray(data) ? null : data?.teamKills
-      if (teamKills) {
-        setCrusaderKills(teamKills.crusader ?? 0)
-        setSaracenKills(teamKills.saracen ?? 0)
-      }
+      const { crusader, saracen } = readTeamKills(data)
+      setCrusaderKills(crusader)
+      setSaracenKills(saracen)
     }
     world.on('scoreboard', onScoreboard)
+    if (world.network?.scoreboard) {
+      onScoreboard(world.network.scoreboard)
+    }
     return () => {
       world.off('scoreboard', onScoreboard)
     }

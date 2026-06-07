@@ -22,6 +22,12 @@ export class ClientNetwork extends System {
     this.id = null
     this.isClient = true
     this.queue = []
+    this.scoreboard = null
+  }
+
+  setScoreboard(data) {
+    this.scoreboard = data
+    this.world.emit('scoreboard', data)
   }
 
   init({ wsUrl, name, avatar }) {
@@ -143,7 +149,7 @@ export class ClientNetwork extends System {
     this.world.entities.deserialize(data.entities)
     this.world.livekit?.deserialize(data.livekit)
     if (data.scoreboard) {
-      this.world.emit('scoreboard', data.scoreboard)
+      this.setScoreboard(data.scoreboard)
     }
     storage.set('authToken', data.authToken)
   }
@@ -195,7 +201,7 @@ export class ClientNetwork extends System {
   }
 
   onScoreboard = data => {
-    this.world.emit('scoreboard', data)
+    this.setScoreboard(data)
   }
 
   onEntityEvent = event => {
