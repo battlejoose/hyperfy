@@ -41,6 +41,10 @@ export const AttackTiming = {
   cooldownAfterBlock: 1,
 }
 
+export const SprintTiming = {
+  cooldownAfterCombat: 5,
+}
+
 export const emoteUrls = [
   Emotes.IDLE,
   Emotes.WALK,

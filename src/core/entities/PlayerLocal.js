@@ -7,7 +7,7 @@ import { DEG2RAD, RAD2DEG } from '../extras/general'
 import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
-import { Emotes, KickTiming, AttackTiming } from '../extras/playerEmotes'
+import { Emotes, KickTiming, AttackTiming, SprintTiming } from '../extras/playerEmotes'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
@@ -102,6 +102,7 @@ export class PlayerLocal extends Entity {
     this.blockDuration = 1.0 // Block animation duration
     this.blockBreakCooldownUntil = 0
     this.attackBlockCooldownUntil = 0
+    this.sprintCooldownUntil = 0
     this.kickDuration = KickTiming.duration
     this.kickColliderDelay = KickTiming.colliderDelay
     this.kickColliderDuration = KickTiming.colliderDuration
@@ -789,6 +790,10 @@ export class PlayerLocal extends Entity {
     })
   }
 
+  applySprintCooldown() {
+    this.sprintCooldownUntil = Date.now() + SprintTiming.cooldownAfterCombat * 1000
+  }
+
   startAttack(emote, chargeMode = false) {
     // Can't attack while sprinting
     if (this.running) {
@@ -808,6 +813,8 @@ export class PlayerLocal extends Entity {
     if (this.isCommitted) {
       return
     }
+
+    this.applySprintCooldown()
     
     // Set attack tag based on emote
     if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
@@ -1138,6 +1145,7 @@ export class PlayerLocal extends Entity {
     this.clearKickColliderTimeouts()
     this.hitPlayersThisKick.clear()
     this.isKicking = true
+    this.applySprintCooldown()
 
     this.emote = Emotes.KICK
     this.setEffect({
@@ -1184,6 +1192,8 @@ export class PlayerLocal extends Entity {
     
     // If already blocking or holding a block, ignore
     if (this.isBlocking || this.isHoldingBlock) return
+
+    this.applySprintCooldown()
     
     console.log('[Block] Starting block:', emote, 'holdMode:', holdMode)
     this.isBlocking = true
@@ -2287,6 +2297,10 @@ export class PlayerLocal extends Entity {
       this.running = this.moving && (this.control.shiftLeft.down || this.control.shiftRight.down)
     }
 
+    if (Date.now() < this.sprintCooldownUntil) {
+      this.running = false
+    }
+
     // Cancel any active attacks when sprinting starts
     if (this.running && (this.isInWindup || this.isCommitted || this.isChargingAttack)) {
       console.log('[Attack] Sprinting started - canceling active attack')
@@ -2939,6 +2953,7 @@ export class PlayerLocal extends Entity {
       const prevHealth = this.data.health !== undefined ? this.data.health : 100
       if (data.health < prevHealth) {
         this.interruptAttackFromHit()
+        this.applySprintCooldown()
       }
       this.data.health = data.health
       this.nametag.health = data.health
