@@ -4,7 +4,7 @@ import path from 'path'
 const ATTACK_LOW_PATH = path.join('src/world/assets/attacklow.glb')
 const HAND_BONE = 'mixamorig:RightHand'
 const HAND_FORWARD_DEGREES = 75 // local +X: extend wrist so sword points out more
-const HAND_TWIST_DEGREES = 25 // local +Z: roll hand (replaces Y-axis tweaks)
+const HAND_TWIST_DEGREES = 10 // local +Z: roll hand
 
 function readGlb(file) {
   const buf = fs.readFileSync(file)
@@ -96,7 +96,7 @@ function patchAttackLowHand() {
   if (!anim) throw new Error('No animation found in attacklow.glb')
 
   const forwardOffset = quatFromAxisAngle([1, 0, 0], (HAND_FORWARD_DEGREES * Math.PI) / 180)
-  const twistOffset = quatFromAxisAngle([0, 0, 1], (-HAND_TWIST_DEGREES * Math.PI) / 180)
+  const twistOffset = quatFromAxisAngle([0, 0, 1], (HAND_TWIST_DEGREES * Math.PI) / 180)
   const handOffset = multiplyQuat(twistOffset, forwardOffset)
 
   const handKeys = patchRotationChannel({
@@ -112,7 +112,7 @@ function patchAttackLowHand() {
 
   console.log(`Patched ${ATTACK_LOW_PATH}`)
   console.log(`  ${HAND_BONE}: ${handKeys} keys, +${HAND_FORWARD_DEGREES}° local X forward`)
-  console.log(`  ${HAND_BONE}: ${handKeys} keys, -${HAND_TWIST_DEGREES}° local +Z`)
+  console.log(`  ${HAND_BONE}: ${handKeys} keys, +${HAND_TWIST_DEGREES}° local +Z`)
 }
 
 patchAttackLowHand()
