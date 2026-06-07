@@ -14,7 +14,7 @@ export const CombatHandOffsets = {
   attackLeft: null,
   attackRight: null,
   attackHigh: null,
-  attackLow: { x: 0, y: 0, z: 45 },
+  attackLow: { x: 0, y: 0, z: -45 },
   block: null,
   blockLeft: null,
   blockRight: null,
