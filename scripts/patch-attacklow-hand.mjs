@@ -1,0 +1,151 @@
+import fs from 'fs'
+import path from 'path'
+
+// DEPRECATED: Prefer runtime tuning in src/core/extras/combatHandOffsets.js instead.
+// That file applies offsets after animation without modifying GLB binaries.
+
+const ATTACK_LOW_PATH = path.join('src/world/assets/attacklow.glb')
+const HAND_BONE = 'mixamorig:RightHand'
+
+// Tune per axis (degrees). 0 = no change.
+// IMPORTANT: Patches write directly into attacklow.glb binary data. `git checkout HEAD`
+// does NOT restore the original if patches were committed — use:
+//   node -e "require('fs').writeFileSync('src/world/assets/attacklow.glb', require('child_process').execSync('git show 972a267:src/world/assets/attacklow.glb'))"
+const HAND_FORWARD_DEGREES = 0 // local +X — extend wrist / sword forward
+const HAND_TWIST_DEGREES = 0 // local +Z — roll hand (use negative for opposite direction)
+
+const FORWARD_AXIS = [1, 0, 0]
+const TWIST_AXIS = [0, 0, 1]
+
+function readGlb(file) {
+  const buf = fs.readFileSync(file)
+  if (buf.readUInt32LE(0) !== 0x46546c67) throw new Error('Not a GLB file')
+
+  let offset = 12
+  let json
+  let binStart = 0
+
+  while (offset < buf.length) {
+    const chunkLength = buf.readUInt32LE(offset)
+    const chunkType = buf.readUInt32LE(offset + 4)
+    const chunkStart = offset + 8
+
+    if (chunkType === 0x4e4f534a) {
+      json = JSON.parse(buf.slice(chunkStart, chunkStart + chunkLength).toString('utf8'))
+    } else if (chunkType === 0x004e4942) {
+      binStart = chunkStart
+    }
+
+    offset = chunkStart + chunkLength
+  }
+
+  if (!json || !binStart) throw new Error('Invalid GLB structure')
+  return { buf, json, binStart }
+}
+
+function readVec4(buffer, byteOffset) {
+  return [
+    buffer.readFloatLE(byteOffset),
+    buffer.readFloatLE(byteOffset + 4),
+    buffer.readFloatLE(byteOffset + 8),
+    buffer.readFloatLE(byteOffset + 12),
+  ]
+}
+
+function writeVec4(buffer, byteOffset, q) {
+  buffer.writeFloatLE(q[0], byteOffset)
+  buffer.writeFloatLE(q[1], byteOffset + 4)
+  buffer.writeFloatLE(q[2], byteOffset + 8)
+  buffer.writeFloatLE(q[3], byteOffset + 12)
+}
+
+function normalizeQuat(q) {
+  const len = Math.hypot(q[0], q[1], q[2], q[3]) || 1
+  return q.map(v => v / len)
+}
+
+function quatFromAxisAngle(axis, angleRad) {
+  const half = angleRad / 2
+  const s = Math.sin(half)
+  return normalizeQuat([axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(half)])
+}
+
+function multiplyQuat(a, b) {
+  return normalizeQuat([
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+  ])
+}
+
+function buildHandOffset() {
+  const identity = quatFromAxisAngle([0, 1, 0], 0)
+  const forwardOffset =
+    HAND_FORWARD_DEGREES !== 0
+      ? quatFromAxisAngle(FORWARD_AXIS, (HAND_FORWARD_DEGREES * Math.PI) / 180)
+      : identity
+  const twistOffset =
+    HAND_TWIST_DEGREES !== 0
+      ? quatFromAxisAngle(TWIST_AXIS, (HAND_TWIST_DEGREES * Math.PI) / 180)
+      : identity
+  return multiplyQuat(twistOffset, forwardOffset)
+}
+
+function patchRotationChannel({ buf, json, binStart, anim, boneName, transform }) {
+  const channel = anim.channels.find(ch => {
+    const node = json.nodes[ch.target.node]
+    return node?.name === boneName && ch.target.path === 'rotation'
+  })
+
+  if (!channel) throw new Error(`No rotation channel found for ${boneName}`)
+
+  const sampler = anim.samplers[channel.sampler]
+  const outputAccessor = json.accessors[sampler.output]
+  const outputView = json.bufferViews[outputAccessor.bufferView]
+  const byteOffset = binStart + outputView.byteOffset + (outputAccessor.byteOffset || 0)
+  const keyCount = outputAccessor.count
+
+  for (let i = 0; i < keyCount; i++) {
+    const q = readVec4(buf, byteOffset + i * 16)
+    writeVec4(buf, byteOffset + i * 16, transform(q))
+  }
+
+  return keyCount
+}
+
+function patchAttackLowHand() {
+  if (HAND_FORWARD_DEGREES === 0 && HAND_TWIST_DEGREES === 0) {
+    console.log('No angle changes configured (both axes are 0). Skipping patch.')
+    console.log('To restore unpatched attacklow.glb, see restore command at top of this script.')
+    return
+  }
+
+  const { buf, json, binStart } = readGlb(ATTACK_LOW_PATH)
+  const anim = json.animations[0]
+  if (!anim) throw new Error('No animation found in attacklow.glb')
+
+  const handOffset = buildHandOffset()
+
+  const handKeys = patchRotationChannel({
+    buf,
+    json,
+    binStart,
+    anim,
+    boneName: HAND_BONE,
+    transform: q => multiplyQuat(handOffset, q),
+  })
+
+  fs.writeFileSync(ATTACK_LOW_PATH, buf)
+
+  console.log(`Patched ${ATTACK_LOW_PATH}`)
+  console.log(`  ${HAND_BONE}: ${handKeys} keys`)
+  if (HAND_FORWARD_DEGREES !== 0) {
+    console.log(`    X: ${HAND_FORWARD_DEGREES > 0 ? '+' : ''}${HAND_FORWARD_DEGREES}° local +X`)
+  }
+  if (HAND_TWIST_DEGREES !== 0) {
+    console.log(`    Z: ${HAND_TWIST_DEGREES > 0 ? '+' : ''}${HAND_TWIST_DEGREES}° local +Z`)
+  }
+}
+
+patchAttackLowHand()

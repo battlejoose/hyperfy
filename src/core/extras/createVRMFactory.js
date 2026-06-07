@@ -5,11 +5,14 @@ import { DEG2RAD } from './general'
 import { getTrianglesFromGeometry } from './getTrianglesFromGeometry'
 import { getTextureBytesFromMaterial } from './getTextureBytesFromMaterial'
 import { Emotes, KickTiming } from './playerEmotes'
+import { CombatHandOffsets } from './combatHandOffsets'
 
 const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
 const q1 = new THREE.Quaternion()
 const m1 = new THREE.Matrix4()
+const handOffsetEuler = new THREE.Euler(0, 0, 0, 'XYZ')
+const handOffsetQuat = new THREE.Quaternion()
 
 const FORWARD = new THREE.Vector3(0, 0, -1)
 
@@ -210,6 +213,27 @@ export function createVRMFactory(glb, setupMaterial) {
       if (!bone) return null
       // combine the scene's world matrix with the bone's world matrix
       return mt.multiplyMatrices(vrm.scene.matrixWorld, bone.matrixWorld)
+    }
+
+    const applyCombatHandOffset = () => {
+      if (!currentAttack) return
+      const offset = CombatHandOffsets[currentAttack]
+      if (!offset) return
+      const x = offset.x ?? 0
+      const y = offset.y ?? 0
+      const z = offset.z ?? 0
+      if (x === 0 && y === 0 && z === 0) return
+
+      const pose = poses[currentAttack]
+      if (!pose || pose.weight < 0.01) return
+
+      const bone = findBone('rightHand')
+      if (!bone) return
+
+      handOffsetEuler.set(x * DEG2RAD, y * DEG2RAD, z * DEG2RAD)
+      handOffsetQuat.setFromEuler(handOffsetEuler)
+      bone.quaternion.premultiply(handOffsetQuat)
+      bone.updateMatrixWorld(true)
     }
 
     const loco = {
@@ -474,6 +498,7 @@ export function createVRMFactory(glb, setupMaterial) {
           const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
           pose.setWeight(weight)
         }
+        applyCombatHandOffset()
         if (loco.gazeDir && distance < MAX_GAZE_DISTANCE && (currentEmote ? currentEmote.gaze : true)) {
           // aimBone('chest', loco.gazeDir, delta, {
           //   minAngle: -90,
