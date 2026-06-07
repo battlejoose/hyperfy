@@ -29,6 +29,7 @@ const names = [
   'playerHit',
   'blockBroken',
   'scoreboard',
+  'matchState',
   'attackCanceled',
 ]
 

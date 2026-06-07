@@ -8,7 +8,8 @@ import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
-import { getPlayerSpawn, getTeamFromAvatar } from '../extras/playerAvatars'
+import { getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion } from '../extras/playerAvatars'
+import { ROUND_DURATION, RESULTS_DURATION } from '../extras/matchConfig'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -46,6 +47,8 @@ export class ServerNetwork extends System {
     this.queue = []
     this.scoreboard = new Map()
     this.teamKills = { crusader: 0, saracen: 0 }
+    this.match = null
+    this.matchTickAccumulator = 0
   }
 
   init({ db }) {
@@ -91,6 +94,129 @@ export class ServerNetwork extends System {
     if (SAVE_INTERVAL) {
       this.saveTimerId = setTimeout(this.save, SAVE_INTERVAL * 1000)
     }
+    this.startRound()
+  }
+
+  fixedUpdate(delta) {
+    if (!this.match) return
+    this.matchTickAccumulator += delta
+    if (this.matchTickAccumulator < 1) return
+    this.matchTickAccumulator -= 1
+    this.tickMatch()
+  }
+
+  getMatchStatePayload() {
+    const now = this.getTime()
+    let remaining = 0
+    if (this.match.phase === 'playing') {
+      remaining = Math.max(0, Math.ceil(this.match.roundEndsAt - now))
+    } else {
+      remaining = Math.max(0, Math.ceil(this.match.resultsEndsAt - now))
+    }
+    return {
+      phase: this.match.phase,
+      remaining,
+      winner: this.match.winner,
+      roundEndsAt: this.match.roundEndsAt,
+      resultsEndsAt: this.match.resultsEndsAt,
+    }
+  }
+
+  broadcastMatchState() {
+    this.send('matchState', this.getMatchStatePayload())
+  }
+
+  startRound() {
+    this.match = {
+      phase: 'playing',
+      winner: null,
+      roundEndsAt: this.getTime() + ROUND_DURATION,
+      resultsEndsAt: null,
+    }
+    this.broadcastMatchState()
+  }
+
+  endRound() {
+    const { crusader, saracen } = this.teamKills
+    let winner = 'draw'
+    if (crusader > saracen) winner = 'crusader'
+    else if (saracen > crusader) winner = 'saracen'
+
+    this.match = {
+      phase: 'results',
+      winner,
+      roundEndsAt: this.match.roundEndsAt,
+      resultsEndsAt: this.getTime() + RESULTS_DURATION,
+    }
+    this.broadcastMatchState()
+  }
+
+  resetScoreboardStats() {
+    for (const entry of this.scoreboard.values()) {
+      entry.kills = 0
+      entry.deaths = 0
+    }
+  }
+
+  teleportPlayerToSpawn(player) {
+    const { position, quaternion } = getPlayerSpawn(this.spawn, player.data.sessionAvatar)
+    const rotationY = getRotationYFromQuaternion(quaternion)
+
+    player.modify({
+      p: position,
+      q: quaternion,
+      t: true,
+      health: HEALTH_MAX,
+      ef: null,
+    })
+
+    this.send('entityModified', {
+      id: player.data.id,
+      p: position,
+      q: quaternion,
+      t: true,
+      health: HEALTH_MAX,
+      ef: null,
+    })
+
+    this.sendTo(player.data.userId, 'playerTeleport', {
+      networkId: player.data.userId,
+      position,
+      rotationY,
+    })
+  }
+
+  async resetRound() {
+    this.teamKills = { crusader: 0, saracen: 0 }
+    try {
+      await this.saveTeamKills()
+    } catch (err) {
+      console.error('failed to save teamKills:', err)
+    }
+    this.resetScoreboardStats()
+    this.broadcastScoreboard()
+
+    for (const socket of this.sockets.values()) {
+      if (socket.player) {
+        this.teleportPlayerToSpawn(socket.player)
+      }
+    }
+
+    this.startRound()
+  }
+
+  tickMatch() {
+    const now = this.getTime()
+    if (this.match.phase === 'playing') {
+      if (now >= this.match.roundEndsAt) {
+        this.endRound()
+        return
+      }
+    } else if (now >= this.match.resultsEndsAt) {
+      this.resetRound()
+      return
+    }
+    this.broadcastMatchState()
   }
 
   preFixedUpdate() {
@@ -161,6 +287,7 @@ export class ServerNetwork extends System {
   }
 
   recordKill = async (attackerId, targetId) => {
+    if (this.match?.phase !== 'playing') return
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
@@ -394,6 +521,7 @@ export class ServerNetwork extends System {
         authToken,
         hasAdminCode: !!process.env.ADMIN_CODE,
         scoreboard: this.getScoreboardPayload(),
+        matchState: this.match ? this.getMatchStatePayload() : null,
       })
 
       this.sockets.set(socket.id, socket)

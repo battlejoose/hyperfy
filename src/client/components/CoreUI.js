@@ -19,6 +19,7 @@ import { ChevronDoubleUpIcon, HandIcon } from './Icons'
 import { Sidebar } from './Sidebar'
 import { Scoreboard } from './Scoreboard'
 import { TeamScore } from './TeamScore'
+import { MatchRound } from './MatchRound'
 
 export function CoreUI({ world }) {
   const ref = useRef()
@@ -98,6 +99,7 @@ export function CoreUI({ world }) {
       {<Toast world={world} />}
       {ready && <AvatarSwitcher world={world} player={player} />}
       {ready && <TeamScore world={world} />}
+      {ready && <MatchRound world={world} />}
       {ready && <Scoreboard world={world} />}
       {ready && <ActionsBlock world={world} />}
       {ready && <Sidebar world={world} ui={ui} />}

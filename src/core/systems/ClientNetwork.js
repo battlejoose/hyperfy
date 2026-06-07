@@ -23,11 +23,17 @@ export class ClientNetwork extends System {
     this.isClient = true
     this.queue = []
     this.scoreboard = null
+    this.matchState = null
   }
 
   setScoreboard(data) {
     this.scoreboard = data
     this.world.emit('scoreboard', data)
+  }
+
+  setMatchState(data) {
+    this.matchState = data
+    this.world.emit('matchState', data)
   }
 
   init({ wsUrl, name, avatar }) {
@@ -151,6 +157,9 @@ export class ClientNetwork extends System {
     if (data.scoreboard) {
       this.setScoreboard(data.scoreboard)
     }
+    if (data.matchState) {
+      this.setMatchState(data.matchState)
+    }
     storage.set('authToken', data.authToken)
   }
 
@@ -202,6 +211,10 @@ export class ClientNetwork extends System {
 
   onScoreboard = data => {
     this.setScoreboard(data)
+  }
+
+  onMatchState = data => {
+    this.setMatchState(data)
   }
 
   onEntityEvent = event => {

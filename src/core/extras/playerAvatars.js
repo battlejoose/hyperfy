@@ -33,3 +33,12 @@ export function getPlayerSpawn(baseSpawn, sessionAvatar) {
   spawnQuat.multiply(flipY)
   return { position, quaternion: spawnQuat.toArray() }
 }
+
+const rotationQuat = new THREE.Quaternion()
+const rotationEuler = new THREE.Euler()
+
+export function getRotationYFromQuaternion(quaternion) {
+  rotationQuat.fromArray(quaternion)
+  rotationEuler.setFromQuaternion(rotationQuat, 'YXZ')
+  return rotationEuler.y
+}
