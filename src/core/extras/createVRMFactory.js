@@ -213,48 +213,6 @@ export function createVRMFactory(glb, setupMaterial) {
       return mt.multiplyMatrices(vrm.scene.matrixWorld, bone.matrixWorld)
     }
 
-    let handOffsetBaseReady = false
-    const handOffsetEuler = new THREE.Euler(0, 0, 0, 'XYZ')
-    const handOffsetQuat = new THREE.Quaternion()
-    const handOffsetBaseQuat = new THREE.Quaternion()
-
-    const applyCombatHandOffset = () => {
-      if (!currentAttack) {
-        handOffsetBaseReady = false
-        return
-      }
-      const offset = CombatHandOffsets[currentAttack]
-      if (!offset) return
-      const x = offset.x ?? 0
-      const y = offset.y ?? 0
-      const z = offset.z ?? 0
-      if (x === 0 && y === 0 && z === 0) return
-
-      const pose = poses[currentAttack]
-      if (!pose || pose.weight < 0.01) return
-
-      const bone = findBone('rightHand')
-      if (!bone) return
-
-      handOffsetEuler.set(x * DEG2RAD, y * DEG2RAD, z * DEG2RAD)
-      handOffsetQuat.setFromEuler(handOffsetEuler)
-
-      // Snapshot mixer-driven rotation before we add offset. While playing, refresh
-      // each frame from the clip. When paused (charged hold, timeScale = 0) the
-      // mixer stops updating bones — reuse the last snapshot so offset doesn't stack.
-      if (mixer.timeScale !== 0) {
-        handOffsetBaseQuat.copy(bone.quaternion)
-        handOffsetBaseReady = true
-      } else if (!handOffsetBaseReady) {
-        // Paused before we captured (e.g. late join) — use current mixer pose once
-        handOffsetBaseQuat.copy(bone.quaternion)
-        handOffsetBaseReady = true
-      }
-
-      bone.quaternion.copy(handOffsetBaseQuat).premultiply(handOffsetQuat)
-      bone.updateMatrixWorld(true)
-    }
-
     const loco = {
       mode: Modes.IDLE,
       axis: new THREE.Vector3(),
@@ -517,7 +475,6 @@ export function createVRMFactory(glb, setupMaterial) {
           const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
           pose.setWeight(weight)
         }
-        applyCombatHandOffset()
         if (loco.gazeDir && distance < MAX_GAZE_DISTANCE && (currentEmote ? currentEmote.gaze : true)) {
           // aimBone('chest', loco.gazeDir, delta, {
           //   minAngle: -90,
@@ -785,7 +742,9 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('attackLeft', Emotes.ATTACK_LEFT, true)
     addPose('attackRight', Emotes.ATTACK_RIGHT, true)
     addPose('attackHigh', Emotes.ATTACK_HIGH, true)
-    addPose('attackLow', Emotes.ATTACK_LOW, true)
+    addPose('attackLow', Emotes.ATTACK_LOW, true, {
+      handRotationOffset: CombatHandOffsets.attackLow,
+    })
     addPose('block', Emotes.BLOCK, true)
     addPose('blockLeft', Emotes.BLOCK_LEFT, true)
     addPose('blockRight', Emotes.BLOCK_RIGHT, true)

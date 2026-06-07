@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 
+import { DEG2RAD } from './general'
+
 const q1 = new THREE.Quaternion()
+const handOffsetEuler = new THREE.Euler(0, 0, 0, 'XYZ')
+const handOffsetQuat = new THREE.Quaternion()
+const keyframeQuat = new THREE.Quaternion()
 const restRotationInverse = new THREE.Quaternion()
 const parentRestWorldRotation = new THREE.Quaternion()
 
@@ -84,7 +89,15 @@ export function createEmoteFactory(glb, url) {
   const hipsPositionBones = new Set(['Root', 'Hips', 'mixamorigHips'])
 
   return {
-    toClip({ rootToHips, version, getBoneName, inPlace = false, trimStart = 0, trimEnd = null }) {
+    toClip({
+      rootToHips,
+      version,
+      getBoneName,
+      inPlace = false,
+      trimStart = 0,
+      trimEnd = null,
+      handRotationOffset = null,
+    }) {
       // we're going to resize animation to match vrm height
       const height = rootToHips
 
@@ -147,6 +160,13 @@ export function createEmoteFactory(glb, url) {
         }
       })
 
+      if (handRotationOffset) {
+        const rightHandNode = getBoneName('rightHand')
+        if (rightHandNode) {
+          applyHandRotationOffset(tracks, rightHandNode, handRotationOffset)
+        }
+      }
+
       let result = new THREE.AnimationClip(
         clip.name, // todo: name variable?
         clip.duration,
@@ -159,6 +179,26 @@ export function createEmoteFactory(glb, url) {
 
       return result
     },
+  }
+}
+
+function applyHandRotationOffset(tracks, boneNodeName, offset) {
+  const trackName = `${boneNodeName}.quaternion`
+  const track = tracks.find(t => t.name === trackName)
+  if (!track || !(track instanceof THREE.QuaternionKeyframeTrack)) return
+
+  const x = offset.x ?? 0
+  const y = offset.y ?? 0
+  const z = offset.z ?? 0
+  if (x === 0 && y === 0 && z === 0) return
+
+  handOffsetEuler.set(x * DEG2RAD, y * DEG2RAD, z * DEG2RAD)
+  handOffsetQuat.setFromEuler(handOffsetEuler)
+
+  for (let i = 0; i < track.values.length; i += 4) {
+    keyframeQuat.fromArray(track.values, i)
+    keyframeQuat.premultiply(handOffsetQuat)
+    keyframeQuat.toArray(track.values, i)
   }
 }
 
