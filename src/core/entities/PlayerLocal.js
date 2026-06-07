@@ -43,6 +43,7 @@ const m3 = new THREE.Matrix4()
 
 const gazeTiltAngle = 10 * DEG2RAD
 const gazeTiltAxis = new THREE.Vector3(1, 0, 0) // X-axis for pitch
+const BACKWARD_SPEED_SCALE = 0.5
 
 // TODO: de-dup createVRMFactory.js has a copy
 const Modes = {
@@ -1866,6 +1867,8 @@ export class PlayerLocal extends Entity {
       if (this.moving) {
         let moveSpeed = (this.running ? 6 : 3) * this.mass // run
         moveSpeed *= 1 - snare
+        const backwardFactor = Math.max(0, this.axis.z)
+        moveSpeed *= 1 - backwardFactor * (1 - BACKWARD_SPEED_SCALE)
         const slopeRotation = q1.setFromUnitVectors(UP, this.groundNormal)
         const moveForce = v1.copy(this.moveDir).multiplyScalar(moveSpeed * 10).applyQuaternion(slopeRotation) // prettier-ignore
         this.capsule.addForce(moveForce.toPxVec3(), PHYSX.PxForceModeEnum.eFORCE, true)
