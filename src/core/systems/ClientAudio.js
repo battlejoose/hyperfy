@@ -3,6 +3,7 @@ import * as THREE from '../extras/three'
 import { System } from './System'
 
 const AMBIENT_WIND_SRC = 'asset://desertwind.mp3'
+const AMBIENT_WIND_VOLUME = 0.5
 
 const up = new THREE.Vector3(0, 1, 0)
 const v1 = new THREE.Vector3()
@@ -110,10 +111,14 @@ export class ClientAudio extends System {
     elem.crossOrigin = 'anonymous'
 
     const source = this.ctx.createMediaElementSource(elem)
-    source.connect(this.groupGains.music)
+    const gain = this.ctx.createGain()
+    gain.gain.value = AMBIENT_WIND_VOLUME
+    source.connect(gain)
+    gain.connect(this.groupGains.music)
 
     this.ambientWindElem = elem
     this.ambientWindSource = source
+    this.ambientWindGain = gain
 
     this.ready(() => {
       elem.play().catch(err => console.error('[audio] ambient wind failed:', err))
@@ -164,6 +169,10 @@ export class ClientAudio extends System {
     if (this.ambientWindSource) {
       this.ambientWindSource.disconnect()
       this.ambientWindSource = null
+    }
+    if (this.ambientWindGain) {
+      this.ambientWindGain.disconnect()
+      this.ambientWindGain = null
     }
     this.groupGains.music.disconnect()
     this.groupGains.sfx.disconnect()
