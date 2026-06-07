@@ -1,6 +1,5 @@
 import * as THREE from '../extras/three'
 
-import { createNode } from '../extras/createNode'
 import { System } from './System'
 
 const AMBIENT_WIND_SRC = 'asset://desertwind.mp3'
@@ -94,18 +93,31 @@ export class ClientAudio extends System {
 
   async init() {
     this.world.prefs.on('change', this.onPrefsChange)
+    this.world.on('ready', this.startAmbientWind)
   }
 
-  start() {
-    this.ambientWind = createNode('audio', {
-      src: AMBIENT_WIND_SRC,
-      volume: 0.5,
-      loop: true,
-      group: 'music',
-      spatial: false,
+  startAmbientWind = () => {
+    if (this.ambientWindElem) return
+
+    const url = this.world.resolveURL(AMBIENT_WIND_SRC)
+    if (url.startsWith('asset://')) {
+      console.error('[audio] ambient wind url not resolved')
+      return
+    }
+
+    const elem = new Audio(url)
+    elem.loop = true
+    elem.crossOrigin = 'anonymous'
+
+    const source = this.ctx.createMediaElementSource(elem)
+    source.connect(this.groupGains.music)
+
+    this.ambientWindElem = elem
+    this.ambientWindSource = source
+
+    this.ready(() => {
+      elem.play().catch(err => console.error('[audio] ambient wind failed:', err))
     })
-    this.ambientWind.activate({ world: this.world })
-    this.ambientWind.play()
   }
 
   lateUpdate(delta) {
@@ -144,9 +156,15 @@ export class ClientAudio extends System {
   }
 
   destroy() {
-    this.ambientWind?.stop()
-    this.ambientWind?.deactivate()
-    this.ambientWind = null
+    if (this.ambientWindElem) {
+      this.ambientWindElem.pause()
+      this.ambientWindElem.src = ''
+      this.ambientWindElem = null
+    }
+    if (this.ambientWindSource) {
+      this.ambientWindSource.disconnect()
+      this.ambientWindSource = null
+    }
     this.groupGains.music.disconnect()
     this.groupGains.sfx.disconnect()
     this.groupGains.voice.disconnect()
