@@ -1,6 +1,9 @@
 import * as THREE from '../extras/three'
 
+import { createNode } from '../extras/createNode'
 import { System } from './System'
+
+const AMBIENT_WIND_SRC = 'asset://desertwind.mp3'
 
 const up = new THREE.Vector3(0, 1, 0)
 const v1 = new THREE.Vector3()
@@ -94,7 +97,15 @@ export class ClientAudio extends System {
   }
 
   start() {
-    // ...
+    this.ambientWind = createNode('audio', {
+      src: AMBIENT_WIND_SRC,
+      volume: 0.5,
+      loop: true,
+      group: 'music',
+      spatial: false,
+    })
+    this.ambientWind.activate({ world: this.world })
+    this.ambientWind.play()
   }
 
   lateUpdate(delta) {
@@ -133,6 +144,9 @@ export class ClientAudio extends System {
   }
 
   destroy() {
+    this.ambientWind?.stop()
+    this.ambientWind?.deactivate()
+    this.ambientWind = null
     this.groupGains.music.disconnect()
     this.groupGains.sfx.disconnect()
     this.groupGains.voice.disconnect()
