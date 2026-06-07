@@ -1038,7 +1038,7 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisSwing.clear()
   }
 
-  interruptAttackFromHit() {
+  cancelAttackCompletely() {
     const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
     const hasAttackEffect = attackEmotes.includes(this.data.effect?.emote)
     if (
@@ -1051,8 +1051,6 @@ export class PlayerLocal extends Entity {
     ) {
       return
     }
-
-    console.log('[Attack] Interrupted by hit')
 
     this.cancelAttack()
 
@@ -1070,6 +1068,24 @@ export class PlayerLocal extends Entity {
     this.mouseDragStart = null
     this.mouseDragAccumulated = null
     this.isDragging = false
+  }
+
+  interruptAttackFromHit() {
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    const hasAttackEffect = attackEmotes.includes(this.data.effect?.emote)
+    if (
+      !this.isInWindup &&
+      !this.isCommitted &&
+      !this.isChargingAttack &&
+      !this.currentAttackEmote &&
+      !this.currentAttackTag &&
+      !hasAttackEffect
+    ) {
+      return
+    }
+
+    console.log('[Attack] Interrupted by hit')
+    this.cancelAttackCompletely()
   }
 
   cancelBlock() {
@@ -1131,7 +1147,7 @@ export class PlayerLocal extends Entity {
     if (this.running) return
     if (this.data.effect?.emote === Emotes.KICK && this.data.effect?.duration > 0) return
 
-    this.cancelAttack()
+    this.cancelAttackCompletely()
     this.cancelBlock()
     this.clearCombatAnimation()
 
@@ -1197,6 +1213,12 @@ export class PlayerLocal extends Entity {
     
     // If already blocking or holding a block, ignore
     if (this.isBlocking || this.isHoldingBlock) return
+
+    this.cancelAttackCompletely()
+
+    if (this.avatar?.instance?.mixer && this.avatar.instance.mixer.timeScale === 0) {
+      this.avatar.instance.mixer.timeScale = 1
+    }
 
     this.applySprintCooldown()
     
