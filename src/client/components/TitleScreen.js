@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { css } from '@firebolt-dev/css'
 
-export const AVATAR_CRUSADER = 'asset://avatar.vrm'
-export const AVATAR_SARACEN = 'asset://saladin.vrm'
+import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars'
+
+export { AVATAR_CRUSADER, AVATAR_SARACEN }
 
 const MAX_NAME_LENGTH = 24
 

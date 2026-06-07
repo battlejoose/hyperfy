@@ -8,6 +8,7 @@ import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
+import { getPlayerSpawn } from '../extras/playerAvatars'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -310,18 +311,21 @@ export class ServerNetwork extends System {
       const socket = new Socket({ id: user.id, ws, network: this })
 
       // spawn player
+      const sessionAvatar = avatar || null
+      const { position, quaternion } = getPlayerSpawn(this.spawn, sessionAvatar)
+
       socket.player = this.world.entities.add(
         {
           id: user.id,
           type: 'player',
-          position: this.spawn.position.slice(),
-          quaternion: this.spawn.quaternion.slice(),
+          position,
+          quaternion,
           owner: socket.id, // deprecated, same as userId
           userId: user.id, // deprecated, same as userId
           name: name || user.name,
           health: HEALTH_MAX,
           avatar: user.avatar || this.world.settings.avatar?.url || 'asset://avatar.vrm',
-          sessionAvatar: avatar || null,
+          sessionAvatar,
           rank: user.rank,
           enteredAt: Date.now(),
         },
