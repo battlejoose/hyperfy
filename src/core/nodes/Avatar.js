@@ -43,7 +43,6 @@ export class Avatar extends Node {
         this.instance.disableRateCheck()
         // this._disableRateCheck = null
       }
-      this.ctx.world?.setHot(this.instance, true)
       this.ctx.world?.avatars.add(this.instance)
       this.onLoad?.()
     }
@@ -62,7 +61,6 @@ export class Avatar extends Node {
   unmount() {
     this.n++
     if (this.instance) {
-      this.ctx.world?.setHot(this.instance, false)
       this.ctx.world?.avatars.remove(this.instance)
       this.instance.destroy()
       this.instance = null

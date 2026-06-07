@@ -3,6 +3,7 @@ import { System } from './System'
 /**
  * Avatars System
  *
+ * - Updates all avatar instances each frame
  * - Runs rate checks one avatar per frame (amortization)
  *
  */
@@ -23,7 +24,10 @@ export class Avatars extends System {
     this.avatars.splice(idx, 1)
   }
 
-  update() {
+  update(delta) {
+    for (const avatar of this.avatars) {
+      avatar.update(delta)
+    }
     if (!this.avatars.length) return
     const avatar = this.avatars[this.cursor % this.avatars.length]
     avatar.updateRate()

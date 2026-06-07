@@ -11,9 +11,6 @@ const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
 const q1 = new THREE.Quaternion()
 const m1 = new THREE.Matrix4()
-const handOffsetEuler = new THREE.Euler(0, 0, 0, 'XYZ')
-const handOffsetQuat = new THREE.Quaternion()
-const handOffsetBaseQuat = new THREE.Quaternion()
 
 const FORWARD = new THREE.Vector3(0, 0, -1)
 
@@ -217,6 +214,9 @@ export function createVRMFactory(glb, setupMaterial) {
     }
 
     let handOffsetBaseReady = false
+    const handOffsetEuler = new THREE.Euler(0, 0, 0, 'XYZ')
+    const handOffsetQuat = new THREE.Quaternion()
+    const handOffsetBaseQuat = new THREE.Quaternion()
 
     const applyCombatHandOffset = () => {
       if (!currentAttack) {
@@ -246,7 +246,9 @@ export function createVRMFactory(glb, setupMaterial) {
         handOffsetBaseQuat.copy(bone.quaternion)
         handOffsetBaseReady = true
       } else if (!handOffsetBaseReady) {
-        return
+        // Paused before we captured (e.g. late join) — use current mixer pose once
+        handOffsetBaseQuat.copy(bone.quaternion)
+        handOffsetBaseReady = true
       }
 
       bone.quaternion.copy(handOffsetBaseQuat).premultiply(handOffsetQuat)
