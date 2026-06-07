@@ -21,6 +21,7 @@ const blockEmotes = [
 const SAVE_INTERVAL = parseInt(process.env.SAVE_INTERVAL || '60') // seconds
 const PING_RATE = 10 // seconds
 const defaultSpawn = '{ "position": [0, 0, 0], "quaternion": [0, 0, 0, 1] }'
+const defaultTeamKills = '{ "crusader": 0, "saracen": 0 }'
 
 const HEALTH_MAX = 100
 
@@ -44,6 +45,7 @@ export class ServerNetwork extends System {
     this.isServer = true
     this.queue = []
     this.scoreboard = new Map()
+    this.teamKills = { crusader: 0, saracen: 0 }
   }
 
   init({ db }) {
@@ -54,6 +56,13 @@ export class ServerNetwork extends System {
     // get spawn
     const spawnRow = await this.db('config').where('key', 'spawn').first()
     this.spawn = JSON.parse(spawnRow?.value || defaultSpawn)
+    const teamKillsRow = await this.db('config').where('key', 'teamKills').first()
+    try {
+      this.teamKills = JSON.parse(teamKillsRow?.value || defaultTeamKills)
+    } catch (err) {
+      console.error('failed to parse teamKills config:', err)
+      this.teamKills = { crusader: 0, saracen: 0 }
+    }
     // hydrate blueprints
     const blueprints = await this.db('blueprints')
     for (const blueprint of blueprints) {
@@ -125,8 +134,15 @@ export class ServerNetwork extends System {
     )
   }
 
+  getScoreboardPayload() {
+    return {
+      players: this.getScoreboardArray(),
+      teamKills: { ...this.teamKills },
+    }
+  }
+
   broadcastScoreboard() {
-    this.send('scoreboard', this.getScoreboardArray())
+    this.send('scoreboard', this.getScoreboardPayload())
   }
 
   addScoreboardPlayer(id, name, team = 'crusader') {
@@ -148,9 +164,27 @@ export class ServerNetwork extends System {
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
-    if (killer) killer.kills += 1
+    if (killer) {
+      killer.kills += 1
+      const team = killer.team ?? 'crusader'
+      this.teamKills[team] = (this.teamKills[team] ?? 0) + 1
+      this.saveTeamKills().catch(err => console.error('failed to save teamKills:', err))
+    }
     if (victim) victim.deaths += 1
     this.broadcastScoreboard()
+  }
+
+  saveTeamKills = async () => {
+    const value = JSON.stringify(this.teamKills)
+    await this.db('config')
+      .insert({
+        key: 'teamKills',
+        value,
+      })
+      .onConflict('key')
+      .merge({
+        value,
+      })
   }
 
   flush() {
@@ -355,7 +389,7 @@ export class ServerNetwork extends System {
         livekit,
         authToken,
         hasAdminCode: !!process.env.ADMIN_CODE,
-        scoreboard: this.getScoreboardArray(),
+        scoreboard: this.getScoreboardPayload(),
       })
 
       this.sockets.set(socket.id, socket)

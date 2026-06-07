@@ -7,8 +7,9 @@ export function Scoreboard({ world }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    const onScoreboard = entries => {
-      setRows(Array.isArray(entries) ? entries : [])
+    const onScoreboard = data => {
+      const rows = Array.isArray(data) ? data : data?.players ?? []
+      setRows(rows)
     }
     world.on('scoreboard', onScoreboard)
     return () => {
