@@ -3,7 +3,7 @@ import * as THREE from '../extras/three'
 import { System } from './System'
 
 const AMBIENT_WIND_SRC = 'asset://desertwind.mp3'
-const AMBIENT_WIND_VOLUME = 0.5
+const AMBIENT_WIND_VOLUME = 0.2
 
 const up = new THREE.Vector3(0, 1, 0)
 const v1 = new THREE.Vector3()

@@ -19,7 +19,7 @@ export function isWalkingMode(mode) {
 export function initFootsteps(base) {
   const audio = createNode('audio', {
     src: FOOTSTEPS_SRC,
-    volume: 0.3375,
+    volume: 0.45,
     loop: true,
     group: 'sfx',
     spatial: true,
