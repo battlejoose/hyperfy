@@ -7,7 +7,7 @@ import { DEG2RAD, RAD2DEG } from '../extras/general'
 import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
-import { Emotes, KickTiming, AttackTiming, SprintTiming } from '../extras/playerEmotes'
+import { Emotes, KickTiming, AttackTiming, SprintTiming, JumpTiming } from '../extras/playerEmotes'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
@@ -103,6 +103,7 @@ export class PlayerLocal extends Entity {
     this.blockBreakCooldownUntil = 0
     this.attackBlockCooldownUntil = 0
     this.sprintCooldownUntil = 0
+    this.jumpCooldownUntil = 0
     this.kickDuration = KickTiming.duration
     this.kickColliderDelay = KickTiming.colliderDelay
     this.kickColliderDuration = KickTiming.colliderDuration
@@ -792,6 +793,10 @@ export class PlayerLocal extends Entity {
 
   applySprintCooldown() {
     this.sprintCooldownUntil = Date.now() + SprintTiming.cooldownAfterCombat * 1000
+  }
+
+  applyJumpCooldown() {
+    this.jumpCooldownUntil = Date.now() + JumpTiming.cooldown * 1000
   }
 
   startAttack(emote, chargeMode = false) {
@@ -1890,8 +1895,14 @@ export class PlayerLocal extends Entity {
       }
 
       // ground/air jump
+      const jumpOnCooldown = Date.now() < this.jumpCooldownUntil
       const shouldJump =
-        this.grounded && !this.jumping && this.jumpDown && !this.data.effect?.snare && !this.data.effect?.freeze
+        this.grounded &&
+        !this.jumping &&
+        this.jumpDown &&
+        !jumpOnCooldown &&
+        !this.data.effect?.snare &&
+        !this.data.effect?.freeze
       const shouldAirJump =
         false && !this.grounded && !this.airJumped && this.jumpPressed && !this.world.builder?.enabled // temp: disabled
       if (shouldJump || shouldAirJump) {
@@ -1905,6 +1916,7 @@ export class PlayerLocal extends Entity {
         // ground jump init (we haven't left the ground yet)
         if (shouldJump) {
           this.jumped = true
+          this.applyJumpCooldown()
         }
         // air jump init
         if (shouldAirJump) {
