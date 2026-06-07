@@ -3,7 +3,7 @@ import path from 'path'
 
 const ATTACK_LOW_PATH = path.join('src/world/assets/attacklow.glb')
 const HAND_BONE = 'mixamorig:RightHand'
-const HAND_FORWARD_DEGREES = 75 // local +X: extend wrist so sword points out more
+const HAND_FORWARD_DEGREES = 20 // local +X: extend wrist so sword points out more
 const HAND_TWIST_DEGREES = 10 // local +Z: roll hand
 
 function readGlb(file) {
