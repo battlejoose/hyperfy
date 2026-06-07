@@ -1922,6 +1922,7 @@ export class PlayerLocal extends Entity {
         this.grounded &&
         !this.jumping &&
         this.jumpDown &&
+        !this.isDead &&
         !jumpOnCooldown &&
         !this.data.effect?.snare &&
         !this.data.effect?.freeze
@@ -1986,7 +1987,7 @@ export class PlayerLocal extends Entity {
 
     // double jump in build mode, toggle flying
     // double jump in xr and "can" build, toggle flying
-    if (this.jumpPressed && (this.world.builder?.enabled || (this.isXR && this.world.builder?.canBuild()))) {
+    if (this.jumpPressed && !this.isDead && (this.world.builder?.enabled || (this.isXR && this.world.builder?.canBuild()))) {
       if (this.world.time - this.lastJumpAt < 0.4) {
         this.toggleFlying()
       }
@@ -2320,6 +2321,10 @@ export class PlayerLocal extends Entity {
       // cancel movement (freeze, anchor, or dead)
       this.moveDir.set(0, 0, 0)
       this.moving = false
+      if (this.isDead) {
+        this.jumpDown = false
+        this.jumpPressed = false
+      }
     }
 
     // determine if we're "running"
