@@ -8,6 +8,7 @@ import { BufferedLerpVector3 } from '../extras/BufferedLerpVector3'
 import { BufferedLerpQuaternion } from '../extras/BufferedLerpQuaternion'
 import { Layers } from '../extras/Layers'
 import { Emotes, KickTiming } from '../extras/playerEmotes'
+import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 
 let capsuleGeometry
 {
@@ -109,6 +110,9 @@ export class PlayerRemote extends Entity {
 
     this.aura.activate({ world: this.world, entity: this })
     this.base.activate({ world: this.world, entity: this })
+    if (this.world.audio) {
+      this.footstepAudio = initFootsteps(this.base)
+    }
 
     this.applyAvatar()
 
@@ -654,6 +658,13 @@ export class PlayerRemote extends Entity {
       this.avatar.instance.setEmote(emote, duration)
     }
     this.avatar?.instance?.setLocomotion(this.mode, this.axis, this.gaze)
+
+    updateFootsteps(this.footstepAudio, {
+      mode: this.mode,
+      isDead: this.isDead,
+      isFlying: this.mode === LocomotionModes.FLY,
+      hasEffectEmote: !!this.data.effect?.emote,
+    })
 
     // Handle sword collider activation for attack animations
     const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]

@@ -8,6 +8,7 @@ import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
 import { Emotes, KickTiming, AttackTiming, SprintTiming, JumpTiming } from '../extras/playerEmotes'
+import { initFootsteps, updateFootsteps } from '../extras/playerFootsteps'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
@@ -227,6 +228,9 @@ export class PlayerLocal extends Entity {
 
     this.aura.activate({ world: this.world, entity: this })
     this.base.activate({ world: this.world, entity: this })
+    if (this.world.audio) {
+      this.footstepAudio = initFootsteps(this.base)
+    }
 
     this.camHeight = DEFAULT_CAM_HEIGHT
 
@@ -2497,6 +2501,13 @@ export class PlayerLocal extends Entity {
 
     // apply locomotion
     this.avatar?.instance?.setLocomotion(this.mode, this.axis, this.gaze)
+
+    updateFootsteps(this.footstepAudio, {
+      mode: this.mode,
+      isDead: this.isDead,
+      isFlying: this.flying,
+      hasEffectEmote: !!this.data.effect?.emote,
+    })
 
     // send network updates
     this.lastSendAt += delta
