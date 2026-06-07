@@ -13,8 +13,7 @@ const q1 = new THREE.Quaternion()
 const m1 = new THREE.Matrix4()
 const handOffsetEuler = new THREE.Euler(0, 0, 0, 'XYZ')
 const handOffsetQuat = new THREE.Quaternion()
-const handOffsetQuatInv = new THREE.Quaternion()
-const handAnimatedQuat = new THREE.Quaternion()
+const handOffsetBaseQuat = new THREE.Quaternion()
 
 const FORWARD = new THREE.Vector3(0, 0, -1)
 
@@ -217,8 +216,13 @@ export function createVRMFactory(glb, setupMaterial) {
       return mt.multiplyMatrices(vrm.scene.matrixWorld, bone.matrixWorld)
     }
 
+    let handOffsetBaseReady = false
+
     const applyCombatHandOffset = () => {
-      if (!currentAttack) return
+      if (!currentAttack) {
+        handOffsetBaseReady = false
+        return
+      }
       const offset = CombatHandOffsets[currentAttack]
       if (!offset) return
       const x = offset.x ?? 0
@@ -234,12 +238,18 @@ export function createVRMFactory(glb, setupMaterial) {
 
       handOffsetEuler.set(x * DEG2RAD, y * DEG2RAD, z * DEG2RAD)
       handOffsetQuat.setFromEuler(handOffsetEuler)
-      handOffsetQuatInv.copy(handOffsetQuat).invert()
-      // Idempotent: undo any prior offset on this bone, then apply once.
-      // Needed when mixer.timeScale = 0 (charged hold) — mixer stops rewriting
-      // bone quaternions but we still run each frame, so premultiply would stack.
-      handAnimatedQuat.copy(bone.quaternion).premultiply(handOffsetQuatInv)
-      bone.quaternion.copy(handAnimatedQuat).premultiply(handOffsetQuat)
+
+      // Snapshot mixer-driven rotation before we add offset. While playing, refresh
+      // each frame from the clip. When paused (charged hold, timeScale = 0) the
+      // mixer stops updating bones — reuse the last snapshot so offset doesn't stack.
+      if (mixer.timeScale !== 0) {
+        handOffsetBaseQuat.copy(bone.quaternion)
+        handOffsetBaseReady = true
+      } else if (!handOffsetBaseReady) {
+        return
+      }
+
+      bone.quaternion.copy(handOffsetBaseQuat).premultiply(handOffsetQuat)
       bone.updateMatrixWorld(true)
     }
 
