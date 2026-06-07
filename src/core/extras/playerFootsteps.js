@@ -36,7 +36,7 @@ export function updateFootsteps(audio, { mode, isDead, isFlying, hasEffectEmote 
 
   const walking = isWalkingMode(mode) && !isDead && !isFlying && !hasEffectEmote
   if (walking) {
-    const rate = mode === LocomotionModes.RUN ? 1.35 : 1
+    const rate = mode === LocomotionModes.RUN ? 1 : 0.7
     if (!audio.isPlaying) {
       audio.play()
     }
