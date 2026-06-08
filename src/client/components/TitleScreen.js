@@ -6,11 +6,11 @@ import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars
 export { AVATAR_CRUSADER, AVATAR_SARACEN }
 
 const MAX_NAME_LENGTH = 24
-const SARACEN_JOIN_DURATION_MS = 4000
+const SARACEN_JOIN_DURATION_MS = 5000
 
 const ASSETS = {
   bg: '/assets/willsitbackground.png',
-  scroll: '/assets/scroll.jpg',
+  scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
   crusaderJoin: '/assets/war.mp3',
   saracenJoin: '/assets/akbar.mp3',
@@ -18,19 +18,26 @@ const ASSETS = {
 
 const imagePreloadCache = new Map()
 
-function preloadImage(src) {
+async function preloadImage(src) {
   if (imagePreloadCache.has(src)) return imagePreloadCache.get(src)
-  const promise = new Promise((resolve, reject) => {
+
+  const promise = (async () => {
+    const response = await fetch(src)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
     const img = new Image()
-    img.onload = () => resolve(src)
-    img.onerror = reject
-    img.src = src
-  })
+    img.src = url
+    await img.decode()
+    return url
+  })()
+
   imagePreloadCache.set(src, promise)
   return promise
 }
 
-const titleImagesReady = Promise.all([preloadImage(ASSETS.bg), preloadImage(ASSETS.scroll)])
+const titleImagesReady = Promise.all([preloadImage(ASSETS.bg), preloadImage(ASSETS.scroll)]).then(
+  ([bg, scroll]) => ({ bg, scroll })
+)
 
 function stopAudio(audio) {
   if (!audio) return
@@ -51,8 +58,9 @@ function playFactionJoinSound(side) {
 export function TitleScreen({ onStart }) {
   const [name, setName] = useState('')
   const [side, setSide] = useState('crusader')
-  const [imagesReady, setImagesReady] = useState(false)
+  const [imageUrls, setImageUrls] = useState(null)
   const titleMusicRef = useRef(null)
+  const imageUrlsRef = useRef(null)
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
@@ -60,14 +68,19 @@ export function TitleScreen({ onStart }) {
   useEffect(() => {
     let cancelled = false
     titleImagesReady
-      .then(() => {
-        if (!cancelled) setImagesReady(true)
+      .then(urls => {
+        if (cancelled) return
+        imageUrlsRef.current = urls
+        setImageUrls(urls)
       })
-      .catch(() => {
-        if (!cancelled) setImagesReady(true)
-      })
+      .catch(err => console.error('[TitleScreen] failed to preload images:', err))
     return () => {
       cancelled = true
+      if (imageUrlsRef.current) {
+        URL.revokeObjectURL(imageUrlsRef.current.bg)
+        URL.revokeObjectURL(imageUrlsRef.current.scroll)
+        imageUrlsRef.current = null
+      }
     }
   }, [])
 
@@ -115,7 +128,6 @@ export function TitleScreen({ onStart }) {
 
   return (
     <div
-      className={imagesReady ? 'ready' : undefined}
       css={css`
         position: fixed;
         inset: 0;
@@ -125,11 +137,15 @@ export function TitleScreen({ onStart }) {
         justify-content: center;
         pointer-events: auto;
         z-index: 10000;
-        &.ready {
-          background: url('${ASSETS.bg}') center / cover no-repeat;
+        .title-bg {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center;
         }
-        &::before {
-          content: '';
+        .title-overlay {
           position: absolute;
           inset: 0;
           background: rgba(0, 0, 0, 0.25);
@@ -144,8 +160,17 @@ export function TitleScreen({ onStart }) {
           border: none;
           box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
         }
-        &.ready .title-panel {
-          background: url('${ASSETS.scroll}') center / 100% 100% no-repeat;
+        .title-scroll {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: fill;
+          pointer-events: none;
+        }
+        .title-panel-content {
+          position: relative;
+          z-index: 1;
         }
         .title-heading {
           font-size: clamp(1.75rem, 5vw, 2.25rem);
@@ -249,7 +274,11 @@ export function TitleScreen({ onStart }) {
         }
       `}
     >
+      {imageUrls && <img className='title-bg' src={imageUrls.bg} alt='' />}
+      <div className='title-overlay' />
       <form className='title-panel' onSubmit={handleSubmit}>
+        {imageUrls && <img className='title-scroll' src={imageUrls.scroll} alt='' />}
+        <div className='title-panel-content'>
         <h1 className='title-heading'>God Wills It</h1>
         <p className='title-sub'>Choose your name and allegiance</p>
 
@@ -289,6 +318,7 @@ export function TitleScreen({ onStart }) {
         <button type='submit' className={`enter-btn ${side}`} disabled={!canStart}>
           Enter game
         </button>
+        </div>
       </form>
     </div>
   )
