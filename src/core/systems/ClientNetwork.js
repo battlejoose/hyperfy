@@ -1,4 +1,5 @@
 import moment from 'moment'
+import { BLOOD_SPLATTER_SRC } from '../extras/bloodEffects'
 import { emoteUrls } from '../extras/playerEmotes'
 import { readPacket, writePacket } from '../packets'
 import { storage } from '../storage'
@@ -138,6 +139,7 @@ export class ClientNetwork extends System {
     for (const url of emoteUrls) {
       this.world.loader.preload('emote', url)
     }
+    this.world.loader.preload('texture', BLOOD_SPLATTER_SRC)
     // preload local player avatar
     for (const item of data.entities) {
       if (item.type === 'player' && item.owner === this.id) {

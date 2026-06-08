@@ -1,7 +1,7 @@
 import * as THREE from './three'
 import { Layers } from './Layers'
 
-const BLOOD_SPLATTER_SRC = 'asset://bloodsplatter.png'
+export const BLOOD_SPLATTER_SRC = 'asset://bloodsplatter.png'
 const MAX_SPLATTERS = 200
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
