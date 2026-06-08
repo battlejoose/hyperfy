@@ -5,7 +5,6 @@ const BLOOD_SPLATTER_SRC = 'asset://bloodsplatter.png'
 const MAX_SPLATTERS = 200
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
-const PLANE_NORMAL = new THREE.Vector3(0, 0, 1)
 
 const v1 = new THREE.Vector3()
 
@@ -108,7 +107,7 @@ export async function spawnBloodSplatters(world, hitPosition) {
     })
   }
 
-  const { point, normal } = getGroundPoint(world, hitPosition)
+  const { point } = getGroundPoint(world, hitPosition)
   const count = 3 + Math.floor(Math.random() * 3)
 
   for (let i = 0; i < count; i++) {
@@ -120,13 +119,10 @@ export async function spawnBloodSplatters(world, hitPosition) {
 
     const offsetX = (Math.random() - 0.5) * 0.8
     const offsetZ = (Math.random() - 0.5) * 0.8
-    mesh.position.copy(point)
-    mesh.position.x += offsetX
-    mesh.position.z += offsetZ
-    mesh.position.addScaledVector(normal, 0.02)
+    mesh.position.set(point.x + offsetX, point.y + 0.02, point.z + offsetZ)
 
-    mesh.quaternion.setFromUnitVectors(PLANE_NORMAL, normal)
-    mesh.rotateOnAxis(normal, Math.random() * Math.PI * 2)
+    // Lie flat on the ground (PlaneGeometry defaults to vertical; rotate to XZ plane)
+    mesh.rotation.set(-Math.PI / 2, Math.random() * Math.PI * 2, 0)
 
     world.stage.scene.add(mesh)
     splatterMeshes.push(mesh)
