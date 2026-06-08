@@ -211,10 +211,18 @@ export class ClientNetwork extends System {
   }
 
   onPlayerCorpse = data => {
+    const player = this.world.entities.get(data.playerId)
+    let avatar = null
+    if (player?.avatar) {
+      avatar = player.avatar
+      player.avatar = null
+      player.avatarUrl = null
+    }
     spawnCorpse(this.world, {
       position: data.p,
       quaternion: data.q,
       sessionAvatar: data.sessionAvatar,
+      avatar,
     })
   }
 

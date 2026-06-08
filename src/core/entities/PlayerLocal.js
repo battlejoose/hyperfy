@@ -2938,19 +2938,6 @@ export class PlayerLocal extends Entity {
     }, 5000)
   }
   
-  stripLiveAvatar() {
-    if (this.avatar) {
-      this.avatar.deactivate()
-      this.base.remove(this.avatar)
-      this.avatar = null
-      this.avatarUrl = null
-    }
-    if (this.sword) {
-      this.sword.deactivate()
-      this.sword = null
-    }
-  }
-
   completeRespawn() {
     if (this.deathTimeout) {
       clearTimeout(this.deathTimeout)
@@ -2975,13 +2962,22 @@ export class PlayerLocal extends Entity {
 
     const p = this.base.position.toArray()
     const q = this.base.quaternion.toArray()
+    const corpseAvatar = this.avatar
+
+    this.avatar = null
+    this.avatarUrl = null
+
+    if (this.sword) {
+      this.sword.deactivate()
+      this.sword = null
+    }
 
     spawnCorpse(this.world, {
       position: p,
       quaternion: q,
       sessionAvatar: this.data.sessionAvatar,
+      avatar: corpseAvatar,
     })
-    this.stripLiveAvatar()
 
     this.world.network.send('playerRespawn', { p, q })
   }

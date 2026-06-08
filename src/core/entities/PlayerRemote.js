@@ -1168,8 +1168,12 @@ export class PlayerRemote extends Entity {
     this.setEffect(null)
 
     // Restore normal locomotion
-    if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
+    if (this.avatar?.instance?.setDeathState) {
       this.avatar.instance.setDeathState(false)
+    }
+    if (!this.avatar) {
+      this.avatarUrl = null
+      this.applyAvatar()
     }
   }
 
