@@ -8,6 +8,7 @@ import { BufferedLerpVector3 } from '../extras/BufferedLerpVector3'
 import { BufferedLerpQuaternion } from '../extras/BufferedLerpQuaternion'
 import { Layers } from '../extras/Layers'
 import { Emotes, KickTiming } from '../extras/playerEmotes'
+import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 
 let capsuleGeometry
@@ -377,7 +378,7 @@ export class PlayerRemote extends Entity {
         const blockPos = new THREE.Vector3()
         blockPos.copy(this.base.position)
         blockPos.y += 1.8 * 0.6
-        this.spawnBloodParticles(blockPos)
+        spawnBloodHitEffect(this.world, this.activeParticles, blockPos)
         this.playHitAudio(blockPos)
         return
       }
@@ -387,7 +388,7 @@ export class PlayerRemote extends Entity {
     if (this.sword) {
       const hitPos = new THREE.Vector3()
       this.sword.getWorldPosition(hitPos)
-      this.spawnBloodParticles(hitPos)
+      spawnBloodHitEffect(this.world, this.activeParticles, hitPos)
       this.playHitAudio(hitPos)
     }
     
@@ -397,34 +398,6 @@ export class PlayerRemote extends Entity {
 
   onKickHit(otherHandle) {
     // Block breaks are sent to the server; the blocker stops locally and syncs via entityModified
-  }
-
-  spawnBloodParticles(position) {
-    // Create red blood particles
-    const particleCount = 50
-    const geometry = new THREE.BoxGeometry(0.03, 0.03, 0.03)
-    
-    for (let i = 0; i < particleCount; i++) {
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xaa0000,
-        emissive: 0xcc0000,
-        emissiveIntensity: 2,
-        opacity: 0.9,
-        transparent: true,
-      })
-      
-      const particle = new THREE.Mesh(geometry, material)
-      particle.position.set(position.x, position.y, position.z)
-      this.world.stage.scene.add(particle)
-      
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 4,
-        Math.random() * 3 + 1,
-        (Math.random() - 0.5) * 4
-      )
-      
-      this.addParticle(particle, velocity, 0.6, 2, material)
-    }
   }
 
   spawnSparkParticles(position) {

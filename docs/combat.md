@@ -266,6 +266,16 @@ Gravity:   yes
 Emissive:  yes (fades over lifetime)
 ```
 
+### Blood Splatters (ground)
+
+```
+Texture:   asset://bloodsplatter.png
+Count:     3–5 per hit
+Placement: Raycast down from hit X/Z to ground (not at hit height)
+Scale:     0.5–1.2 m, random rotation
+Persist:   Session-long decals (cap 200, oldest removed)
+```
+
 ### Spark Particles (block)
 
 ```

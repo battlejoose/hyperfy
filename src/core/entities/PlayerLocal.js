@@ -8,6 +8,7 @@ import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
 import { Emotes, KickTiming, AttackTiming, SprintTiming, JumpTiming } from '../extras/playerEmotes'
+import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps } from '../extras/playerFootsteps'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
@@ -523,38 +524,10 @@ export class PlayerLocal extends Entity {
       const hitPos = new THREE.Vector3()
       hitPos.copy(this.base.position)
       hitPos.y += this.capsuleHeight * 0.6 // Match block collider height
-      this.spawnBloodParticles(hitPos)
+      spawnBloodHitEffect(this.world, this.activeParticles, hitPos)
       this.playHitAudio(hitPos)
       
       // Don't notify server about block - the attacker will send damage normally
-    }
-  }
-
-  spawnBloodParticles(position) {
-    // Create red blood particles
-    const particleCount = 50
-    const geometry = new THREE.BoxGeometry(0.03, 0.03, 0.03)
-    
-    for (let i = 0; i < particleCount; i++) {
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xaa0000,
-        emissive: 0xcc0000,
-        emissiveIntensity: 2,
-        opacity: 0.9,
-        transparent: true,
-      })
-      
-      const particle = new THREE.Mesh(geometry, material)
-      particle.position.set(position.x, position.y, position.z)
-      this.world.stage.scene.add(particle)
-      
-      const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 4,
-        Math.random() * 3 + 1,
-        (Math.random() - 0.5) * 4
-      )
-      
-      this.addParticle(particle, velocity, 0.6, 2, material)
     }
   }
 
@@ -762,7 +735,7 @@ export class PlayerLocal extends Entity {
     if (this.sword) {
       const hitPos = new THREE.Vector3()
       this.sword.getWorldPosition(hitPos)
-      this.spawnBloodParticles(hitPos)
+      spawnBloodHitEffect(this.world, this.activeParticles, hitPos)
       this.playHitAudio(hitPos)
     }
     
