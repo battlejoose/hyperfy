@@ -572,11 +572,33 @@ export class ServerNetwork extends System {
     targetPlayer.modify({ health: newHealth })
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
+      targetPlayer.deathPose = {
+        position: targetPlayer.data.position.slice(),
+        quaternion: targetPlayer.data.quaternion.slice(),
+        avatar: targetPlayer.data.sessionAvatar || targetPlayer.data.avatar || 'asset://avatar.vrm',
+      }
       await this.recordKill(attackerId, targetId)
     }
     
     // Broadcast health update to ALL clients (including attacker)
     this.send('entityModified', { id: targetId, health: newHealth })
+  }
+
+  onPlayerRespawn = (socket, data) => {
+    if (socket.player.data.id !== data?.playerId) return
+
+    const player = socket.player
+    if ((player.data.health ?? HEALTH_MAX) > 0) return
+
+    const deathPose = player.deathPose ?? {
+      position: player.data.position.slice(),
+      quaternion: player.data.quaternion.slice(),
+      avatar: player.data.sessionAvatar || player.data.avatar || 'asset://avatar.vrm',
+    }
+
+    this.send('playerCorpse', deathPose)
+    this.teleportPlayerToSpawn(player)
+    player.deathPose = null
   }
 
   onBlockBroken = async (socket, data) => {

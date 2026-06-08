@@ -1,5 +1,6 @@
 import moment from 'moment'
 import { emoteUrls } from '../extras/playerEmotes'
+import { spawnPlayerCorpse } from '../extras/playerCorpses'
 import { readPacket, writePacket } from '../packets'
 import { storage } from '../storage'
 import { uuid } from '../utils'
@@ -215,6 +216,10 @@ export class ClientNetwork extends System {
 
   onMatchState = data => {
     this.setMatchState(data)
+  }
+
+  onPlayerCorpse = data => {
+    spawnPlayerCorpse(this.world, data)
   }
 
   onEntityEvent = event => {

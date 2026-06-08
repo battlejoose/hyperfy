@@ -117,6 +117,7 @@ export class PlayerLocal extends Entity {
     
     // Death/respawn state
     this.isDead = false
+    this.respawning = false
     this.deathTimeout = null
     
     // Particle system
@@ -2799,6 +2800,15 @@ export class PlayerLocal extends Entity {
     if (hasRotation) this.cam.rotation.y = rotationY
     this.control.camera.position.copy(this.cam.position)
     this.control.camera.quaternion.copy(this.cam.quaternion)
+
+    if (this.isDead && this.respawning) {
+      this.respawning = false
+      if (this.deathTimeout) {
+        clearTimeout(this.deathTimeout)
+        this.deathTimeout = null
+      }
+      this.finishRespawnAtSpawn()
+    }
   }
 
   setEffect(effect, onEnd) {
@@ -2933,34 +2943,29 @@ export class PlayerLocal extends Entity {
   }
   
   onRespawn() {
-    console.log('[Respawn] Starting getup sequence')
-    
-    // Play getup animation (will transition back to normal locomotion when finished)
+    console.log('[Respawn] Requesting respawn at team spawn')
+    this.respawning = true
+    this.world.network.send('playerRespawn', { playerId: this.data.id })
+  }
+
+  finishRespawnAtSpawn() {
+    console.log('[Respawn] Starting getup sequence at spawn')
+
     this.setEffect({
       emote: Emotes.GETUP,
       duration: 2.0,
       cancellable: false,
     })
-    
-    // Wait for getup animation to finish
+
     setTimeout(() => {
       console.log('[Respawn] Respawn complete - re-enabling movement and attacks')
       this.isDead = false
-      
-      // Restore normal locomotion
-      if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
+
+      if (this.avatar?.instance?.setDeathState) {
         this.avatar.instance.setDeathState(false)
       }
-      
-      // Clear effect to return to normal movement
+
       this.setEffect(null)
-      
-      // Request health restoration from server
-      this.world.network.send('playerHit', {
-        attackerId: this.data.id,
-        targetId: this.data.id,
-        damage: -100, // Negative damage = healing
-      })
     }, 2000)
   }
 
@@ -2986,14 +2991,17 @@ export class PlayerLocal extends Entity {
       // Check for death
       if (data.health <= 0 && !this.isDead) {
         this.onDeath()
-      } else if (data.health > 0 && this.isDead) {
-        // If we got healed while dead, cancel death sequence
+      } else if (data.health > 0 && this.isDead && !this.respawning) {
+        // Healed while dead without a respawn sequence (e.g. admin heal)
         if (this.deathTimeout) {
           clearTimeout(this.deathTimeout)
           this.deathTimeout = null
         }
         this.isDead = false
         this.setEffect(null)
+        if (this.avatar?.instance?.setDeathState) {
+          this.avatar.instance.setDeathState(false)
+        }
         console.log('[Respawn] Death cancelled - player healed')
       }
       // changed = true

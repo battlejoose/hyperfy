@@ -31,6 +31,8 @@ const names = [
   'scoreboard',
   'matchState',
   'attackCanceled',
+  'playerRespawn',
+  'playerCorpse',
 ]
 
 const byName = {}

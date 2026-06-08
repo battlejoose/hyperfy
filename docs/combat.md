@@ -311,13 +311,15 @@ Health is clamped server-side: `Math.max(0, Math.min(100, health - damage))`.
 ## Death & Respawn
 
 When health reaches 0:
-1. Server broadcasts `entityModified` with `health: 0`
+1. Server broadcasts `entityModified` with `health: 0` and stores death pose
 2. `PlayerLocal.onDeath()` — cancels attacks/blocks, sets `isDead = true`
 3. `DEATH_FALL` effect (1.5 s) → dead locomotion pose
-4. After 5 s total: `onRespawn()` plays `GETUP` (2 s)
-5. On getup complete: `setEffect(null)`, sends `playerHit` with `damage: -100` to self-heal to 100 HP
+4. After 5 s total: client sends `playerRespawn`
+5. Server broadcasts `playerCorpse` (frozen dead avatar at death site) and teleports player to team spawn
+6. Client receives `playerTeleport` at spawn, plays `GETUP` (2 s)
+7. Movement and combat re-enabled; health restored by server
 
-Position is **not** reset on death — only health and animation state change.
+Position resets to team spawn on respawn (Crusader/Saracen via `getPlayerSpawn()`).
 
 ---
 
