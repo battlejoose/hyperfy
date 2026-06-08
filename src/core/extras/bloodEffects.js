@@ -40,6 +40,36 @@ function trimSplatters(world) {
   }
 }
 
+export function clearBloodSplatters(world) {
+  if (!world.stage?.scene) return
+  while (splatterMeshes.length) {
+    world.stage.scene.remove(splatterMeshes.pop())
+  }
+}
+
+function clearBloodParticles(world) {
+  if (!world.stage?.scene) return
+  const geometries = new Set()
+  for (const player of world.entities.players.values()) {
+    for (let i = player.activeParticles.length - 1; i >= 0; i--) {
+      const p = player.activeParticles[i]
+      if (p.material.color.getHex() !== 0xaa0000) continue
+      world.stage.scene.remove(p.mesh)
+      p.material.dispose()
+      geometries.add(p.mesh.geometry)
+      player.activeParticles.splice(i, 1)
+    }
+  }
+  for (const geometry of geometries) {
+    geometry.dispose()
+  }
+}
+
+export function clearBloodEffects(world) {
+  clearBloodSplatters(world)
+  clearBloodParticles(world)
+}
+
 export function spawnBloodEffect(world, activeParticles, hitPosition) {
   spawnBloodParticles(world, activeParticles, hitPosition)
   spawnBloodSplatters(world, hitPosition)

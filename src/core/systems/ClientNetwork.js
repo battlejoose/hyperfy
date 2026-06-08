@@ -1,5 +1,6 @@
 import moment from 'moment'
-import { BLOOD_SPLATTER_SRC } from '../extras/bloodEffects'
+import { BLOOD_SPLATTER_SRC, clearBloodEffects } from '../extras/bloodEffects'
+import { clearCorpses } from '../extras/playerCorpse'
 import { emoteUrls } from '../extras/playerEmotes'
 import { readPacket, writePacket } from '../packets'
 import { storage } from '../storage'
@@ -34,8 +35,13 @@ export class ClientNetwork extends System {
   }
 
   setMatchState(data) {
+    const prevPhase = this.matchState?.phase
     this.matchState = data
     this.world.emit('matchState', data)
+    if (prevPhase === 'results' && data.phase === 'playing') {
+      clearCorpses()
+      clearBloodEffects(this.world)
+    }
   }
 
   init({ wsUrl, name, avatar }) {
