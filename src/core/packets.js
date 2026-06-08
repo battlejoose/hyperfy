@@ -27,12 +27,12 @@ const names = [
   'ping',
   'pong',
   'playerHit',
+  'playerRespawn',
+  'playerCorpse',
   'blockBroken',
   'scoreboard',
   'matchState',
   'attackCanceled',
-  'playerRespawn',
-  'playerCorpse',
 ]
 
 const byName = {}

@@ -311,15 +311,12 @@ Health is clamped server-side: `Math.max(0, Math.min(100, health - damage))`.
 ## Death & Respawn
 
 When health reaches 0:
-1. Server broadcasts `entityModified` with `health: 0` and stores death pose
+1. Server broadcasts `entityModified` with `health: 0`
 2. `PlayerLocal.onDeath()` — cancels attacks/blocks, sets `isDead = true`
 3. `DEATH_FALL` effect (1.5 s) → dead locomotion pose
-4. After 5 s total: client sends `playerRespawn`
-5. Server broadcasts `playerCorpse` (frozen dead avatar at death site) and teleports player to team spawn
-6. Client receives `playerTeleport` at spawn, plays `GETUP` (2 s)
-7. Movement and combat re-enabled; health restored by server
-
-Position resets to team spawn on respawn (Crusader/Saracen via `getPlayerSpawn()`).
+4. After 5 s: client sends `playerRespawn` with corpse position
+5. Server broadcasts `playerCorpse` to other clients, teleports player to team spawn (Crusader/Saracen), restores health to 100 HP
+6. Live player gets a fresh avatar at spawn; dead body stays at death location (no networking)
 
 ---
 
@@ -334,6 +331,18 @@ Only **`playerHit`** is used for combat damage today. **`attackCanceled`** remai
 Server validation: `attackerId` must be the sender's player. Applies damage, broadcasts `entityModified`.
 
 Not sent on a successful block (tags match).
+
+### `playerRespawn`  (Client → Server)
+```js
+{ p: [x, y, z], q: [x, y, z, w] }
+```
+Sent when death timer completes. Server spawns corpse for other clients, teleports player to team spawn, restores health.
+
+### `playerCorpse`  (Server → Clients)
+```js
+{ playerId, p, q, sessionAvatar }
+```
+Spawns a static dead avatar at the death location. Not sent back to the respawning client (they spawn it locally).
 
 ### `attackCanceled`  (Client → Server → all other Clients)
 ```js

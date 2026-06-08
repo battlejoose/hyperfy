@@ -9,6 +9,7 @@ import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
 import { Emotes, KickTiming, AttackTiming, SprintTiming, JumpTiming } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
+import { spawnCorpse } from '../extras/playerCorpse'
 import { initFootsteps, updateFootsteps } from '../extras/playerFootsteps'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
@@ -117,7 +118,7 @@ export class PlayerLocal extends Entity {
     
     // Death/respawn state
     this.isDead = false
-    this.respawning = false
+    this.respawnSent = false
     this.deathTimeout = null
     
     // Particle system
@@ -2485,7 +2486,7 @@ export class PlayerLocal extends Entity {
 
     // send network updates
     this.lastSendAt += delta
-    if (this.lastSendAt >= this.world.networkRate) {
+    if (!this.isDead && this.lastSendAt >= this.world.networkRate) {
       if (!this.lastState) {
         this.lastState = {
           id: this.data.id,
@@ -2800,14 +2801,8 @@ export class PlayerLocal extends Entity {
     if (hasRotation) this.cam.rotation.y = rotationY
     this.control.camera.position.copy(this.cam.position)
     this.control.camera.quaternion.copy(this.cam.quaternion)
-
-    if (this.isDead && this.respawning) {
-      this.respawning = false
-      if (this.deathTimeout) {
-        clearTimeout(this.deathTimeout)
-        this.deathTimeout = null
-      }
-      this.finishRespawnAtSpawn()
+    if (!this.avatar) {
+      this.applyAvatar()
     }
   }
 
@@ -2876,6 +2871,7 @@ export class PlayerLocal extends Entity {
   onDeath() {
     console.log('[Death] Player died - starting death sequence')
     this.isDead = true
+    this.respawnSent = false
     
     // Cancel any active attacks
     if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
@@ -2942,31 +2938,52 @@ export class PlayerLocal extends Entity {
     }, 5000)
   }
   
-  onRespawn() {
-    console.log('[Respawn] Requesting respawn at team spawn')
-    this.respawning = true
-    this.world.network.send('playerRespawn', { playerId: this.data.id })
+  stripLiveAvatar() {
+    if (this.avatar) {
+      this.avatar.deactivate()
+      this.base.remove(this.avatar)
+      this.avatar = null
+      this.avatarUrl = null
+    }
+    if (this.sword) {
+      this.sword.deactivate()
+      this.sword = null
+    }
   }
 
-  finishRespawnAtSpawn() {
-    console.log('[Respawn] Starting getup sequence at spawn')
+  completeRespawn() {
+    if (this.deathTimeout) {
+      clearTimeout(this.deathTimeout)
+      this.deathTimeout = null
+    }
+    this.isDead = false
+    this.respawnSent = false
+    this.setEffect(null)
+    if (this.avatar?.instance?.setDeathState) {
+      this.avatar.instance.setDeathState(false)
+    }
+    if (!this.avatar) {
+      this.applyAvatar()
+    } else {
+      this.applySword()
+    }
+  }
 
-    this.setEffect({
-      emote: Emotes.GETUP,
-      duration: 2.0,
-      cancellable: false,
+  onRespawn() {
+    if (this.respawnSent) return
+    this.respawnSent = true
+
+    const p = this.base.position.toArray()
+    const q = this.base.quaternion.toArray()
+
+    spawnCorpse(this.world, {
+      position: p,
+      quaternion: q,
+      sessionAvatar: this.data.sessionAvatar,
     })
+    this.stripLiveAvatar()
 
-    setTimeout(() => {
-      console.log('[Respawn] Respawn complete - re-enabling movement and attacks')
-      this.isDead = false
-
-      if (this.avatar?.instance?.setDeathState) {
-        this.avatar.instance.setDeathState(false)
-      }
-
-      this.setEffect(null)
-    }, 2000)
+    this.world.network.send('playerRespawn', { p, q })
   }
 
   modify(data) {
@@ -2991,18 +3008,8 @@ export class PlayerLocal extends Entity {
       // Check for death
       if (data.health <= 0 && !this.isDead) {
         this.onDeath()
-      } else if (data.health > 0 && this.isDead && !this.respawning) {
-        // Healed while dead without a respawn sequence (e.g. admin heal)
-        if (this.deathTimeout) {
-          clearTimeout(this.deathTimeout)
-          this.deathTimeout = null
-        }
-        this.isDead = false
-        this.setEffect(null)
-        if (this.avatar?.instance?.setDeathState) {
-          this.avatar.instance.setDeathState(false)
-        }
-        console.log('[Respawn] Death cancelled - player healed')
+      } else if (data.health > 0 && this.isDead) {
+        this.completeRespawn()
       }
       // changed = true
     }

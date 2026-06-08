@@ -1165,7 +1165,8 @@ export class PlayerRemote extends Entity {
   onRespawn() {
     console.log('[Respawn] Remote player', this.data.id, 'respawning')
     this.isDead = false
-    
+    this.setEffect(null)
+
     // Restore normal locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
       this.avatar.instance.setDeathState(false)

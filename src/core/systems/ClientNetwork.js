@@ -1,10 +1,10 @@
 import moment from 'moment'
 import { emoteUrls } from '../extras/playerEmotes'
-import { spawnPlayerCorpse } from '../extras/playerCorpses'
 import { readPacket, writePacket } from '../packets'
 import { storage } from '../storage'
 import { uuid } from '../utils'
 import { hashFile } from '../utils-client'
+import { spawnCorpse } from '../extras/playerCorpse'
 import { System } from './System'
 
 /**
@@ -210,16 +210,20 @@ export class ClientNetwork extends System {
     player.breakBlockFromKick()
   }
 
+  onPlayerCorpse = data => {
+    spawnCorpse(this.world, {
+      position: data.p,
+      quaternion: data.q,
+      sessionAvatar: data.sessionAvatar,
+    })
+  }
+
   onScoreboard = data => {
     this.setScoreboard(data)
   }
 
   onMatchState = data => {
     this.setMatchState(data)
-  }
-
-  onPlayerCorpse = data => {
-    spawnPlayerCorpse(this.world, data)
   }
 
   onEntityEvent = event => {
