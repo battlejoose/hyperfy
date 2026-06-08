@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 
 import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars'
@@ -6,17 +6,76 @@ import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars
 export { AVATAR_CRUSADER, AVATAR_SARACEN }
 
 const MAX_NAME_LENGTH = 24
+const SARACEN_JOIN_DURATION_MS = 4000
+
+const ASSETS = {
+  bg: '/assets/willsitbackground.png',
+  scroll: '/assets/scroll.jpg',
+  titleMusic: '/assets/battleprep.mp3',
+  crusaderJoin: '/assets/war.mp3',
+  saracenJoin: '/assets/akbar.mp3',
+}
+
+function stopAudio(audio) {
+  if (!audio) return
+  audio.pause()
+  audio.src = ''
+}
+
+function playFactionJoinSound(side) {
+  const src = side === 'saracen' ? ASSETS.saracenJoin : ASSETS.crusaderJoin
+  const sfx = new Audio(src)
+  sfx.volume = 0.8
+  sfx.play().catch(() => {})
+  if (side === 'saracen') {
+    setTimeout(() => stopAudio(sfx), SARACEN_JOIN_DURATION_MS)
+  }
+}
 
 export function TitleScreen({ onStart }) {
   const [name, setName] = useState('')
   const [side, setSide] = useState('crusader')
+  const titleMusicRef = useRef(null)
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
 
+  useEffect(() => {
+    const music = new Audio(ASSETS.titleMusic)
+    music.loop = true
+    music.volume = 0.45
+    titleMusicRef.current = music
+
+    const startMusic = () => {
+      music.play().catch(() => {})
+    }
+
+    startMusic()
+
+    const onFirstInteraction = () => {
+      startMusic()
+      window.removeEventListener('pointerdown', onFirstInteraction)
+      window.removeEventListener('keydown', onFirstInteraction)
+    }
+    window.addEventListener('pointerdown', onFirstInteraction)
+    window.addEventListener('keydown', onFirstInteraction)
+
+    return () => {
+      window.removeEventListener('pointerdown', onFirstInteraction)
+      window.removeEventListener('keydown', onFirstInteraction)
+      stopAudio(titleMusicRef.current)
+      titleMusicRef.current = null
+    }
+  }, [])
+
   const handleSubmit = e => {
     e.preventDefault()
     if (!canStart) return
+
+    stopAudio(titleMusicRef.current)
+    titleMusicRef.current = null
+    playFactionJoinSound(side)
+
     onStart({
       name: trimmedName.slice(0, MAX_NAME_LENGTH),
       avatar: side === 'saracen' ? AVATAR_SARACEN : AVATAR_CRUSADER,
@@ -28,104 +87,133 @@ export function TitleScreen({ onStart }) {
       css={css`
         position: fixed;
         inset: 0;
-        background: #0a0a0f;
+        background: url('${ASSETS.bg}') center / cover no-repeat;
         display: flex;
         align-items: center;
         justify-content: center;
         pointer-events: auto;
         z-index: 10000;
+        &::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.25);
+          pointer-events: none;
+        }
         .title-panel {
-          width: 100%;
-          max-width: 22rem;
-          padding: 2rem;
-          background: rgba(15, 16, 24, 0.95);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 12px;
-          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+          position: relative;
+          width: min(92vw, 40rem);
+          min-height: 18rem;
+          padding: 14% 14% 16%;
+          box-sizing: border-box;
+          background: url('${ASSETS.scroll}') center / 100% 100% no-repeat;
+          border: none;
+          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
         }
         .title-heading {
-          font-size: 2rem;
-          font-weight: 600;
-          margin: 0 0 0.25rem;
-          color: white;
+          font-size: clamp(1.75rem, 5vw, 2.25rem);
+          font-weight: 700;
+          margin: 0 0 0.35rem;
+          color: #3d2817;
           text-align: center;
+          letter-spacing: 0.02em;
         }
         .title-sub {
-          color: rgba(255, 255, 255, 0.6);
+          color: #5c4033;
           font-size: 0.95rem;
-          margin: 0 0 1.75rem;
+          margin: 0 0 1.5rem;
           text-align: center;
         }
         .field-label {
           display: block;
-          color: rgba(255, 255, 255, 0.75);
+          color: #4a3424;
           font-size: 0.85rem;
-          font-weight: 500;
+          font-weight: 600;
           margin-bottom: 0.5rem;
         }
         .name-input {
           width: 100%;
           box-sizing: border-box;
           padding: 0.65rem 0.85rem;
-          background: rgba(0, 0, 0, 0.35);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 8px;
-          color: white;
+          background: rgba(255, 248, 235, 0.65);
+          border: 1px solid rgba(61, 40, 23, 0.35);
+          border-radius: 6px;
+          color: #3d2817;
           font-size: 1rem;
           margin-bottom: 1.25rem;
           outline: none;
+          &::placeholder {
+            color: rgba(61, 40, 23, 0.45);
+          }
           &:focus {
-            border-color: rgba(255, 255, 255, 0.35);
+            border-color: rgba(61, 40, 23, 0.65);
+            background: rgba(255, 248, 235, 0.85);
           }
         }
         .side-row {
           display: flex;
           gap: 0.75rem;
-          margin-bottom: 1.75rem;
+          margin-bottom: 1.5rem;
         }
         .side-btn {
           flex: 1;
           padding: 0.75rem 1rem;
-          background: rgba(0, 0, 0, 0.35);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
-          color: rgba(255, 255, 255, 0.85);
+          background: rgba(255, 248, 235, 0.5);
+          border: 1px solid rgba(61, 40, 23, 0.3);
+          border-radius: 6px;
+          color: #5c4033;
           font-size: 1rem;
-          font-weight: 500;
+          font-weight: 600;
           cursor: pointer;
           transition: all 0.2s;
           &:hover {
-            border-color: rgba(255, 255, 255, 0.25);
+            border-color: rgba(61, 40, 23, 0.5);
+            background: rgba(255, 248, 235, 0.75);
           }
-          &.selected {
-            background: rgba(255, 255, 255, 0.12);
-            border-color: rgba(255, 255, 255, 0.45);
-            color: white;
+          &.crusader.selected {
+            background: rgba(255, 245, 240, 0.95);
+            border-color: #8b1a1a;
+            color: #6b1010;
+            box-shadow: inset 0 0 0 1px rgba(139, 26, 26, 0.25);
+          }
+          &.saracen.selected {
+            background: rgba(240, 255, 240, 0.95);
+            border-color: #1a5c2e;
+            color: #0f3d1f;
+            box-shadow: inset 0 0 0 1px rgba(26, 92, 46, 0.25);
           }
         }
         .enter-btn {
           width: 100%;
           padding: 0.85rem 1rem;
-          background: rgba(255, 255, 255, 0.95);
           border: none;
-          border-radius: 8px;
-          color: #0a0a0f;
+          border-radius: 6px;
           font-size: 1rem;
-          font-weight: 600;
+          font-weight: 700;
           cursor: pointer;
-          transition: opacity 0.2s;
+          transition: opacity 0.2s, filter 0.2s;
+          color: #fff8f0;
+          &.crusader {
+            background: #7a1515;
+            &:not(:disabled):hover {
+              background: #8b1a1a;
+            }
+          }
+          &.saracen {
+            background: #1a5c2e;
+            &:not(:disabled):hover {
+              background: #227038;
+            }
+          }
           &:disabled {
             opacity: 0.35;
             cursor: not-allowed;
-          }
-          &:not(:disabled):hover {
-            background: white;
           }
         }
       `}
     >
       <form className='title-panel' onSubmit={handleSubmit}>
-        <h1 className='title-heading'>Hyperfy</h1>
+        <h1 className='title-heading'>God Wills It</h1>
         <p className='title-sub'>Choose your name and allegiance</p>
 
         <label className='field-label' htmlFor='username'>
@@ -147,21 +235,21 @@ export function TitleScreen({ onStart }) {
         <div className='side-row'>
           <button
             type='button'
-            className={`side-btn${side === 'crusader' ? ' selected' : ''}`}
+            className={`side-btn crusader${side === 'crusader' ? ' selected' : ''}`}
             onClick={() => setSide('crusader')}
           >
             Crusader
           </button>
           <button
             type='button'
-            className={`side-btn${side === 'saracen' ? ' selected' : ''}`}
+            className={`side-btn saracen${side === 'saracen' ? ' selected' : ''}`}
             onClick={() => setSide('saracen')}
           >
             Saracen
           </button>
         </div>
 
-        <button type='submit' className='enter-btn' disabled={!canStart}>
+        <button type='submit' className={`enter-btn ${side}`} disabled={!canStart}>
           Enter game
         </button>
       </form>
