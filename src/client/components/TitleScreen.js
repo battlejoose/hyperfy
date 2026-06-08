@@ -16,6 +16,22 @@ const ASSETS = {
   saracenJoin: '/assets/akbar.mp3',
 }
 
+const imagePreloadCache = new Map()
+
+function preloadImage(src) {
+  if (imagePreloadCache.has(src)) return imagePreloadCache.get(src)
+  const promise = new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(src)
+    img.onerror = reject
+    img.src = src
+  })
+  imagePreloadCache.set(src, promise)
+  return promise
+}
+
+const titleImagesReady = Promise.all([preloadImage(ASSETS.bg), preloadImage(ASSETS.scroll)])
+
 function stopAudio(audio) {
   if (!audio) return
   audio.pause()
@@ -35,10 +51,25 @@ function playFactionJoinSound(side) {
 export function TitleScreen({ onStart }) {
   const [name, setName] = useState('')
   const [side, setSide] = useState('crusader')
+  const [imagesReady, setImagesReady] = useState(false)
   const titleMusicRef = useRef(null)
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
+
+  useEffect(() => {
+    let cancelled = false
+    titleImagesReady
+      .then(() => {
+        if (!cancelled) setImagesReady(true)
+      })
+      .catch(() => {
+        if (!cancelled) setImagesReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const music = new Audio(ASSETS.titleMusic)
@@ -84,15 +115,19 @@ export function TitleScreen({ onStart }) {
 
   return (
     <div
+      className={imagesReady ? 'ready' : undefined}
       css={css`
         position: fixed;
         inset: 0;
-        background: url('${ASSETS.bg}') center / cover no-repeat;
+        background: #0a0a0f;
         display: flex;
         align-items: center;
         justify-content: center;
         pointer-events: auto;
         z-index: 10000;
+        &.ready {
+          background: url('${ASSETS.bg}') center / cover no-repeat;
+        }
         &::before {
           content: '';
           position: absolute;
@@ -106,9 +141,11 @@ export function TitleScreen({ onStart }) {
           min-height: 18rem;
           padding: 14% 14% 16%;
           box-sizing: border-box;
-          background: url('${ASSETS.scroll}') center / 100% 100% no-repeat;
           border: none;
           box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+        }
+        &.ready .title-panel {
+          background: url('${ASSETS.scroll}') center / 100% 100% no-repeat;
         }
         .title-heading {
           font-size: clamp(1.75rem, 5vw, 2.25rem);
