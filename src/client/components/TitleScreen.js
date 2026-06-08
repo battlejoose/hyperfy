@@ -7,6 +7,7 @@ export { AVATAR_CRUSADER, AVATAR_SARACEN }
 
 const MAX_NAME_LENGTH = 24
 const SARACEN_JOIN_DURATION_MS = 5000
+const FADE_MS = 600
 
 const ASSETS = {
   bg: '/assets/willsitbackground.png',
@@ -35,9 +36,16 @@ async function preloadImage(src) {
   return promise
 }
 
-const titleImagesReady = Promise.all([preloadImage(ASSETS.bg), preloadImage(ASSETS.scroll)]).then(
-  ([bg, scroll]) => ({ bg, scroll })
-)
+async function preloadAudio(src) {
+  const response = await fetch(src)
+  await response.blob()
+}
+
+const titleAssetsReady = Promise.all([
+  preloadImage(ASSETS.bg),
+  preloadImage(ASSETS.scroll),
+  preloadAudio(ASSETS.titleMusic),
+]).then(([bg, scroll]) => ({ bg, scroll }))
 
 function stopAudio(audio) {
   if (!audio) return
@@ -59,21 +67,28 @@ export function TitleScreen({ onStart }) {
   const [name, setName] = useState('')
   const [side, setSide] = useState('crusader')
   const [imageUrls, setImageUrls] = useState(null)
+  const [showTitle, setShowTitle] = useState(false)
   const titleMusicRef = useRef(null)
   const imageUrlsRef = useRef(null)
+  const usernameRef = useRef(null)
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
 
   useEffect(() => {
     let cancelled = false
-    titleImagesReady
+    titleAssetsReady
       .then(urls => {
         if (cancelled) return
         imageUrlsRef.current = urls
         setImageUrls(urls)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!cancelled) setShowTitle(true)
+          })
+        })
       })
-      .catch(err => console.error('[TitleScreen] failed to preload images:', err))
+      .catch(err => console.error('[TitleScreen] failed to preload assets:', err))
     return () => {
       cancelled = true
       if (imageUrlsRef.current) {
@@ -85,6 +100,8 @@ export function TitleScreen({ onStart }) {
   }, [])
 
   useEffect(() => {
+    if (!showTitle) return
+
     const music = new Audio(ASSETS.titleMusic)
     music.loop = true
     music.volume = 0.45
@@ -104,13 +121,15 @@ export function TitleScreen({ onStart }) {
     window.addEventListener('pointerdown', onFirstInteraction)
     window.addEventListener('keydown', onFirstInteraction)
 
+    usernameRef.current?.focus()
+
     return () => {
       window.removeEventListener('pointerdown', onFirstInteraction)
       window.removeEventListener('keydown', onFirstInteraction)
       stopAudio(titleMusicRef.current)
       titleMusicRef.current = null
     }
-  }, [])
+  }, [showTitle])
 
   const handleSubmit = e => {
     e.preventDefault()
@@ -132,11 +151,59 @@ export function TitleScreen({ onStart }) {
         position: fixed;
         inset: 0;
         background: #0a0a0f;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         pointer-events: auto;
         z-index: 10000;
+        .title-loading {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 1.5rem;
+          background: #0a0a0f;
+          z-index: 2;
+          opacity: 1;
+          transition: opacity ${FADE_MS}ms ease;
+          pointer-events: auto;
+          &.hidden {
+            opacity: 0;
+            pointer-events: none;
+          }
+        }
+        .loading-heading {
+          margin: 0;
+          font-size: clamp(1.75rem, 5vw, 2.5rem);
+          font-weight: 700;
+          color: #e8dcc8;
+          letter-spacing: 0.04em;
+          text-align: center;
+        }
+        .loading-spinner {
+          width: 2.5rem;
+          height: 2.5rem;
+          border: 3px solid rgba(232, 220, 200, 0.2);
+          border-top-color: #c9a227;
+          border-radius: 50%;
+          animation: title-spin 0.9s linear infinite;
+        }
+        @keyframes title-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        .title-stage {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          transition: opacity ${FADE_MS}ms ease;
+          &.visible {
+            opacity: 1;
+          }
+        }
         .title-bg {
           position: absolute;
           inset: 0;
@@ -274,52 +341,61 @@ export function TitleScreen({ onStart }) {
         }
       `}
     >
-      {imageUrls && <img className='title-bg' src={imageUrls.bg} alt='' />}
-      <div className='title-overlay' />
-      <form className='title-panel' onSubmit={handleSubmit}>
-        {imageUrls && <img className='title-scroll' src={imageUrls.scroll} alt='' />}
-        <div className='title-panel-content'>
-        <h1 className='title-heading'>God Wills It</h1>
-        <p className='title-sub'>Choose your name and allegiance</p>
+      <div className={`title-loading${showTitle ? ' hidden' : ''}`}>
+        <h1 className='loading-heading'>God Wills It!</h1>
+        <div className='loading-spinner' aria-hidden='true' />
+      </div>
 
-        <label className='field-label' htmlFor='username'>
-          Username
-        </label>
-        <input
-          id='username'
-          className='name-input'
-          type='text'
-          value={name}
-          maxLength={MAX_NAME_LENGTH}
-          placeholder='Enter your name'
-          autoComplete='off'
-          autoFocus
-          onChange={e => setName(e.target.value)}
-        />
+      {imageUrls && (
+        <div className={`title-stage${showTitle ? ' visible' : ''}`}>
+          <img className='title-bg' src={imageUrls.bg} alt='' />
+          <div className='title-overlay' />
+          <form className='title-panel' onSubmit={handleSubmit}>
+            <img className='title-scroll' src={imageUrls.scroll} alt='' />
+            <div className='title-panel-content'>
+              <h1 className='title-heading'>God Wills It</h1>
+              <p className='title-sub'>Choose your name and allegiance</p>
 
-        <span className='field-label'>Side</span>
-        <div className='side-row'>
-          <button
-            type='button'
-            className={`side-btn crusader${side === 'crusader' ? ' selected' : ''}`}
-            onClick={() => setSide('crusader')}
-          >
-            Crusader
-          </button>
-          <button
-            type='button'
-            className={`side-btn saracen${side === 'saracen' ? ' selected' : ''}`}
-            onClick={() => setSide('saracen')}
-          >
-            Saracen
-          </button>
+              <label className='field-label' htmlFor='username'>
+                Username
+              </label>
+              <input
+                ref={usernameRef}
+                id='username'
+                className='name-input'
+                type='text'
+                value={name}
+                maxLength={MAX_NAME_LENGTH}
+                placeholder='Enter your name'
+                autoComplete='off'
+                onChange={e => setName(e.target.value)}
+              />
+
+              <span className='field-label'>Side</span>
+              <div className='side-row'>
+                <button
+                  type='button'
+                  className={`side-btn crusader${side === 'crusader' ? ' selected' : ''}`}
+                  onClick={() => setSide('crusader')}
+                >
+                  Crusader
+                </button>
+                <button
+                  type='button'
+                  className={`side-btn saracen${side === 'saracen' ? ' selected' : ''}`}
+                  onClick={() => setSide('saracen')}
+                >
+                  Saracen
+                </button>
+              </div>
+
+              <button type='submit' className={`enter-btn ${side}`} disabled={!canStart}>
+                Enter game
+              </button>
+            </div>
+          </form>
         </div>
-
-        <button type='submit' className={`enter-btn ${side}`} disabled={!canStart}>
-          Enter game
-        </button>
-        </div>
-      </form>
+      )}
     </div>
   )
 }
