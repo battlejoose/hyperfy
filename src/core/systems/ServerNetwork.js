@@ -573,6 +573,7 @@ export class ServerNetwork extends System {
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
       targetPlayer.deathPose = {
+        playerId: targetId,
         position: targetPlayer.data.position.slice(),
         quaternion: targetPlayer.data.quaternion.slice(),
         avatar: targetPlayer.data.sessionAvatar || targetPlayer.data.avatar || 'asset://avatar.vrm',
@@ -591,6 +592,7 @@ export class ServerNetwork extends System {
     if ((player.data.health ?? HEALTH_MAX) > 0) return
 
     const deathPose = player.deathPose ?? {
+      playerId: player.data.id,
       position: player.data.position.slice(),
       quaternion: player.data.quaternion.slice(),
       avatar: player.data.sessionAvatar || player.data.avatar || 'asset://avatar.vrm',
