@@ -93,6 +93,8 @@ export async function spawnBloodSplatters(world, hitPosition) {
 
   if (!splatterGeometry) {
     splatterGeometry = new THREE.PlaneGeometry(1, 1)
+    // Bake horizontal orientation into geometry so rotation.y spins flat on the ground
+    splatterGeometry.rotateX(-Math.PI / 2)
   }
   if (!splatterMaterial || splatterMaterial.map !== texture) {
     splatterMaterial?.dispose()
@@ -115,14 +117,16 @@ export async function spawnBloodSplatters(world, hitPosition) {
 
     const mesh = new THREE.Mesh(splatterGeometry, splatterMaterial)
     const scale = 0.5 + Math.random() * 0.7
-    mesh.scale.set(scale * (0.85 + Math.random() * 0.3), scale * (0.85 + Math.random() * 0.3), 1)
+    const stretchX = 0.85 + Math.random() * 0.3
+    const stretchZ = 0.85 + Math.random() * 0.3
+    mesh.scale.set(scale * stretchX, 1, scale * stretchZ)
 
     const offsetX = (Math.random() - 0.5) * 0.8
     const offsetZ = (Math.random() - 0.5) * 0.8
     mesh.position.set(point.x + offsetX, point.y + 0.02, point.z + offsetZ)
 
-    // Lie flat on the ground (PlaneGeometry defaults to vertical; rotate to XZ plane)
-    mesh.rotation.set(-Math.PI / 2, Math.random() * Math.PI * 2, 0)
+    // Spin around vertical axis only — geometry is already flat on XZ
+    mesh.rotation.set(0, Math.random() * Math.PI * 2, 0)
 
     world.stage.scene.add(mesh)
     splatterMeshes.push(mesh)
