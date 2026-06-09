@@ -1,87 +1,82 @@
 import * as THREE from './three'
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { createNode } from './createNode'
 
-export const ARENA_SRC = 'asset://arenasmall.obj'
+export const ARENA_SRC = 'asset://smallarenarome.glb'
 
 let arenaPromise = null
 
-async function fetchObjText(world) {
-  const url = world.resolveURL(ARENA_SRC, !!world.network?.isServer)
-  if (world.loader?.fetchText) {
-    return world.loader.fetchText(url)
-  }
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`[Arena] failed to fetch ${url}`)
-  return response.text()
-}
+const _matrix = new THREE.Matrix4()
+const _bodyMatrixInverse = new THREE.Matrix4()
 
-function centerArena(object) {
-  const box = new THREE.Box3().setFromObject(object)
+function centerNodeTree(root) {
+  root.updateTransform()
+  root.traverse(node => node.updateTransform())
+
+  const box = new THREE.Box3()
+  root.traverse(node => {
+    if (node.name !== 'mesh' || !node._geometry) return
+    const geometry = node._geometry
+    if (!geometry.boundingBox) geometry.computeBoundingBox()
+    const meshBox = geometry.boundingBox.clone()
+    meshBox.applyMatrix4(node.matrixWorld)
+    box.union(meshBox)
+  })
+
+  if (box.isEmpty()) return
+
   const center = box.getCenter(new THREE.Vector3())
-  object.position.sub(center)
-  box.setFromObject(object)
-  object.position.y -= box.min.y
-  object.updateMatrixWorld(true)
+  root.position.x -= center.x
+  root.position.y -= box.min.y
+  root.position.z -= center.z
+  root.setTransformed()
 }
 
-function buildArenaNodes(world, object) {
-  const root = createNode('group', { id: 'arena' })
+function addStaticColliders(root) {
+  let hasCollider = false
+  root.traverse(node => {
+    if (node.name === 'collider') hasCollider = true
+  })
+  if (hasCollider) return
+
+  const meshes = []
+  root.traverse(node => {
+    if (node.name === 'mesh' && node._geometry) meshes.push(node)
+  })
+  if (!meshes.length) return
+
   const body = createNode('rigidbody', { type: 'static' })
   root.add(body)
 
-  object.traverse(child => {
-    if (!child.isMesh) return
-
-    const geometry = child.geometry
-    if (!geometry) return
-
-    if (Array.isArray(child.material)) {
-      child.material = child.material.map(mat => mat?.clone?.() ?? mat)
-    } else if (child.material?.clone) {
-      child.material = child.material.clone()
-    } else {
-      child.material = new THREE.MeshStandardMaterial({ color: 0xc4a574 })
-    }
-
-    const mesh = createNode('mesh', {
-      type: 'geometry',
-      geometry,
-      material: child.material,
-      castShadow: true,
-      receiveShadow: true,
-    })
-    mesh.position.copy(child.position)
-    mesh.quaternion.copy(child.quaternion)
-    mesh.scale.copy(child.scale)
+  for (const mesh of meshes) {
+    mesh.updateTransform()
+    body.updateTransform()
+    _bodyMatrixInverse.copy(body.matrixWorld).invert()
+    _matrix.multiplyMatrices(_bodyMatrixInverse, mesh.matrixWorld)
 
     const collider = createNode('collider', {
       type: 'geometry',
-      geometry,
+      geometry: mesh._geometry,
       layer: 'environment',
     })
-    collider.position.copy(child.position)
-    collider.quaternion.copy(child.quaternion)
-    collider.scale.copy(child.scale)
-
-    body.add(mesh)
+    _matrix.decompose(collider.position, collider.quaternion, collider.scale)
     body.add(collider)
-  })
-
-  root.activate({ world })
-  root.setDirty()
-  world.stage?.clean()
-  return root
+  }
 }
 
 export function loadArenaEnvironment(world) {
   if (arenaPromise) return arenaPromise
 
   arenaPromise = (async () => {
-    const text = await fetchObjText(world)
-    const object = new OBJLoader().parse(text)
-    centerArena(object)
-    return buildArenaNodes(world, object)
+    let src = world.loader.get('model', ARENA_SRC)
+    if (!src) src = await world.loader.load('model', ARENA_SRC)
+
+    const root = src.toNodes()
+    centerNodeTree(root)
+    addStaticColliders(root)
+    root.activate({ world })
+    root.setDirty()
+    world.stage?.clean()
+    return root
   })().catch(err => {
     arenaPromise = null
     console.error('[Arena] failed to load:', err)
