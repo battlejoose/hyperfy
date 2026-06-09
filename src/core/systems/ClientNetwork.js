@@ -1,5 +1,6 @@
 import moment from 'moment'
 import { BLOOD_SPLATTER_SRC, clearBloodEffects } from '../extras/bloodEffects'
+import { loadArenaEnvironment } from '../extras/arenaEnvironment'
 import { clearCorpses } from '../extras/playerCorpse'
 import { emoteUrls } from '../extras/playerEmotes'
 import { readPacket, writePacket } from '../packets'
@@ -169,6 +170,7 @@ export class ClientNetwork extends System {
     if (data.matchState) {
       this.setMatchState(data.matchState)
     }
+    loadArenaEnvironment(this.world).catch(err => console.error('[Arena]', err))
     storage.set('authToken', data.authToken)
   }
 

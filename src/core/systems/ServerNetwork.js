@@ -9,6 +9,7 @@ import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
 import { getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion } from '../extras/playerAvatars'
+import { loadArenaEnvironment } from '../extras/arenaEnvironment'
 import { ROUND_DURATION, RESULTS_DURATION } from '../extras/matchConfig'
 
 const blockEmotes = [
@@ -95,6 +96,7 @@ export class ServerNetwork extends System {
       this.saveTimerId = setTimeout(this.save, SAVE_INTERVAL * 1000)
     }
     this.startRound()
+    loadArenaEnvironment(this.world).catch(err => console.error('[Arena]', err))
   }
 
   fixedUpdate(delta) {
