@@ -19,11 +19,12 @@ export function prefetchAsset(url) {
 
   const promise = fetch(path)
     .then(resp => {
-      if (!resp.ok) throw new Error(`prefetch failed: ${path}`)
+      if (!resp.ok) throw new Error(`prefetch failed: ${path} (${resp.status})`)
       return resp.blob()
     })
     .catch(err => {
       prefetchCache.delete(path)
+      console.warn('[prefetch]', path, err.message || err)
       throw err
     })
 
@@ -41,5 +42,10 @@ export async function getPrefetchedBlob(resolvedUrl) {
   const path = resolvedUrl.split('?')[0]
   const pending = prefetchCache.get(path)
   if (!pending) return null
-  return pending
+  try {
+    return await pending
+  } catch {
+    prefetchCache.delete(path)
+    return null
+  }
 }

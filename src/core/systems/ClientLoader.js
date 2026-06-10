@@ -73,12 +73,16 @@ export class ClientLoader extends System {
     const totalItems = this.preloadItems.length
     const items = this.preloadItems.splice(0)
     const promises = items.map(item => {
-      return this.load(item.type, item.url).then(() => {
-        loadedItems++
-        this.world.emit('progress', (loadedItems / totalItems) * 100)
-      })
+      return this.load(item.type, item.url)
+        .catch(err => {
+          console.warn('[preload]', item.type, item.url, err.message || err)
+        })
+        .then(() => {
+          loadedItems++
+          this.world.emit('progress', (loadedItems / totalItems) * 100)
+        })
     })
-    this.preloader = Promise.allSettled(promises).then(() => {
+    this.preloader = Promise.all(promises).then(() => {
       this.preloader = null
     })
     return this.preloader
@@ -111,13 +115,20 @@ export class ClientLoader extends System {
     if (this.files.has(url)) {
       return this.files.get(url)
     }
-    const prefetched = await getPrefetchedBlob(url)
-    if (prefetched) {
-      const file = new File([prefetched], url.split('/').pop(), { type: prefetched.type })
-      this.files.set(url, file)
-      return file
+    try {
+      const prefetched = await getPrefetchedBlob(url)
+      if (prefetched) {
+        const file = new File([prefetched], url.split('/').pop(), { type: prefetched.type })
+        this.files.set(url, file)
+        return file
+      }
+    } catch {
+      // fall through to fetch
     }
     const resp = await fetch(url)
+    if (!resp.ok) {
+      throw new Error(`failed to load ${url} (${resp.status})`)
+    }
     const blob = await resp.blob()
     const file = new File([blob], url.split('/').pop(), { type: blob.type })
     this.files.set(url, file)

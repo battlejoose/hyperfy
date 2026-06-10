@@ -130,7 +130,12 @@ export class ClientNetwork extends System {
     this.maxUploadSize = data.maxUploadSize
     this.world.assetsUrl = data.assetsUrl
 
-    await prepareClientGameAssets(this.world, data)
+    try {
+      await prepareClientGameAssets(this.world, data)
+    } catch (err) {
+      console.error('[ClientNetwork] asset load failed:', err)
+      // Still enter the game; missing optional assets should not block forever.
+    }
 
     this.world.collections.deserialize(data.collections)
     this.world.settings.deserialize(data.settings)

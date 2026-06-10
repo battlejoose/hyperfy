@@ -5,7 +5,7 @@ import { emoteUrls } from './playerEmotes'
 
 export const SWORD_SRC = 'asset://sword.glb'
 
-function queueCriticalPreloads(world, data) {
+export function queueClientGamePreloads(world, data) {
   const loader = world.loader
 
   loader.preload('model', ARENA_SRC)
@@ -14,25 +14,12 @@ function queueCriticalPreloads(world, data) {
   loader.preload('avatar', AVATAR_SARACEN)
   loader.preload('texture', BLOOD_SPLATTER_SRC)
 
-  const base = world.environment?.base
-  if (base?.model) loader.preload('model', base.model)
-  if (base?.hdr) loader.preload('hdr', base.hdr)
-  if (base?.bg) loader.preload('texture', base.bg)
+  for (const url of emoteUrls) {
+    loader.preload('emote', url)
+  }
 
   if (data.settings.avatar) {
     loader.preload('avatar', data.settings.avatar.url)
-  }
-
-  for (const item of data.entities) {
-    if (item.type !== 'player') continue
-    const url = item.sessionAvatar || item.avatar
-    if (url) loader.preload('avatar', url)
-  }
-}
-
-function queueDeferredPreloads(loader, data) {
-  for (const url of emoteUrls) {
-    loader.preload('emote', url)
   }
 
   for (const item of data.blueprints) {
@@ -50,22 +37,25 @@ function queueDeferredPreloads(loader, data) {
       }
     }
   }
-}
 
-export function queueClientGamePreloads(world, data) {
-  queueCriticalPreloads(world, data)
-  queueDeferredPreloads(world.loader, data)
+  for (const item of data.entities) {
+    if (item.type !== 'player') continue
+    const url = item.sessionAvatar || item.avatar
+    if (url) loader.preload('avatar', url)
+  }
 }
 
 export async function prepareClientGameAssets(world, data) {
-  queueCriticalPreloads(world, data)
-  const criticalPreload = world.loader.execPreload()
+  queueClientGamePreloads(world, data)
+  const preload = world.loader.execPreload()
 
-  await world.loader.waitFor('model', ARENA_SRC)
-  const arenaSetup = loadArenaEnvironment(world)
+  let arenaSetup = Promise.resolve()
+  try {
+    await world.loader.waitFor('model', ARENA_SRC)
+    arenaSetup = loadArenaEnvironment(world)
+  } catch (err) {
+    console.warn('[gameAssets] arena setup failed:', err)
+  }
 
-  queueDeferredPreloads(world.loader, data)
-  const deferredPreload = world.loader.execPreload()
-
-  await Promise.all([criticalPreload, deferredPreload, arenaSetup])
+  await Promise.all([preload, arenaSetup])
 }
