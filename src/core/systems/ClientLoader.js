@@ -10,6 +10,7 @@ import { glbToNodes } from '../extras/glbToNodes'
 import { createEmoteFactory } from '../extras/createEmoteFactory'
 import { TextureLoader } from 'three'
 import { formatBytes } from '../extras/formatBytes'
+import { getPrefetchedBlob } from '../extras/assetPrefetch'
 import { emoteUrls } from '../extras/playerEmotes'
 import Hls from 'hls.js/dist/hls.js'
 
@@ -53,6 +54,13 @@ export class ClientLoader extends System {
   get(type, url) {
     const key = `${type}/${url}`
     return this.results.get(key)
+  }
+
+  waitFor(type, url) {
+    const key = `${type}/${url}`
+    if (this.results.has(key)) return Promise.resolve(this.results.get(key))
+    if (this.promises.has(key)) return this.promises.get(key)
+    return this.load(type, url)
   }
 
   preload(type, url) {
@@ -103,6 +111,12 @@ export class ClientLoader extends System {
     if (this.files.has(url)) {
       return this.files.get(url)
     }
+    const prefetched = await getPrefetchedBlob(url)
+    if (prefetched) {
+      const file = new File([prefetched], url.split('/').pop(), { type: prefetched.type })
+      this.files.set(url, file)
+      return file
+    }
     const resp = await fetch(url)
     const blob = await resp.blob()
     const file = new File([blob], url.split('/').pop(), { type: blob.type })
@@ -111,12 +125,15 @@ export class ClientLoader extends System {
   }
 
   async load(type, url) {
-    if (this.preloader) {
-      await this.preloader
-    }
     const key = `${type}/${url}`
     if (this.promises.has(key)) {
       return this.promises.get(key)
+    }
+    if (this.results.has(key)) {
+      return this.results.get(key)
+    }
+    if (this.preloader) {
+      await this.preloader
     }
     if (type === 'video') {
       const promise = new Promise(resolve => {

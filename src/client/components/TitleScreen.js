@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 
 import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars'
+import { prefetchGameAssets } from '../../core/extras/assetPrefetch'
 
 export { AVATAR_CRUSADER, AVATAR_SARACEN }
 
@@ -74,6 +75,10 @@ export function TitleScreen({ onStart }) {
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
+
+  useEffect(() => {
+    prefetchGameAssets()
+  }, [])
 
   useEffect(() => {
     let cancelled = false

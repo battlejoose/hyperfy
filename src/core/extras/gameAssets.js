@@ -5,7 +5,7 @@ import { emoteUrls } from './playerEmotes'
 
 export const SWORD_SRC = 'asset://sword.glb'
 
-export function queueClientGamePreloads(world, data) {
+function queueCriticalPreloads(world, data) {
   const loader = world.loader
 
   loader.preload('model', ARENA_SRC)
@@ -14,10 +14,6 @@ export function queueClientGamePreloads(world, data) {
   loader.preload('avatar', AVATAR_SARACEN)
   loader.preload('texture', BLOOD_SPLATTER_SRC)
 
-  for (const url of emoteUrls) {
-    loader.preload('emote', url)
-  }
-
   const base = world.environment?.base
   if (base?.model) loader.preload('model', base.model)
   if (base?.hdr) loader.preload('hdr', base.hdr)
@@ -25,6 +21,18 @@ export function queueClientGamePreloads(world, data) {
 
   if (data.settings.avatar) {
     loader.preload('avatar', data.settings.avatar.url)
+  }
+
+  for (const item of data.entities) {
+    if (item.type !== 'player') continue
+    const url = item.sessionAvatar || item.avatar
+    if (url) loader.preload('avatar', url)
+  }
+}
+
+function queueDeferredPreloads(loader, data) {
+  for (const url of emoteUrls) {
+    loader.preload('emote', url)
   }
 
   for (const item of data.blueprints) {
@@ -42,16 +50,22 @@ export function queueClientGamePreloads(world, data) {
       }
     }
   }
+}
 
-  for (const item of data.entities) {
-    if (item.type !== 'player') continue
-    const url = item.sessionAvatar || item.avatar
-    if (url) loader.preload('avatar', url)
-  }
+export function queueClientGamePreloads(world, data) {
+  queueCriticalPreloads(world, data)
+  queueDeferredPreloads(world.loader, data)
 }
 
 export async function prepareClientGameAssets(world, data) {
-  queueClientGamePreloads(world, data, data.id)
-  await world.loader.execPreload()
-  await loadArenaEnvironment(world)
+  queueCriticalPreloads(world, data)
+  const criticalPreload = world.loader.execPreload()
+
+  await world.loader.waitFor('model', ARENA_SRC)
+  const arenaSetup = loadArenaEnvironment(world)
+
+  queueDeferredPreloads(world.loader, data)
+  const deferredPreload = world.loader.execPreload()
+
+  await Promise.all([criticalPreload, deferredPreload, arenaSetup])
 }
