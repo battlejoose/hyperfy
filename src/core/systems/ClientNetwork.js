@@ -1,8 +1,7 @@
 import moment from 'moment'
-import { BLOOD_SPLATTER_SRC, clearBloodEffects } from '../extras/bloodEffects'
-import { loadArenaEnvironment } from '../extras/arenaEnvironment'
+import { clearBloodEffects } from '../extras/bloodEffects'
+import { prepareClientGameAssets } from '../extras/gameAssets'
 import { clearCorpses } from '../extras/playerCorpse'
-import { emoteUrls } from '../extras/playerEmotes'
 import { readPacket, writePacket } from '../packets'
 import { storage } from '../storage'
 import { uuid } from '../utils'
@@ -28,6 +27,7 @@ export class ClientNetwork extends System {
     this.queue = []
     this.scoreboard = null
     this.matchState = null
+    this.bootstrapping = null
   }
 
   setScoreboard(data) {
@@ -92,6 +92,7 @@ export class ClientNetwork extends System {
   }
 
   flush() {
+    if (this.bootstrapping) return
     while (this.queue.length) {
       try {
         const [method, data] = this.queue.shift()
@@ -113,48 +114,23 @@ export class ClientNetwork extends System {
   }
 
   onSnapshot(data) {
+    this.bootstrapping = this.bootstrapGame(data)
+      .catch(err => {
+        console.error('[ClientNetwork] bootstrap failed:', err)
+      })
+      .finally(() => {
+        this.bootstrapping = null
+      })
+  }
+
+  async bootstrapGame(data) {
     this.id = data.id
     this.serverTimeOffset = data.serverTime - performance.now()
     this.apiUrl = data.apiUrl
     this.maxUploadSize = data.maxUploadSize
     this.world.assetsUrl = data.assetsUrl
 
-    // preload environment model and avatar
-    // if (this.world.environment.base) {
-    //   this.world.loader.preload('model', this.world.environment.base.model)
-    // }
-    if (data.settings.avatar) {
-      this.world.loader.preload('avatar', data.settings.avatar.url)
-    }
-    // preload some blueprints
-    for (const item of data.blueprints) {
-      if (item.preload && !item.disabled) {
-        if (item.model) {
-          const type = item.model.endsWith('.vrm') ? 'avatar' : 'model'
-          this.world.loader.preload(type, item.model)
-        }
-        if (item.script) {
-          this.world.loader.preload('script', item.script)
-        }
-        for (const value of Object.values(item.props || {})) {
-          if (value === undefined || value === null || !value?.url || !value?.type) continue
-          this.world.loader.preload(value.type, value.url)
-        }
-      }
-    }
-    // preload emotes
-    for (const url of emoteUrls) {
-      this.world.loader.preload('emote', url)
-    }
-    this.world.loader.preload('texture', BLOOD_SPLATTER_SRC)
-    // preload local player avatar
-    for (const item of data.entities) {
-      if (item.type === 'player' && item.owner === this.id) {
-        const url = item.sessionAvatar || item.avatar
-        this.world.loader.preload('avatar', url)
-      }
-    }
-    this.world.loader.execPreload()
+    await prepareClientGameAssets(this.world, data)
 
     this.world.collections.deserialize(data.collections)
     this.world.settings.deserialize(data.settings)
@@ -170,7 +146,6 @@ export class ClientNetwork extends System {
     if (data.matchState) {
       this.setMatchState(data.matchState)
     }
-    loadArenaEnvironment(this.world).catch(err => console.error('[Arena]', err))
     storage.set('authToken', data.authToken)
   }
 

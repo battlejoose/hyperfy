@@ -60,20 +60,20 @@ export class ClientLoader extends System {
   }
 
   execPreload() {
+    if (!this.preloadItems.length) return Promise.resolve()
     let loadedItems = 0
-    let totalItems = this.preloadItems.length
-    let progress = 0
-    const promises = this.preloadItems.map(item => {
+    const totalItems = this.preloadItems.length
+    const items = this.preloadItems.splice(0)
+    const promises = items.map(item => {
       return this.load(item.type, item.url).then(() => {
         loadedItems++
-        progress = (loadedItems / totalItems) * 100
-        this.world.emit('progress', progress)
+        this.world.emit('progress', (loadedItems / totalItems) * 100)
       })
     })
     this.preloader = Promise.allSettled(promises).then(() => {
       this.preloader = null
-      // this.world.emit('ready', true)
     })
+    return this.preloader
   }
 
   setFile(url, file) {

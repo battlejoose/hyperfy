@@ -9,6 +9,7 @@ import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
 import { Emotes, KickTiming, AttackTiming, SprintTiming, JumpTiming } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
+import { SWORD_SRC } from '../extras/gameAssets'
 import { spawnCorpse } from '../extras/playerCorpse'
 import { initFootsteps, updateFootsteps } from '../extras/playerFootsteps'
 import { ControlPriorities } from '../extras/ControlPriorities'
@@ -251,7 +252,7 @@ export class PlayerLocal extends Entity {
       await this.world.loader.preloader
     }
 
-    this.applyAvatar()
+    await this.applyAvatar()
     this.initCapsule()
     this.initControl()
 
@@ -277,8 +278,8 @@ export class PlayerLocal extends Entity {
 
   applyAvatar() {
     const avatarUrl = this.getAvatarUrl()
-    if (this.avatarUrl === avatarUrl) return
-    this.world.loader
+    if (this.avatarUrl === avatarUrl) return Promise.resolve()
+    return this.world.loader
       .load('avatar', avatarUrl)
       .then(src => {
         if (this.avatar) this.avatar.deactivate()
@@ -292,7 +293,7 @@ export class PlayerLocal extends Entity {
         }
         this.avatarUrl = avatarUrl
         this.camHeight = this.avatar.height * 0.9
-        this.applySword()
+        return this.applySword()
       })
       .catch(err => {
         console.error('[Avatar Load Error]', err)
@@ -302,9 +303,8 @@ export class PlayerLocal extends Entity {
   }
 
   applySword() {
-    // Load and attach sword to right hand
-    this.world.loader
-      .load('model', 'asset://sword.glb')
+    return this.world.loader
+      .load('model', SWORD_SRC)
       .then(src => {
         if (this.sword) this.sword.deactivate()
         this.sword = src.toNodes()
