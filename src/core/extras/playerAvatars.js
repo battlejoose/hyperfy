@@ -5,20 +5,16 @@ export const AVATAR_SARACEN = 'asset://romansenator.vrm'
 
 /** Gladiator spawn: random point on this radius (meters) around map center. */
 export const CRUSADER_SPAWN_RADIUS = 10
-/** Saracen spawn offset from base spawn (meters, opposite senators). */
-export const TEAM_SPAWN_SEPARATION = 5
-const TEAM_SPAWN_HALF = TEAM_SPAWN_SEPARATION / 2
-/** Senators spawn this many times farther forward than the old team offset. */
-const SARACEN_SPAWN_FORWARD_MULTIPLIER = 5
-const SARACEN_SPAWN_HEIGHT = 5
+/** Saracen spawn: random point on this radius (meters) around map center. */
+export const SARACEN_SPAWN_RADIUS = 14
+/** Saracen spawn height above map center (meters). */
+export const SARACEN_SPAWN_HEIGHT = 6
 
 export function getTeamFromAvatar(sessionAvatar) {
   return sessionAvatar === AVATAR_SARACEN ? 'saracen' : 'crusader'
 }
 
-const FORWARD = new THREE.Vector3(0, 0, -1)
 const UP = new THREE.Vector3(0, 1, 0)
-const flipY = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI)
 const spawnQuat = new THREE.Quaternion()
 const offset = new THREE.Vector3()
 const center = new THREE.Vector3()
@@ -26,27 +22,16 @@ const spawnPosition = new THREE.Vector3()
 const faceQuat = new THREE.Quaternion()
 const lookAtMat = new THREE.Matrix4()
 
-export function getPlayerSpawn(baseSpawn, sessionAvatar) {
+function getCircularSpawn(baseSpawn, radius, heightOffset = 0) {
   const position = baseSpawn.position.slice()
-  const quaternion = baseSpawn.quaternion.slice()
 
-  spawnQuat.fromArray(quaternion)
-
-  if (sessionAvatar === AVATAR_SARACEN) {
-    offset.copy(FORWARD).applyQuaternion(spawnQuat).multiplyScalar(TEAM_SPAWN_HALF * SARACEN_SPAWN_FORWARD_MULTIPLIER)
-    position[0] += offset.x
-    position[1] += offset.y + SARACEN_SPAWN_HEIGHT
-    position[2] += offset.z
-    spawnQuat.fromArray(quaternion)
-    spawnQuat.multiply(flipY)
-    return { position, quaternion: spawnQuat.toArray() }
-  }
+  spawnQuat.fromArray(baseSpawn.quaternion)
 
   const angle = Math.random() * Math.PI * 2
-  offset.set(Math.cos(angle) * CRUSADER_SPAWN_RADIUS, 0, Math.sin(angle) * CRUSADER_SPAWN_RADIUS)
+  offset.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
   offset.applyQuaternion(spawnQuat)
   position[0] += offset.x
-  position[1] += offset.y
+  position[1] += offset.y + heightOffset
   position[2] += offset.z
 
   center.set(baseSpawn.position[0], position[1], baseSpawn.position[2])
@@ -54,6 +39,13 @@ export function getPlayerSpawn(baseSpawn, sessionAvatar) {
   lookAtMat.lookAt(spawnPosition, center, UP)
   faceQuat.setFromRotationMatrix(lookAtMat)
   return { position, quaternion: faceQuat.toArray() }
+}
+
+export function getPlayerSpawn(baseSpawn, sessionAvatar) {
+  if (sessionAvatar === AVATAR_SARACEN) {
+    return getCircularSpawn(baseSpawn, SARACEN_SPAWN_RADIUS, SARACEN_SPAWN_HEIGHT)
+  }
+  return getCircularSpawn(baseSpawn, CRUSADER_SPAWN_RADIUS)
 }
 
 const rotationQuat = new THREE.Quaternion()
