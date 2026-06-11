@@ -87,25 +87,21 @@ export function createEmoteFactory(glb, url) {
   // console.log(clip)
 
   const hipsPositionBones = new Set(['Root', 'Hips', 'mixamorigHips'])
+  // Mixamo standing hips Y when an export omits root height (e.g. kick.glb).
+  const MIXAMO_STANDING_HIPS_Y = 84.787
 
   function scaleEmotePosition(v, index, version, scaler) {
     return (version === '0' && index % 3 !== 1 ? -v : v) * scaler
   }
 
   function addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, scaler) {
+    const firstY = track.values[1]
+    const referenceY = firstY < 10 ? MIXAMO_STANDING_HIPS_Y : firstY
     const values = new Array(track.values.length)
-    let maxAbsY = 0
-    for (let i = 1; i < track.values.length; i += 3) {
-      maxAbsY = Math.max(maxAbsY, Math.abs(track.values[i]))
-    }
-    // Attack/block GLBs use Mixamo world-space hips Y (~70+). Kick uses local-space (~0).
-    // Only scale absolute Y for world-space exports; local exports use rotations only.
-    const useZeroHipsY = maxAbsY < 20
     for (let i = 0; i < track.values.length; i += 3) {
       values[i] = 0
-      values[i + 1] = useZeroHipsY
-        ? 0
-        : scaleEmotePosition(track.values[i + 1], i + 1, version, scaler)
+      const deltaY = track.values[i + 1] - firstY
+      values[i + 1] = scaleEmotePosition(referenceY + deltaY, i + 1, version, scaler)
       values[i + 2] = 0
     }
     tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.position`, track.times, values))

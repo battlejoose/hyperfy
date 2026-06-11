@@ -664,6 +664,7 @@ export function createVRMFactory(glb, setupMaterial) {
     function addPose(key, url, upperBodyOnly = false, clipOptions = {}) {
       const opts = getQueryParams(url)
       const speed = parseFloat(opts.s || 1)
+      const fullBodyCombat = clipOptions.fullBodyCombat === true
       const pose = {
         loading: true,
         active: false,
@@ -671,11 +672,12 @@ export function createVRMFactory(glb, setupMaterial) {
         weight: 0,
         target: 0,
         upperBodyOnly,
+        fullBodyCombat,
         setWeight: value => {
           pose.weight = value
           if (pose.action) {
             // Attacks get much higher effective weight to override locomotion
-            const effectiveWeight = upperBodyOnly ? value * 5.0 : value
+            const effectiveWeight = upperBodyOnly || fullBodyCombat ? value * 5.0 : value
             pose.action.weight = value
             pose.action.setEffectiveWeight(effectiveWeight)
             if (!pose.active && value > 0) {
@@ -704,7 +706,7 @@ export function createVRMFactory(glb, setupMaterial) {
           rootToHips,
           version,
           getBoneName,
-          inPlace: upperBodyOnly,
+          inPlace: clipOptions.inPlace ?? upperBodyOnly,
           ...clipOptions,
         })
         
@@ -715,7 +717,7 @@ export function createVRMFactory(glb, setupMaterial) {
         pose.action.weight = pose.weight
         
         // Configure attack animations to play once
-        if (upperBodyOnly) {
+        if (upperBodyOnly || fullBodyCombat) {
           pose.action.clampWhenFinished = true
           pose.action.setLoop(THREE.LoopOnce, 1)
           console.log('[VRM] Attack animation loaded for:', key, 'with FULL animation -', clip.tracks.length, 'tracks')
@@ -764,7 +766,11 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('blockRight', Emotes.BLOCK_RIGHT, true)
     addPose('blockHigh', Emotes.BLOCK_HIGH, true)
     addPose('blockLow', Emotes.BLOCK_LOW, true)
-    addPose('kick', Emotes.KICK, true, { trimStart: KickTiming.trimStart })
+    addPose('kick', Emotes.KICK, false, {
+      inPlace: true,
+      fullBodyCombat: true,
+      trimStart: KickTiming.trimStart,
+    })
     addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation
@@ -808,7 +814,11 @@ export function createVRMFactory(glb, setupMaterial) {
       
       // Update locomotion (legs only)
       // If in death state, use dead animation as locomotion
-      if (isInDeathState) {
+      const fullBodyAttackActive =
+        currentAttack && poses[currentAttack]?.fullBodyCombat && now < attackEndTime
+      if (fullBodyAttackActive) {
+        // Full-body combat (kick) replaces locomotion entirely
+      } else if (isInDeathState) {
         poses.dead.target = 1
       } else if (mode === Modes.IDLE) {
         poses.idle.target = 1
