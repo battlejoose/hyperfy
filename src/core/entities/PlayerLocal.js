@@ -2695,7 +2695,7 @@ export class PlayerLocal extends Entity {
         
         // Apply position offset relative to hand orientation
         // Move sword to place handle in hand
-        v5.set(0.08, -0.5, 0.0) // x, y, z offset relative to hand
+        v5.set(0.06, -0.3, 0.0) // x, y, z offset relative to hand
         v5.applyQuaternion(this.sword.quaternion)
         this.sword.position.add(v5)
 
