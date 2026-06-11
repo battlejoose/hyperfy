@@ -5,7 +5,7 @@ import { DEG2RAD } from './general'
 import { getTrianglesFromGeometry } from './getTrianglesFromGeometry'
 import { getTextureBytesFromMaterial } from './getTextureBytesFromMaterial'
 import { Emotes, KickTiming } from './playerEmotes'
-import { CombatHandOffsets, COMBAT_POSITION_Y_OFFSET } from './combatHandOffsets'
+import { CombatHandOffsets } from './combatHandOffsets'
 
 const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
@@ -436,24 +436,6 @@ export function createVRMFactory(glb, setupMaterial) {
       // console.log('rate per second', 1 / rate)
     }
 
-    const hipsBone = glb.userData.vrm.humanoid.getRawBoneNode('hips')
-
-    const isCombatPoseActive = () => {
-      const now = performance.now() / 1000
-      if (currentAttack && now < attackEndTime) return true
-      for (const key in poses) {
-        const pose = poses[key]
-        if (pose.upperBodyOnly && (pose.weight > 0.01 || pose.target > 0.01)) return true
-      }
-      return false
-    }
-
-    const applyCombatPositionOffset = () => {
-      if (!hipsBone || COMBAT_POSITION_Y_OFFSET === 0) return
-      if (!isCombatPoseActive()) return
-      hipsBone.position.y += COMBAT_POSITION_Y_OFFSET
-    }
-
     const update = delta => {
       elapsed += delta
       const should = rateCheck ? elapsed >= rate : true
@@ -493,7 +475,6 @@ export function createVRMFactory(glb, setupMaterial) {
           const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
           pose.setWeight(weight)
         }
-        applyCombatPositionOffset()
         if (loco.gazeDir && distance < MAX_GAZE_DISTANCE && (currentEmote ? currentEmote.gaze : true)) {
           // aimBone('chest', loco.gazeDir, delta, {
           //   minAngle: -90,
@@ -712,8 +693,7 @@ export function createVRMFactory(glb, setupMaterial) {
           ...clipOptions,
         })
         
-        // Combat poses play in place (rotation only) so bad hips/root motion in GLBs
-        // cannot shift the character. Locomotion keeps hips translation for foot sliding.
+        // Combat: no horizontal root slide; hips Y is scaled to this avatar's height in toClip().
         
         pose.action = mixer.clipAction(clip)
         pose.action.timeScale = speed

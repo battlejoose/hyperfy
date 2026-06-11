@@ -88,6 +88,20 @@ export function createEmoteFactory(glb, url) {
 
   const hipsPositionBones = new Set(['Root', 'Hips', 'mixamorigHips'])
 
+  function scaleEmotePosition(v, index, version, scaler) {
+    return (version === '0' && index % 3 !== 1 ? -v : v) * scaler
+  }
+
+  function addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, scaler) {
+    const values = new Array(track.values.length)
+    for (let i = 0; i < track.values.length; i += 3) {
+      values[i] = 0
+      values[i + 1] = scaleEmotePosition(track.values[i + 1], i + 1, version, scaler)
+      values[i + 2] = 0
+    }
+    tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.position`, track.times, values))
+  }
+
   return {
     toClip({
       rootToHips,
@@ -111,9 +125,15 @@ export function createEmoteFactory(glb, url) {
         if (
           inPlace &&
           track instanceof THREE.VectorKeyframeTrack &&
-          propertyName === 'position' &&
-          hipsPositionBones.has(ogBoneName)
+          propertyName === 'position'
         ) {
+          // Strip horizontal root slide but keep hips height scaled to this VRM.
+          if (ogBoneName === 'Root') return
+          const vrmBoneName = normalizedBoneNames[ogBoneName]
+          const vrmNodeName = getBoneName(vrmBoneName)
+          if (vrmNodeName !== undefined && hipsPositionBones.has(ogBoneName)) {
+            addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, height * scale)
+          }
           return
         }
 
