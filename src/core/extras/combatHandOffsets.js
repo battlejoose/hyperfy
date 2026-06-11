@@ -11,7 +11,7 @@
  *
  * Omit a pose or set null for no adjustment.
  */
-export const COMBAT_POSITION_Y_OFFSET = -0.2
+export const COMBAT_POSITION_Y_OFFSET = -0.05
 
 export const CombatHandOffsets = {
   attackLeft: null,
