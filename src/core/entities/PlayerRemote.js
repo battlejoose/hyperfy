@@ -228,8 +228,8 @@ export class PlayerRemote extends Entity {
     // Create a square collider in front of the player for blocking
     const capsuleRadius = 0.3
     const capsuleHeight = 1.8
-    const width = capsuleRadius * 3.0
-    const height = capsuleHeight * 0.9
+    const width = capsuleRadius * 3.0 * 1.2
+    const height = capsuleHeight * 0.9 * 1.2
     const depth = 0.3
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
     
