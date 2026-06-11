@@ -5,7 +5,7 @@ import { DEG2RAD } from './general'
 import { getTrianglesFromGeometry } from './getTrianglesFromGeometry'
 import { getTextureBytesFromMaterial } from './getTextureBytesFromMaterial'
 import { Emotes, KickTiming } from './playerEmotes'
-import { CombatHandOffsets } from './combatHandOffsets'
+import { CombatHandOffsets, COMBAT_POSITION_Y_OFFSET } from './combatHandOffsets'
 
 const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
@@ -739,18 +739,24 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('fly', Emotes.FLY)
     addPose('talk', Emotes.TALK)
     // Attack animations - full body, higher weight to override locomotion
-    addPose('attackLeft', Emotes.ATTACK_LEFT, true)
-    addPose('attackRight', Emotes.ATTACK_RIGHT, true)
-    addPose('attackHigh', Emotes.ATTACK_HIGH, true)
+    const combatClipOptions = { positionYOffset: COMBAT_POSITION_Y_OFFSET }
+
+    addPose('attackLeft', Emotes.ATTACK_LEFT, true, combatClipOptions)
+    addPose('attackRight', Emotes.ATTACK_RIGHT, true, combatClipOptions)
+    addPose('attackHigh', Emotes.ATTACK_HIGH, true, combatClipOptions)
     addPose('attackLow', Emotes.ATTACK_LOW, true, {
+      ...combatClipOptions,
       handRotationOffset: CombatHandOffsets.attackLow,
     })
-    addPose('block', Emotes.BLOCK, true)
-    addPose('blockLeft', Emotes.BLOCK_LEFT, true)
-    addPose('blockRight', Emotes.BLOCK_RIGHT, true)
-    addPose('blockHigh', Emotes.BLOCK_HIGH, true)
-    addPose('blockLow', Emotes.BLOCK_LOW, true)
-    addPose('kick', Emotes.KICK, true, { trimStart: KickTiming.trimStart })
+    addPose('block', Emotes.BLOCK, true, combatClipOptions)
+    addPose('blockLeft', Emotes.BLOCK_LEFT, true, combatClipOptions)
+    addPose('blockRight', Emotes.BLOCK_RIGHT, true, combatClipOptions)
+    addPose('blockHigh', Emotes.BLOCK_HIGH, true, combatClipOptions)
+    addPose('blockLow', Emotes.BLOCK_LOW, true, combatClipOptions)
+    addPose('kick', Emotes.KICK, true, {
+      ...combatClipOptions,
+      trimStart: KickTiming.trimStart,
+    })
     addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation
