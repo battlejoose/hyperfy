@@ -3,9 +3,12 @@ import * as THREE from './three'
 export const AVATAR_CRUSADER = 'asset://avatar.vrm'
 export const AVATAR_SARACEN = 'asset://romansenator.vrm'
 
-/** Distance between crusader and saracen spawn points (meters). */
+/** Gladiator spawn offset from base spawn (meters, opposite senators). */
 export const TEAM_SPAWN_SEPARATION = 5
 const TEAM_SPAWN_HALF = TEAM_SPAWN_SEPARATION / 2
+/** Senators spawn this many times farther forward than the old team offset. */
+const SARACEN_SPAWN_FORWARD_MULTIPLIER = 5
+const SARACEN_SPAWN_HEIGHT = 5
 
 export function getTeamFromAvatar(sessionAvatar) {
   return sessionAvatar === AVATAR_SARACEN ? 'saracen' : 'crusader'
@@ -22,17 +25,18 @@ export function getPlayerSpawn(baseSpawn, sessionAvatar) {
   const quaternion = baseSpawn.quaternion.slice()
 
   spawnQuat.fromArray(quaternion)
-  offset.copy(FORWARD).applyQuaternion(spawnQuat).multiplyScalar(TEAM_SPAWN_HALF)
 
   if (sessionAvatar === AVATAR_SARACEN) {
+    offset.copy(FORWARD).applyQuaternion(spawnQuat).multiplyScalar(TEAM_SPAWN_HALF * SARACEN_SPAWN_FORWARD_MULTIPLIER)
     position[0] += offset.x
-    position[1] += offset.y
+    position[1] += offset.y + SARACEN_SPAWN_HEIGHT
     position[2] += offset.z
     spawnQuat.fromArray(quaternion)
     spawnQuat.multiply(flipY)
     return { position, quaternion: spawnQuat.toArray() }
   }
 
+  offset.copy(FORWARD).applyQuaternion(spawnQuat).multiplyScalar(TEAM_SPAWN_HALF)
   position[0] -= offset.x
   position[1] -= offset.y
   position[2] -= offset.z
