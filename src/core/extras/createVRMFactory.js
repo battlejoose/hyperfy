@@ -436,24 +436,6 @@ export function createVRMFactory(glb, setupMaterial) {
       // console.log('rate per second', 1 / rate)
     }
 
-    const hipsBone = glb.userData.vrm.humanoid.getRawBoneNode('hips')
-
-    const isCombatPoseActive = () => {
-      const now = performance.now() / 1000
-      if (currentAttack && now < attackEndTime) return true
-      for (const key in poses) {
-        const pose = poses[key]
-        if (pose.upperBodyOnly && (pose.weight > 0.01 || pose.target > 0.01)) return true
-      }
-      return false
-    }
-
-    const applyCombatPositionOffset = () => {
-      if (!hipsBone || COMBAT_POSITION_Y_OFFSET === 0) return
-      if (!isCombatPoseActive()) return
-      hipsBone.position.y += COMBAT_POSITION_Y_OFFSET
-    }
-
     const update = delta => {
       elapsed += delta
       const should = rateCheck ? elapsed >= rate : true
@@ -493,7 +475,6 @@ export function createVRMFactory(glb, setupMaterial) {
           const weight = THREE.MathUtils.lerp(pose.weight, pose.target, 1 - Math.exp(-lerpSpeed * delta))
           pose.setWeight(weight)
         }
-        applyCombatPositionOffset()
         if (loco.gazeDir && distance < MAX_GAZE_DISTANCE && (currentEmote ? currentEmote.gaze : true)) {
           // aimBone('chest', loco.gazeDir, delta, {
           //   minAngle: -90,
@@ -758,18 +739,24 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('fly', Emotes.FLY)
     addPose('talk', Emotes.TALK)
     // Attack animations - full body, higher weight to override locomotion
-    addPose('attackLeft', Emotes.ATTACK_LEFT, true)
-    addPose('attackRight', Emotes.ATTACK_RIGHT, true)
-    addPose('attackHigh', Emotes.ATTACK_HIGH, true)
+    const combatClipOptions = { positionYOffset: COMBAT_POSITION_Y_OFFSET }
+
+    addPose('attackLeft', Emotes.ATTACK_LEFT, true, combatClipOptions)
+    addPose('attackRight', Emotes.ATTACK_RIGHT, true, combatClipOptions)
+    addPose('attackHigh', Emotes.ATTACK_HIGH, true, combatClipOptions)
     addPose('attackLow', Emotes.ATTACK_LOW, true, {
+      ...combatClipOptions,
       handRotationOffset: CombatHandOffsets.attackLow,
     })
-    addPose('block', Emotes.BLOCK, true)
-    addPose('blockLeft', Emotes.BLOCK_LEFT, true)
-    addPose('blockRight', Emotes.BLOCK_RIGHT, true)
-    addPose('blockHigh', Emotes.BLOCK_HIGH, true)
-    addPose('blockLow', Emotes.BLOCK_LOW, true)
-    addPose('kick', Emotes.KICK, true, { trimStart: KickTiming.trimStart })
+    addPose('block', Emotes.BLOCK, true, combatClipOptions)
+    addPose('blockLeft', Emotes.BLOCK_LEFT, true, combatClipOptions)
+    addPose('blockRight', Emotes.BLOCK_RIGHT, true, combatClipOptions)
+    addPose('blockHigh', Emotes.BLOCK_HIGH, true, combatClipOptions)
+    addPose('blockLow', Emotes.BLOCK_LOW, true, combatClipOptions)
+    addPose('kick', Emotes.KICK, true, {
+      ...combatClipOptions,
+      trimStart: KickTiming.trimStart,
+    })
     addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation

@@ -1,7 +1,7 @@
 /**
- * Vertical hips offset (meters) while combat poses play (attack, block, kick).
- * Applied at runtime each frame — change this value and save; hot reload works.
- * Negative = lower, positive = raise.
+ * Vertical hips offset (meters) baked into combat animation clips at avatar load.
+ * Passed to createEmoteFactory.toClip() for attack, block, and kick poses.
+ * Negative = lower, positive = raise. Hard-refresh and rejoin after changing.
  */
 export const COMBAT_POSITION_Y_OFFSET = -0.05
 
