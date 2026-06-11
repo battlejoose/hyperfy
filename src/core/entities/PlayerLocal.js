@@ -373,7 +373,7 @@ export class PlayerLocal extends Entity {
   initBlockCollider() {
     // Create a square collider in front of the player for blocking
     // Roughly the size of the capsule collider (width and height)
-    const width = this.capsuleRadius * 3.0 * 1.2 // Slightly wider than capsule (+20%)
+    const width = this.capsuleRadius * 5
     const height = this.capsuleHeight * 0.9 * 1.2 // Most of the body height (+20%)
     const depth = 0.3 // Thin shield in front
     const geometry = new PHYSX.PxBoxGeometry(width / 2, height / 2, depth / 2)
