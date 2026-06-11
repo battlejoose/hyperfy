@@ -92,13 +92,19 @@ export function createEmoteFactory(glb, url) {
     return (version === '0' && index % 3 !== 1 ? -v : v) * scaler
   }
 
-  function addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, scaler, constantY = false) {
+  function addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, scaler) {
     const values = new Array(track.values.length)
-    const standingY = scaleEmotePosition(track.values[1], 1, version, scaler)
+    let maxAbsY = 0
+    for (let i = 1; i < track.values.length; i += 3) {
+      maxAbsY = Math.max(maxAbsY, Math.abs(track.values[i]))
+    }
+    // Attack/block GLBs use Mixamo world-space hips Y (~70+). Kick uses local-space (~0).
+    // Only scale absolute Y for world-space exports; local exports use rotations only.
+    const useZeroHipsY = maxAbsY < 20
     for (let i = 0; i < track.values.length; i += 3) {
       values[i] = 0
-      values[i + 1] = constantY
-        ? standingY
+      values[i + 1] = useZeroHipsY
+        ? 0
         : scaleEmotePosition(track.values[i + 1], i + 1, version, scaler)
       values[i + 2] = 0
     }
@@ -114,7 +120,6 @@ export function createEmoteFactory(glb, url) {
       trimStart = 0,
       trimEnd = null,
       handRotationOffset = null,
-      constantHipsY = false,
     }) {
       // we're going to resize animation to match vrm height
       const height = rootToHips
@@ -136,14 +141,7 @@ export function createEmoteFactory(glb, url) {
           const vrmBoneName = normalizedBoneNames[ogBoneName]
           const vrmNodeName = getBoneName(vrmBoneName)
           if (vrmNodeName !== undefined && hipsPositionBones.has(ogBoneName)) {
-            addInPlaceHipsVerticalTrack(
-              tracks,
-              track,
-              vrmNodeName,
-              version,
-              height * scale,
-              constantHipsY
-            )
+            addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, height * scale)
           }
           return
         }
