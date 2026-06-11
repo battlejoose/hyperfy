@@ -97,7 +97,6 @@ export function createEmoteFactory(glb, url) {
       trimStart = 0,
       trimEnd = null,
       handRotationOffset = null,
-      positionYOffset = 0,
     }) {
       // we're going to resize animation to match vrm height
       const height = rootToHips
@@ -168,10 +167,6 @@ export function createEmoteFactory(glb, url) {
         }
       }
 
-      if (positionYOffset) {
-        applyHipsPositionYOffset(tracks, getBoneName, positionYOffset, inPlace)
-      }
-
       let result = new THREE.AnimationClip(
         clip.name, // todo: name variable?
         clip.duration,
@@ -204,27 +199,6 @@ function applyHandRotationOffset(tracks, boneNodeName, offset) {
     keyframeQuat.fromArray(track.values, i)
     keyframeQuat.premultiply(handOffsetQuat)
     keyframeQuat.toArray(track.values, i)
-  }
-}
-
-function applyHipsPositionYOffset(tracks, getBoneName, positionYOffset, inPlace) {
-  const hipsNode = getBoneName('hips')
-  if (!hipsNode) return
-
-  const posTrackName = `${hipsNode}.position`
-  const existing = tracks.find(
-    t => t.name === posTrackName && t instanceof THREE.VectorKeyframeTrack
-  )
-
-  if (existing) {
-    for (let i = 1; i < existing.values.length; i += 3) {
-      existing.values[i] += positionYOffset
-    }
-    return
-  }
-
-  if (inPlace) {
-    tracks.push(new THREE.VectorKeyframeTrack(posTrackName, [0], [0, positionYOffset, 0]))
   }
 }
 
