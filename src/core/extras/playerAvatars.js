@@ -21,6 +21,10 @@ const UP = new THREE.Vector3(0, 1, 0)
 const flipY = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI)
 const spawnQuat = new THREE.Quaternion()
 const offset = new THREE.Vector3()
+const center = new THREE.Vector3()
+const spawnPosition = new THREE.Vector3()
+const faceQuat = new THREE.Quaternion()
+const lookAtMat = new THREE.Matrix4()
 
 export function getPlayerSpawn(baseSpawn, sessionAvatar) {
   const position = baseSpawn.position.slice()
@@ -44,7 +48,12 @@ export function getPlayerSpawn(baseSpawn, sessionAvatar) {
   position[0] += offset.x
   position[1] += offset.y
   position[2] += offset.z
-  return { position, quaternion }
+
+  center.set(baseSpawn.position[0], position[1], baseSpawn.position[2])
+  spawnPosition.set(position[0], position[1], position[2])
+  lookAtMat.lookAt(spawnPosition, center, UP)
+  faceQuat.setFromRotationMatrix(lookAtMat)
+  return { position, quaternion: faceQuat.toArray() }
 }
 
 const rotationQuat = new THREE.Quaternion()
