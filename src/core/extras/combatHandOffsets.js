@@ -3,7 +3,7 @@
  * Applied at runtime each frame — change this value and save; hot reload works.
  * Negative = lower, positive = raise.
  */
-export const COMBAT_POSITION_Y_OFFSET = -0.01
+export const COMBAT_POSITION_Y_OFFSET = -0.05
 
 /**
  * Extra right-hand rotation baked into combat GLB clips at load time (in memory only).
