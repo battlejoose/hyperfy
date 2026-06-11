@@ -887,7 +887,7 @@ export class PlayerRemote extends Entity {
         this.sword.quaternion.multiply(q4)
         
         // Apply position offset relative to hand orientation
-        v5.set(0.06, -0.3, 0.0)
+        v5.set(0.06, -0.5, 0.05)
         v5.applyQuaternion(this.sword.quaternion)
         this.sword.position.add(v5)
 
