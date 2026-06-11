@@ -286,6 +286,20 @@ export function createVRMFactory(glb, setupMaterial) {
     
     const setDeathState = (isDead) => {
       isInDeathState = isDead
+      if (isDead) {
+        mixer.timeScale = 1
+        clearCurrentCombatPose({ immediate: true })
+        for (const key in poses) {
+          if (poses[key].upperBodyOnly) {
+            poses[key].target = 0
+            poses[key].weight = 0
+            poses[key].setWeight(0)
+            if (poses[key].action) {
+              poses[key].action.stop()
+            }
+          }
+        }
+      }
     }
     
     const setEmote = (url, duration, options = {}) => {
@@ -328,6 +342,7 @@ export function createVRMFactory(glb, setupMaterial) {
       
       // Check if this is an attack animation
       if (url && attackEmotes.includes(url)) {
+        if (isInDeathState) return
         const attackKey = attackUrlToKey[url]
         const attackDuration = duration || 1.0 // Use provided duration or default to 1 second
         

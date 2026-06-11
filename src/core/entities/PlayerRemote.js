@@ -20,6 +20,12 @@ let capsuleGeometry
   capsuleGeometry.translate(0, height / 2, 0)
 }
 
+const DEATH_EMOTES = [Emotes.DEATH_FALL, Emotes.GETUP]
+
+function isDeathEffect(effect) {
+  return effect?.emote && DEATH_EMOTES.includes(effect.emote)
+}
+
 export class PlayerRemote extends Entity {
   constructor(world, data, local) {
     super(world, data, local)
@@ -605,10 +611,16 @@ export class PlayerRemote extends Entity {
       this.quaternion.update(delta)
     }
     // Check for attack emotes from effects first, otherwise use regular emote
-    const emote = this.data.effect?.emote || this.data.emote
+    let emote = this.data.effect?.emote || this.data.emote
+    if (this.isDead && emote && !DEATH_EMOTES.includes(emote)) {
+      emote = Emotes.DEATH_FALL
+    }
     
     // Set attack/block tags based on current emote for directional blocking
-    if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
+    if (this.isDead) {
+      this.currentAttackTag = null
+      this.currentBlockTag = null
+    } else if (emote === Emotes.ATTACK_HIGH) this.currentAttackTag = 'high'
     else if (emote === Emotes.ATTACK_LEFT) this.currentAttackTag = 'left'
     else if (emote === Emotes.ATTACK_RIGHT) this.currentAttackTag = 'right'
     else if (emote === Emotes.ATTACK_LOW) this.currentAttackTag = 'low'
@@ -626,7 +638,10 @@ export class PlayerRemote extends Entity {
     // Pass effect duration if available (important for charged attacks)
     // NOTE: Must call .instance.setEmote() directly to pass duration parameter
     // because the Avatar Node wrapper only accepts one parameter
-    const duration = this.data.effect?.duration
+    let duration = this.data.effect?.duration
+    if (this.isDead && emote === Emotes.DEATH_FALL) {
+      duration = 1.5
+    }
     if (this.avatar?.instance) {
       this.avatar.instance.setEmote(emote, duration)
     }
@@ -638,6 +653,8 @@ export class PlayerRemote extends Entity {
       isFlying: this.mode === LocomotionModes.FLY,
       hasEffectEmote: !!this.data.effect?.emote,
     })
+
+    if (this.isDead) return
 
     // Handle sword collider activation for attack animations
     const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
@@ -1070,9 +1087,6 @@ export class PlayerRemote extends Entity {
     if (data.hasOwnProperty('e')) {
       this.data.emote = data.e
     }
-    if (data.hasOwnProperty('ef')) {
-      this.setEffect(data.ef)
-    }
     if (data.hasOwnProperty('name')) {
       this.data.name = data.name
       this.nametag.label = data.name
@@ -1095,6 +1109,11 @@ export class PlayerRemote extends Entity {
           this.deathTimeout = null
         }
         this.onRespawn()
+      }
+    }
+    if (data.hasOwnProperty('ef')) {
+      if (!(this.isDead && data.ef && !isDeathEffect(data.ef))) {
+        this.setEffect(data.ef)
       }
     }
     if (data.hasOwnProperty('avatar')) {
@@ -1129,7 +1148,7 @@ export class PlayerRemote extends Entity {
     console.log('[Death] Remote player', this.data.id, 'died - starting death sequence')
     this.isDead = true
     
-    // Cancel any charged attack state and resume animation mixer BEFORE death animation starts
+    // Cancel any active attacks/blocks/kicks
     if (this.attackFreezeTimeout) {
       clearTimeout(this.attackFreezeTimeout)
       this.attackFreezeTimeout = null
@@ -1142,24 +1161,38 @@ export class PlayerRemote extends Entity {
       clearTimeout(this.attackTimeout)
       this.attackTimeout = null
     }
+    if (this.blockTimeout) {
+      clearTimeout(this.blockTimeout)
+      this.blockTimeout = null
+    }
     if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
       this.avatar.instance.mixer.timeScale = 1
       this.attackAnimationPaused = false
     }
+    this.currentlyAttacking = false
+    this.currentlyBlocking = false
+    this.currentAttackEmote = null
+    this.currentAttackTag = null
+    this.currentBlockTag = null
     this.setSwordColliderActive(false)
+    this.setBlockColliderActive(false)
+    this.clearKickColliderTimeouts()
     
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
       this.avatar.instance.setDeathState(true)
     }
     
-    // The fall effect will be triggered via setEffect from the network
-    // After 5 seconds, the getup effect will also come via network
-    // We just need to handle the respawn timing locally for UI purposes
+    // Play fall immediately so stale combat effects cannot freeze the pose
+    this.setEffect({
+      emote: Emotes.DEATH_FALL,
+      duration: 1.5,
+      cancellable: false,
+    })
+    
     this.deathTimeout = setTimeout(() => {
-      // Remote respawn doesn't restore health locally - that comes from server
       console.log('[Respawn] Remote player', this.data.id, 'respawn timing complete')
-    }, 7000) // Fall (1.5s) + wait (5s) + getup (2s) - but effects come from network
+    }, 7000)
   }
   
   onRespawn() {

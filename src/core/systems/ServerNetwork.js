@@ -570,15 +570,24 @@ export class ServerNetwork extends System {
       console.log('[Server] Player', attackerId, 'hit player', targetId, 'for', damage, 'damage:', currentHealth, '->', newHealth)
     }
     
-    // Update target player's health
-    targetPlayer.modify({ health: newHealth })
+    const deathEffect =
+      newHealth <= 0
+        ? { emote: Emotes.DEATH_FALL, duration: 1.5, cancellable: false }
+        : null
+
+    // Update target player's health (and clear combat effect on death)
+    targetPlayer.modify({ health: newHealth, ...(deathEffect && { ef: deathEffect }) })
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
       await this.recordKill(attackerId, targetId)
     }
     
     // Broadcast health update to ALL clients (including attacker)
-    this.send('entityModified', { id: targetId, health: newHealth })
+    this.send('entityModified', {
+      id: targetId,
+      health: newHealth,
+      ...(deathEffect && { ef: deathEffect }),
+    })
   }
 
   onPlayerRespawn = (socket, data) => {
