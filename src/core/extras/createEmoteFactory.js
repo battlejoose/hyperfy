@@ -92,11 +92,14 @@ export function createEmoteFactory(glb, url) {
     return (version === '0' && index % 3 !== 1 ? -v : v) * scaler
   }
 
-  function addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, scaler) {
+  function addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, scaler, constantY = false) {
     const values = new Array(track.values.length)
+    const standingY = scaleEmotePosition(track.values[1], 1, version, scaler)
     for (let i = 0; i < track.values.length; i += 3) {
       values[i] = 0
-      values[i + 1] = scaleEmotePosition(track.values[i + 1], i + 1, version, scaler)
+      values[i + 1] = constantY
+        ? standingY
+        : scaleEmotePosition(track.values[i + 1], i + 1, version, scaler)
       values[i + 2] = 0
     }
     tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.position`, track.times, values))
@@ -111,6 +114,7 @@ export function createEmoteFactory(glb, url) {
       trimStart = 0,
       trimEnd = null,
       handRotationOffset = null,
+      constantHipsY = false,
     }) {
       // we're going to resize animation to match vrm height
       const height = rootToHips
@@ -132,7 +136,14 @@ export function createEmoteFactory(glb, url) {
           const vrmBoneName = normalizedBoneNames[ogBoneName]
           const vrmNodeName = getBoneName(vrmBoneName)
           if (vrmNodeName !== undefined && hipsPositionBones.has(ogBoneName)) {
-            addInPlaceHipsVerticalTrack(tracks, track, vrmNodeName, version, height * scale)
+            addInPlaceHipsVerticalTrack(
+              tracks,
+              track,
+              vrmNodeName,
+              version,
+              height * scale,
+              constantHipsY
+            )
           }
           return
         }

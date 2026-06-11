@@ -469,8 +469,16 @@ export function createVRMFactory(glb, setupMaterial) {
             }
           }
         } else if (!currentEmote) {
-          // No emote playing - update normal locomotion
-          updateLocomotion(delta)
+          const activeAttack = currentAttack ? poses[currentAttack] : null
+          if (activeAttack?.suppressLocomotion) {
+            for (const key in poses) {
+              if (!poses[key].upperBodyOnly && key !== currentAttack) {
+                poses[key].target = 0
+              }
+            }
+          } else {
+            updateLocomotion(delta)
+          }
         }
         // If there's a non-death emote playing, skip locomotion updates
         
@@ -664,6 +672,15 @@ export function createVRMFactory(glb, setupMaterial) {
     function addPose(key, url, upperBodyOnly = false, clipOptions = {}) {
       const opts = getQueryParams(url)
       const speed = parseFloat(opts.s || 1)
+      const {
+        trimStart,
+        trimEnd,
+        handRotationOffset,
+        inPlace = upperBodyOnly,
+        constantHipsY = false,
+        suppressLocomotion = false,
+        combatBlend = upperBodyOnly,
+      } = clipOptions
       const pose = {
         loading: true,
         active: false,
@@ -671,11 +688,13 @@ export function createVRMFactory(glb, setupMaterial) {
         weight: 0,
         target: 0,
         upperBodyOnly,
+        suppressLocomotion,
+        combatBlend,
         setWeight: value => {
           pose.weight = value
           if (pose.action) {
             // Attacks get much higher effective weight to override locomotion
-            const effectiveWeight = upperBodyOnly ? value * 5.0 : value
+            const effectiveWeight = pose.combatBlend ? value * 5.0 : value
             pose.action.weight = value
             pose.action.setEffectiveWeight(effectiveWeight)
             if (!pose.active && value > 0) {
@@ -704,8 +723,11 @@ export function createVRMFactory(glb, setupMaterial) {
           rootToHips,
           version,
           getBoneName,
-          inPlace: upperBodyOnly,
-          ...clipOptions,
+          inPlace,
+          trimStart,
+          trimEnd,
+          handRotationOffset,
+          constantHipsY,
         })
         
         // Combat: no horizontal root slide; hips Y is scaled to this avatar's height in toClip().
@@ -715,7 +737,7 @@ export function createVRMFactory(glb, setupMaterial) {
         pose.action.weight = pose.weight
         
         // Configure attack animations to play once
-        if (upperBodyOnly) {
+        if (upperBodyOnly || key === 'kick') {
           pose.action.clampWhenFinished = true
           pose.action.setLoop(THREE.LoopOnce, 1)
           console.log('[VRM] Attack animation loaded for:', key, 'with FULL animation -', clip.tracks.length, 'tracks')
@@ -764,7 +786,13 @@ export function createVRMFactory(glb, setupMaterial) {
     addPose('blockRight', Emotes.BLOCK_RIGHT, true)
     addPose('blockHigh', Emotes.BLOCK_HIGH, true)
     addPose('blockLow', Emotes.BLOCK_LOW, true)
-    addPose('kick', Emotes.KICK, true, { trimStart: KickTiming.trimStart })
+    addPose('kick', Emotes.KICK, false, {
+      trimStart: KickTiming.trimStart,
+      inPlace: true,
+      constantHipsY: true,
+      suppressLocomotion: true,
+      combatBlend: true,
+    })
     addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation
