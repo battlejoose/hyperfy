@@ -20,6 +20,7 @@ import { Sidebar } from './Sidebar'
 import { Scoreboard } from './Scoreboard'
 import { TeamScore } from './TeamScore'
 import { MatchRound } from './MatchRound'
+import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars'
 
 export function CoreUI({ world }) {
   const ref = useRef()
@@ -1454,7 +1455,7 @@ function AvatarSwitcher({ world, player }) {
           e.stopPropagation()
           e.preventDefault()
         }}
-        onClick={(e) => switchAvatar('asset://saladin.vrm', e)}
+        onClick={(e) => switchAvatar(AVATAR_SARACEN, e)}
         css={css`
           padding: 10px 20px;
           background: rgba(15, 16, 24, 0.9);

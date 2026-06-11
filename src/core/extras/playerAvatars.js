@@ -1,7 +1,7 @@
 import * as THREE from './three'
 
 export const AVATAR_CRUSADER = 'asset://avatar.vrm'
-export const AVATAR_SARACEN = 'asset://saladin.vrm'
+export const AVATAR_SARACEN = 'asset://romansenator.vrm'
 
 /** Distance between crusader and saracen spawn points (meters). */
 export const TEAM_SPAWN_SEPARATION = 5
