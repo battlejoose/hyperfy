@@ -562,6 +562,11 @@ export class ServerNetwork extends System {
     // Apply damage (negative damage = healing)
     const HEALTH_MAX = 100
     const currentHealth = targetPlayer.data.health !== undefined ? targetPlayer.data.health : HEALTH_MAX
+
+    if (damage > 0 && currentHealth <= 0) {
+      return
+    }
+
     const newHealth = Math.max(0, Math.min(HEALTH_MAX, currentHealth - damage))
     
     if (damage < 0) {
@@ -571,7 +576,7 @@ export class ServerNetwork extends System {
     }
     
     const deathEffect =
-      newHealth <= 0
+      currentHealth > 0 && newHealth <= 0
         ? { emote: Emotes.DEATH_FALL, duration: 1.5, cancellable: false }
         : null
 

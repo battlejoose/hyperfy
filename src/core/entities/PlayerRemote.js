@@ -10,6 +10,7 @@ import { Layers } from '../extras/Layers'
 import { Emotes, KickTiming } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
+import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
 
 let capsuleGeometry
 {
@@ -24,6 +25,11 @@ const DEATH_EMOTES = [Emotes.DEATH_FALL, Emotes.GETUP]
 
 function isDeathEffect(effect) {
   return effect?.emote && DEATH_EMOTES.includes(effect.emote)
+}
+
+function sanitizeLocomotionMode(mode, axis) {
+  if (ALLOW_PLAYER_FLY || mode !== LocomotionModes.FLY) return mode
+  return axis.length() > 0.01 ? LocomotionModes.WALK : LocomotionModes.IDLE
 }
 
 export class PlayerRemote extends Entity {
@@ -645,12 +651,13 @@ export class PlayerRemote extends Entity {
     if (this.avatar?.instance) {
       this.avatar.instance.setEmote(emote, duration)
     }
-    this.avatar?.instance?.setLocomotion(this.mode, this.axis, this.gaze)
+    const locomotionMode = sanitizeLocomotionMode(this.mode, this.axis)
+    this.avatar?.instance?.setLocomotion(locomotionMode, this.axis, this.gaze)
 
     updateFootsteps(this.footstepAudio, {
-      mode: this.mode,
+      mode: locomotionMode,
       isDead: this.isDead,
-      isFlying: this.mode === LocomotionModes.FLY,
+      isFlying: false,
       hasEffectEmote: !!this.data.effect?.emote,
     })
 
@@ -1040,6 +1047,12 @@ export class PlayerRemote extends Entity {
     }
   }
 
+  setPlayerColliderActive(active) {
+    if (this.body) {
+      this.body.active = active && !this.data.effect?.anchorId
+    }
+  }
+
   setEffect(effect, onEnd) {
     if (this.data.effect) {
       this.data.effect = null
@@ -1048,7 +1061,7 @@ export class PlayerRemote extends Entity {
     }
     this.data.effect = effect
     this.onEffectEnd = onEnd
-    this.body.active = effect?.anchorId ? false : true
+    this.setPlayerColliderActive(!this.isDead)
   }
 
   setSpeaking(speaking) {
@@ -1079,6 +1092,10 @@ export class PlayerRemote extends Entity {
     if (data.hasOwnProperty('a')) {
       this.data.axis = data.a
       this.axis.fromArray(data.a)
+    }
+    if (data.hasOwnProperty('m') || data.hasOwnProperty('a')) {
+      this.mode = sanitizeLocomotionMode(this.mode, this.axis)
+      this.data.mode = this.mode
     }
     if (data.hasOwnProperty('g')) {
       this.data.gaze = data.g
@@ -1177,6 +1194,7 @@ export class PlayerRemote extends Entity {
     this.setSwordColliderActive(false)
     this.setBlockColliderActive(false)
     this.clearKickColliderTimeouts()
+    this.setPlayerColliderActive(false)
     
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
@@ -1199,6 +1217,7 @@ export class PlayerRemote extends Entity {
     console.log('[Respawn] Remote player', this.data.id, 'respawning')
     this.isDead = false
     this.setEffect(null)
+    this.setPlayerColliderActive(true)
 
     // Restore normal locomotion
     if (this.avatar?.instance?.setDeathState) {

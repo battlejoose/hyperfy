@@ -15,6 +15,7 @@ import { initFootsteps, updateFootsteps } from '../extras/playerFootsteps'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
+import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
@@ -725,6 +726,9 @@ export class PlayerLocal extends Entity {
     
     // Don't hit ourselves
     if (playerId === this.data.id) return
+
+    const target = this.world.entities.get(playerId)
+    if (target?.isDead) return
     
     // Only hit each player once per swing
     if (this.hitPlayersThisSwing.has(playerId)) {
@@ -1578,6 +1582,10 @@ export class PlayerLocal extends Entity {
   }
 
   toggleFlying(value) {
+    if (!ALLOW_PLAYER_FLY) {
+      this.flying = false
+      return
+    }
     value = isBoolean(value) ? value : !this.flying
     if (this.flying === value) return
     this.flying = value
@@ -1619,20 +1627,33 @@ export class PlayerLocal extends Entity {
     return this.world.livekit.isMuted(this.data.id)
   }
 
+  setCapsuleColliderActive(active) {
+    if (!this.capsule) return
+    const shouldDisable = !active
+    if (shouldDisable && !this.capsuleDisabled) {
+      this.capsule.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_SIMULATION, true)
+      this.capsuleDisabled = true
+    } else if (!shouldDisable && this.capsuleDisabled) {
+      this.capsule.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_SIMULATION, false)
+      this.capsuleDisabled = false
+    }
+  }
+
+  updateCapsuleColliderActive() {
+    this.setCapsuleColliderActive(!this.isDead && !this.getAnchorMatrix())
+  }
+
   fixedUpdate(delta) {
     const xr = this.isXR
     const freeze = this.data.effect?.freeze
     const anchor = this.getAnchorMatrix()
     const snare = this.data.effect?.snare || 0
 
-    if (anchor && !this.capsuleDisabled) {
-      this.capsule.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_SIMULATION, true)
-      this.capsuleDisabled = true
+    if (!ALLOW_PLAYER_FLY && this.flying) {
+      this.flying = false
     }
-    if (!anchor && this.capsuleDisabled) {
-      this.capsule.setActorFlag(PHYSX.PxActorFlagEnum.eDISABLE_SIMULATION, false)
-      this.capsuleDisabled = false
-    }
+
+    this.updateCapsuleColliderActive()
 
     if (anchor) {
       /**
@@ -1976,7 +1997,12 @@ export class PlayerLocal extends Entity {
 
     // double jump in build mode, toggle flying
     // double jump in xr and "can" build, toggle flying
-    if (this.jumpPressed && !this.isDead && (this.world.builder?.enabled || (this.isXR && this.world.builder?.canBuild()))) {
+    if (
+      ALLOW_PLAYER_FLY &&
+      this.jumpPressed &&
+      !this.isDead &&
+      (this.world.builder?.enabled || (this.isXR && this.world.builder?.canBuild()))
+    ) {
       if (this.world.time - this.lastJumpAt < 0.4) {
         this.toggleFlying()
       }
@@ -2454,7 +2480,7 @@ export class PlayerLocal extends Entity {
     let mode
     if (this.data.effect?.emote) {
       // emote = this.data.effect.emote
-    } else if (this.flying) {
+    } else if (ALLOW_PLAYER_FLY && this.flying) {
       mode = Modes.FLY
     } else if (this.airJumping) {
       mode = Modes.FLIP
@@ -2559,7 +2585,11 @@ export class PlayerLocal extends Entity {
         if (this.data.effect.emote === Emotes.KICK) {
           this.clearKickColliderTimeouts()
         }
-        this.setEffect(null)
+        if (this.isDead && this.data.effect.emote === Emotes.DEATH_FALL) {
+          this.data.effect.duration = 0
+        } else {
+          this.setEffect(null)
+        }
       }
     }
   }
@@ -2886,6 +2916,7 @@ export class PlayerLocal extends Entity {
     console.log('[Death] Player died - starting death sequence')
     this.isDead = true
     this.respawnSent = false
+    this.flying = false
     
     // Cancel any active attacks
     if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
@@ -2934,6 +2965,8 @@ export class PlayerLocal extends Entity {
       this.blockAnimationPaused = false
     }
     
+    this.updateCapsuleColliderActive()
+
     // Tell avatar to use dead animation as locomotion
     if (this.avatar && this.avatar.instance && this.avatar.instance.setDeathState) {
       this.avatar.instance.setDeathState(true)
@@ -2959,7 +2992,9 @@ export class PlayerLocal extends Entity {
     }
     this.isDead = false
     this.respawnSent = false
+    this.flying = false
     this.setEffect(null)
+    this.updateCapsuleColliderActive()
     if (this.avatar?.instance?.setDeathState) {
       this.avatar.instance.setDeathState(false)
     }
@@ -3033,12 +3068,18 @@ export class PlayerLocal extends Entity {
       avatarChanged = true
     }
     if (data.hasOwnProperty('ef')) {
-      if (this.data.effect) {
-        this.data.effect = null
-        this.onEffectEnd?.()
-        this.onEffectEnd = null
+      const isCombatEffect =
+        data.ef?.emote &&
+        data.ef.emote !== Emotes.DEATH_FALL &&
+        data.ef.emote !== Emotes.GETUP
+      if (!(this.isDead && isCombatEffect)) {
+        if (this.data.effect) {
+          this.data.effect = null
+          this.onEffectEnd?.()
+          this.onEffectEnd = null
+        }
+        this.data.effect = data.ef
       }
-      this.data.effect = data.ef
     }
     if (data.hasOwnProperty('rank')) {
       this.data.rank = data.rank
