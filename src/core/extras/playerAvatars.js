@@ -6,9 +6,9 @@ export const AVATAR_SARACEN = 'asset://romansenator.vrm'
 /** Gladiator spawn: random point on this radius (meters) around map center. */
 export const CRUSADER_SPAWN_RADIUS = 10
 /** Saracen spawn: random point on this radius (meters) around map center. */
-export const SARACEN_SPAWN_RADIUS = 14
+export const SARACEN_SPAWN_RADIUS = 18
 /** Saracen spawn height above map center (meters). */
-export const SARACEN_SPAWN_HEIGHT = 6
+export const SARACEN_SPAWN_HEIGHT = 7
 
 export function getTeamFromAvatar(sessionAvatar) {
   return sessionAvatar === AVATAR_SARACEN ? 'saracen' : 'crusader'
