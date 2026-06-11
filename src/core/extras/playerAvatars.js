@@ -3,7 +3,9 @@ import * as THREE from './three'
 export const AVATAR_CRUSADER = 'asset://avatar.vrm'
 export const AVATAR_SARACEN = 'asset://romansenator.vrm'
 
-/** Gladiator spawn offset from base spawn (meters, opposite senators). */
+/** Gladiator spawn: random point on this radius (meters) around map center. */
+export const CRUSADER_SPAWN_RADIUS = 10
+/** Saracen spawn offset from base spawn (meters, opposite senators). */
 export const TEAM_SPAWN_SEPARATION = 5
 const TEAM_SPAWN_HALF = TEAM_SPAWN_SEPARATION / 2
 /** Senators spawn this many times farther forward than the old team offset. */
@@ -36,10 +38,12 @@ export function getPlayerSpawn(baseSpawn, sessionAvatar) {
     return { position, quaternion: spawnQuat.toArray() }
   }
 
-  offset.copy(FORWARD).applyQuaternion(spawnQuat).multiplyScalar(TEAM_SPAWN_HALF)
-  position[0] -= offset.x
-  position[1] -= offset.y
-  position[2] -= offset.z
+  const angle = Math.random() * Math.PI * 2
+  offset.set(Math.cos(angle) * CRUSADER_SPAWN_RADIUS, 0, Math.sin(angle) * CRUSADER_SPAWN_RADIUS)
+  offset.applyQuaternion(spawnQuat)
+  position[0] += offset.x
+  position[1] += offset.y
+  position[2] += offset.z
   return { position, quaternion }
 }
 
