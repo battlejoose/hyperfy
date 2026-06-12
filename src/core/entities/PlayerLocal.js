@@ -108,6 +108,7 @@ export class PlayerLocal extends Entity {
     this.blockDuration = 1.0 // Block animation duration
     this.blockBreakCooldownUntil = 0
     this.attackBlockCooldownUntil = 0
+    this.attackHitCooldownUntil = 0
     this.sprintCooldownUntil = 0
     this.jumpCooldownUntil = 0
     this.kickDuration = KickTiming.duration
@@ -779,6 +780,10 @@ export class PlayerLocal extends Entity {
     this.sprintCooldownUntil = Date.now() + SprintTiming.cooldownAfterCombat * 1000
   }
 
+  applyAttackHitCooldown() {
+    this.attackHitCooldownUntil = Date.now() + AttackTiming.cooldownAfterHit * 1000
+  }
+
   applyJumpCooldown() {
     this.jumpCooldownUntil = Date.now() + JumpTiming.cooldown * 1000
   }
@@ -792,6 +797,11 @@ export class PlayerLocal extends Entity {
 
     if (Date.now() < this.attackBlockCooldownUntil) {
       console.log('[Attack] Attack on cooldown after block')
+      return
+    }
+
+    if (Date.now() < this.attackHitCooldownUntil) {
+      console.log('[Attack] Attack on cooldown after taking damage')
       return
     }
     
@@ -3044,6 +3054,7 @@ export class PlayerLocal extends Entity {
       if (data.health < prevHealth) {
         this.interruptAttackFromHit()
         this.applySprintCooldown()
+        this.applyAttackHitCooldown()
       }
       this.data.health = data.health
       this.nametag.health = data.health

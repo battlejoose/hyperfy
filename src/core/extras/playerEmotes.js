@@ -39,6 +39,7 @@ export const KickTiming = {
 
 export const AttackTiming = {
   cooldownAfterBlock: 1,
+  cooldownAfterHit: 0.5,
 }
 
 export const SprintTiming = {
