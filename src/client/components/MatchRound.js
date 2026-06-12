@@ -10,15 +10,24 @@ function formatTime(seconds) {
 }
 
 function getWinnerText(winner) {
-  if (winner === 'crusader') return 'Crusaders Win!'
-  if (winner === 'saracen') return 'Saracens Win!'
-  return 'Draw!'
+  if (!winner) return 'Draw!'
+  if (typeof winner === 'string') {
+    if (winner === 'draw') return 'Draw!'
+    return `${winner} Wins!`
+  }
+  if (winner.reason === 'draw' || !winner.name) return 'Draw!'
+  return `${winner.name} Wins!`
 }
 
 function getWinnerColor(winner) {
-  if (winner === 'crusader') return '#ef4444'
-  if (winner === 'saracen') return '#eab308'
-  return 'rgba(255, 255, 255, 0.95)'
+  if (!winner || winner === 'draw') return 'rgba(255, 255, 255, 0.95)'
+  if (typeof winner === 'string') {
+    if (winner === 'crusader') return '#ef4444'
+    if (winner === 'saracen') return '#eab308'
+    return 'rgba(255, 255, 255, 0.95)'
+  }
+  if (winner.reason === 'draw' || !winner.name) return 'rgba(255, 255, 255, 0.95)'
+  return '#fbbf24'
 }
 
 export function MatchRound({ world }) {

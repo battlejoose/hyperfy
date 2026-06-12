@@ -124,6 +124,69 @@ export class ServerNetwork extends System {
     }
   }
 
+  getConnectedPlayerCount() {
+    let count = 0
+    for (const socket of this.sockets.values()) {
+      if (socket.player) count++
+    }
+    return count
+  }
+
+  getActiveFighters() {
+    const fighters = []
+    for (const socket of this.sockets.values()) {
+      if (!socket.player) continue
+      const player = socket.player
+      if (isSpectatorSessionAvatar(player.data.sessionAvatar)) continue
+      const health = player.data.health !== undefined ? player.data.health : HEALTH_MAX
+      if (health > 0) fighters.push(player)
+    }
+    return fighters
+  }
+
+  getMostKillsWinner() {
+    const players = [...this.scoreboard.values()]
+    if (!players.length) {
+      return { id: null, name: null, reason: 'draw' }
+    }
+
+    let maxKills = 0
+    for (const player of players) {
+      if (player.kills > maxKills) maxKills = player.kills
+    }
+
+    const top = players.filter(player => player.kills === maxKills)
+    if (top.length !== 1) {
+      return { id: null, name: null, reason: 'draw' }
+    }
+
+    return { id: top[0].id, name: top[0].name, reason: 'mostKills' }
+  }
+
+  checkLastStanding() {
+    if (this.match?.phase !== 'playing') return
+
+    const fighters = this.getActiveFighters()
+    const connectedPlayers = this.getConnectedPlayerCount()
+
+    if (fighters.length === 1 && connectedPlayers > 1) {
+      const player = fighters[0]
+      const entry = this.scoreboard.get(player.data.id)
+      this.endRound({
+        winner: {
+          id: player.data.id,
+          name: entry?.name || player.data.name || 'Unknown',
+          reason: 'lastStanding',
+        },
+      })
+      return
+    }
+
+    if (fighters.length === 0 && connectedPlayers > 1) {
+      this.endRound()
+    }
+  }
+
   broadcastMatchState() {
     this.send('matchState', this.getMatchStatePayload())
   }
@@ -138,15 +201,12 @@ export class ServerNetwork extends System {
     this.broadcastMatchState()
   }
 
-  endRound() {
-    const { crusader, saracen } = this.teamKills
-    let winner = 'draw'
-    if (crusader > saracen) winner = 'crusader'
-    else if (saracen > crusader) winner = 'saracen'
+  endRound({ winner } = {}) {
+    if (this.match?.phase !== 'playing') return
 
     this.match = {
       phase: 'results',
-      winner,
+      winner: winner ?? this.getMostKillsWinner(),
       roundEndsAt: this.match.roundEndsAt,
       resultsEndsAt: this.getTime() + RESULTS_DURATION,
     }
@@ -606,6 +666,7 @@ export class ServerNetwork extends System {
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
       await this.recordKill(attackerId, targetId)
+      this.checkLastStanding()
     }
     
     // Broadcast health update to ALL clients (including attacker)
@@ -640,6 +701,7 @@ export class ServerNetwork extends System {
     if (teamChanged) {
       this.broadcastScoreboard()
     }
+    this.checkLastStanding()
   }
 
   onBlockBroken = async (socket, data) => {
