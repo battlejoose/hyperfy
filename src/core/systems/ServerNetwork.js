@@ -8,7 +8,7 @@ import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
-import { getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion } from '../extras/playerAvatars'
+import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion } from '../extras/playerAvatars'
 import { loadArenaEnvironment } from '../extras/arenaEnvironment'
 import { ROUND_DURATION, RESULTS_DURATION } from '../extras/matchConfig'
 
@@ -160,6 +160,21 @@ export class ServerNetwork extends System {
     }
   }
 
+  setPlayerSessionAvatar(player, sessionAvatar) {
+    if (player.data.sessionAvatar === sessionAvatar) return false
+    player.data.sessionAvatar = sessionAvatar
+    player.modify({ sessionAvatar })
+    const entry = this.scoreboard.get(player.data.id)
+    if (entry) {
+      entry.team = getTeamFromAvatar(sessionAvatar)
+    }
+    this.send('entityModified', {
+      id: player.data.id,
+      sessionAvatar,
+    })
+    return true
+  }
+
   teleportPlayerToSpawn(player) {
     const { position, quaternion } = getPlayerSpawn(this.spawn, player.data.sessionAvatar)
     const rotationY = getRotationYFromQuaternion(quaternion)
@@ -200,10 +215,12 @@ export class ServerNetwork extends System {
 
     for (const socket of this.sockets.values()) {
       if (socket.player) {
+        this.setPlayerSessionAvatar(socket.player, AVATAR_CRUSADER)
         this.teleportPlayerToSpawn(socket.player)
       }
     }
 
+    this.broadcastScoreboard()
     this.startRound()
   }
 
@@ -478,8 +495,8 @@ export class ServerNetwork extends System {
       // create socket
       const socket = new Socket({ id: user.id, ws, network: this })
 
-      // spawn player
-      const sessionAvatar = avatar || null
+      // spawn player — everyone starts each round as a crusader in the arena
+      const sessionAvatar = AVATAR_CRUSADER
       const { position, quaternion } = getPlayerSpawn(this.spawn, sessionAvatar)
 
       socket.player = this.world.entities.add(
@@ -614,7 +631,11 @@ export class ServerNetwork extends System {
       socket.id
     )
 
+    const teamChanged = this.setPlayerSessionAvatar(player, AVATAR_SARACEN)
     this.teleportPlayerToSpawn(player)
+    if (teamChanged) {
+      this.broadcastScoreboard()
+    }
   }
 
   onBlockBroken = async (socket, data) => {

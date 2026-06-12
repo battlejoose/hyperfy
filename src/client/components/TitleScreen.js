@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 
-import { AVATAR_CRUSADER, AVATAR_SARACEN } from '../../core/extras/playerAvatars'
+import { AVATAR_CRUSADER } from '../../core/extras/playerAvatars'
 import { prefetchGameAssets } from '../../core/extras/assetPrefetch'
 
-export { AVATAR_CRUSADER, AVATAR_SARACEN }
+export { AVATAR_CRUSADER }
 
 const MAX_NAME_LENGTH = 24
-const SARACEN_JOIN_DURATION_MS = 5000
 const FADE_MS = 600
 
 const ASSETS = {
   bg: '/assets/willsitbackground.png',
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
-  crusaderJoin: '/assets/war.mp3',
-  saracenJoin: '/assets/akbar.mp3',
+  enterArena: '/assets/war.mp3',
 }
 
 const imagePreloadCache = new Map()
@@ -54,19 +52,14 @@ function stopAudio(audio) {
   audio.src = ''
 }
 
-function playFactionJoinSound(side) {
-  const src = side === 'saracen' ? ASSETS.saracenJoin : ASSETS.crusaderJoin
-  const sfx = new Audio(src)
+function playEnterArenaSound() {
+  const sfx = new Audio(ASSETS.enterArena)
   sfx.volume = 0.8
   sfx.play().catch(() => {})
-  if (side === 'saracen') {
-    setTimeout(() => stopAudio(sfx), SARACEN_JOIN_DURATION_MS)
-  }
 }
 
 export function TitleScreen({ onStart }) {
   const [name, setName] = useState('')
-  const [side, setSide] = useState('crusader')
   const [imageUrls, setImageUrls] = useState(null)
   const [showTitle, setShowTitle] = useState(false)
   const titleMusicRef = useRef(null)
@@ -142,11 +135,11 @@ export function TitleScreen({ onStart }) {
 
     stopAudio(titleMusicRef.current)
     titleMusicRef.current = null
-    playFactionJoinSound(side)
+    playEnterArenaSound()
 
     onStart({
       name: trimmedName.slice(0, MAX_NAME_LENGTH),
-      avatar: side === 'saracen' ? AVATAR_SARACEN : AVATAR_CRUSADER,
+      avatar: AVATAR_CRUSADER,
     })
   }
 
@@ -274,7 +267,7 @@ export function TitleScreen({ onStart }) {
           border-radius: 6px;
           color: #3d2817;
           font-size: 1rem;
-          margin-bottom: 1.25rem;
+          margin-bottom: 1.5rem;
           outline: none;
           &::placeholder {
             color: rgba(61, 40, 23, 0.45);
@@ -282,39 +275,6 @@ export function TitleScreen({ onStart }) {
           &:focus {
             border-color: rgba(61, 40, 23, 0.65);
             background: rgba(255, 248, 235, 0.85);
-          }
-        }
-        .side-row {
-          display: flex;
-          gap: 0.75rem;
-          margin-bottom: 1.5rem;
-        }
-        .side-btn {
-          flex: 1;
-          padding: 0.75rem 1rem;
-          background: rgba(255, 248, 235, 0.5);
-          border: 1px solid rgba(61, 40, 23, 0.3);
-          border-radius: 6px;
-          color: #5c4033;
-          font-size: 1rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          &:hover {
-            border-color: rgba(61, 40, 23, 0.5);
-            background: rgba(255, 248, 235, 0.75);
-          }
-          &.crusader.selected {
-            background: rgba(255, 245, 240, 0.95);
-            border-color: #8b1a1a;
-            color: #6b1010;
-            box-shadow: inset 0 0 0 1px rgba(139, 26, 26, 0.25);
-          }
-          &.saracen.selected {
-            background: rgba(240, 255, 240, 0.95);
-            border-color: #1a5c2e;
-            color: #0f3d1f;
-            box-shadow: inset 0 0 0 1px rgba(26, 92, 46, 0.25);
           }
         }
         .enter-btn {
@@ -327,17 +287,9 @@ export function TitleScreen({ onStart }) {
           cursor: pointer;
           transition: opacity 0.2s, filter 0.2s;
           color: #fff8f0;
-          &.crusader {
-            background: #7a1515;
-            &:not(:disabled):hover {
-              background: #8b1a1a;
-            }
-          }
-          &.saracen {
-            background: #1a5c2e;
-            &:not(:disabled):hover {
-              background: #227038;
-            }
+          background: #7a1515;
+          &:not(:disabled):hover {
+            background: #8b1a1a;
           }
           &:disabled {
             opacity: 0.35;
@@ -359,7 +311,7 @@ export function TitleScreen({ onStart }) {
             <img className='title-scroll' src={imageUrls.scroll} alt='' />
             <div className='title-panel-content'>
               <h1 className='title-heading'>God Wills It</h1>
-              <p className='title-sub'>Choose your name and allegiance</p>
+              <p className='title-sub'>Enter your name to join the Arena</p>
 
               <label className='field-label' htmlFor='username'>
                 Username
@@ -376,26 +328,8 @@ export function TitleScreen({ onStart }) {
                 onChange={e => setName(e.target.value)}
               />
 
-              <span className='field-label'>Side</span>
-              <div className='side-row'>
-                <button
-                  type='button'
-                  className={`side-btn crusader${side === 'crusader' ? ' selected' : ''}`}
-                  onClick={() => setSide('crusader')}
-                >
-                  Crusader
-                </button>
-                <button
-                  type='button'
-                  className={`side-btn saracen${side === 'saracen' ? ' selected' : ''}`}
-                  onClick={() => setSide('saracen')}
-                >
-                  Saracen
-                </button>
-              </div>
-
-              <button type='submit' className={`enter-btn ${side}`} disabled={!canStart}>
-                Enter game
+              <button type='submit' className='enter-btn' disabled={!canStart}>
+                Enter the Arena
               </button>
             </div>
           </form>
