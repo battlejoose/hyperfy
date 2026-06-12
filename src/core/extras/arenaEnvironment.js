@@ -5,37 +5,61 @@ export const ARENA_SRC = 'asset://smallarenarome.glb'
 
 /** Separates gladiator floor (inside) from spectator ring (outside). */
 export const ARENA_RING_WALL_RADIUS = 12.2
+/** Outer edge of the spectator ring. */
+export const ARENA_OUTER_RING_WALL_RADIUS = 17
 export const ARENA_RING_WALL_HEIGHT = 10
 export const ARENA_RING_WALL_THICKNESS = 0.2
 export const ARENA_RING_WALL_SEGMENTS = 64
+
+const ARENA_RING_WALL_RADII = [ARENA_RING_WALL_RADIUS, ARENA_OUTER_RING_WALL_RADIUS]
 
 let arenaPromise = null
 
 const _matrix = new THREE.Matrix4()
 const _bodyMatrixInverse = new THREE.Matrix4()
 const _segmentAngle = (Math.PI * 2) / ARENA_RING_WALL_SEGMENTS
-const _segmentWidth = 2 * ARENA_RING_WALL_RADIUS * Math.sin(_segmentAngle / 2)
 const _segmentHalfHeight = ARENA_RING_WALL_HEIGHT / 2
 
-function forEachArenaRingWallSegment(callback) {
+function forEachRingWallSegment(radius, callback) {
+  const segmentWidth = 2 * radius * Math.sin(_segmentAngle / 2)
+
   for (let i = 0; i < ARENA_RING_WALL_SEGMENTS; i++) {
     const angle = i * _segmentAngle
     callback({
-      x: Math.cos(angle) * ARENA_RING_WALL_RADIUS,
+      x: Math.cos(angle) * radius,
       y: _segmentHalfHeight,
-      z: Math.sin(angle) * ARENA_RING_WALL_RADIUS,
+      z: Math.sin(angle) * radius,
       rotY: Math.PI / 2 - angle,
-      width: _segmentWidth,
+      width: segmentWidth,
       height: ARENA_RING_WALL_HEIGHT,
       depth: ARENA_RING_WALL_THICKNESS,
     })
   }
 }
 
-function createArenaRingWallDebugMeshes(world) {
+function addRingWallColliders(root, radius) {
+  const body = createNode('rigidbody', { type: 'static' })
+  root.add(body)
+
+  forEachRingWallSegment(radius, segment => {
+    const collider = createNode('collider', {
+      type: 'box',
+      width: segment.width,
+      height: segment.height,
+      depth: segment.depth,
+      layer: 'environment',
+    })
+    collider.position.set(segment.x, segment.y, segment.z)
+    collider.rotation.y = segment.rotY
+    body.add(collider)
+  })
+}
+
+function createRingWallDebugMeshes(world, radius) {
   if (!world.stage?.scene) return []
 
-  const geometry = new THREE.BoxGeometry(_segmentWidth, ARENA_RING_WALL_HEIGHT, ARENA_RING_WALL_THICKNESS)
+  const segmentWidth = 2 * radius * Math.sin(_segmentAngle / 2)
+  const geometry = new THREE.BoxGeometry(segmentWidth, ARENA_RING_WALL_HEIGHT, ARENA_RING_WALL_THICKNESS)
   const material = new THREE.MeshBasicMaterial({
     color: 0x4488ff,
     transparent: true,
@@ -45,7 +69,7 @@ function createArenaRingWallDebugMeshes(world) {
   })
 
   const meshes = []
-  forEachArenaRingWallSegment(segment => {
+  forEachRingWallSegment(radius, segment => {
     const mesh = new THREE.Mesh(geometry, material)
     mesh.position.set(segment.x, segment.y, segment.z)
     mesh.rotation.y = segment.rotY
@@ -54,6 +78,14 @@ function createArenaRingWallDebugMeshes(world) {
     meshes.push(mesh)
   })
 
+  return meshes
+}
+
+function createArenaRingWallDebugMeshes(world) {
+  const meshes = []
+  for (const radius of ARENA_RING_WALL_RADII) {
+    meshes.push(...createRingWallDebugMeshes(world, radius))
+  }
   return meshes
 }
 
@@ -139,22 +171,10 @@ function addStaticColliders(root) {
   }
 }
 
-function addArenaRingWall(root) {
-  const body = createNode('rigidbody', { type: 'static' })
-  root.add(body)
-
-  forEachArenaRingWallSegment(segment => {
-    const collider = createNode('collider', {
-      type: 'box',
-      width: segment.width,
-      height: segment.height,
-      depth: segment.depth,
-      layer: 'environment',
-    })
-    collider.position.set(segment.x, segment.y, segment.z)
-    collider.rotation.y = segment.rotY
-    body.add(collider)
-  })
+function addArenaRingWalls(root) {
+  for (const radius of ARENA_RING_WALL_RADII) {
+    addRingWallColliders(root, radius)
+  }
 }
 
 export function loadArenaEnvironment(world) {
@@ -167,7 +187,7 @@ export function loadArenaEnvironment(world) {
     const root = src.toNodes()
     centerNodeTree(root)
     addStaticColliders(root)
-    addArenaRingWall(root)
+    addArenaRingWalls(root)
     root.activate({ world })
     setupArenaRingWallColliderDebug(world)
     root.setDirty()
