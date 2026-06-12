@@ -11,6 +11,7 @@ import { Emotes, KickTiming } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
+import { isSpectatorSessionAvatar } from '../extras/playerAvatars'
 
 let capsuleGeometry
 {
@@ -164,11 +165,70 @@ export class PlayerRemote extends Entity {
         this.nametag.active = true
       }
       this.avatarUrl = avatarUrl
-      this.applySword()
+      if (this.isSpectator()) {
+        this.removeCombatGear()
+      } else {
+        this.applySword()
+      }
     })
   }
 
+  isSpectator() {
+    return isSpectatorSessionAvatar(this.data.sessionAvatar)
+  }
+
+  removeCombatGear() {
+    this.onAttackCanceled()
+    this.clearKickColliderTimeouts()
+    this.setBlockColliderActive(false)
+    this.currentlyBlocking = false
+    this.currentlyAttacking = false
+    this.currentlyKicking = false
+
+    if (this.sword) {
+      this.sword.deactivate()
+      this.sword = null
+    }
+    if (this.swordHandle) {
+      this.swordHandle.destroy()
+      this.swordHandle = null
+    }
+    this.swordBody = null
+    this.swordShape = null
+    this.swordColliderActive = false
+
+    if (this.blockHandle) {
+      this.blockHandle.destroy()
+      this.blockHandle = null
+    }
+    this.blockBody = null
+    this.blockShape = null
+
+    if (this.kickHandle) {
+      this.kickHandle.destroy()
+      this.kickHandle = null
+    }
+    this.kickBody = null
+    this.kickShape = null
+    this.kickColliderActive = false
+
+    if (this.world.stage?.scene) {
+      for (const mesh of [this.swordColliderMesh, this.blockColliderMesh, this.kickColliderMesh]) {
+        if (mesh) {
+          this.world.stage.scene.remove(mesh)
+        }
+      }
+      this.swordColliderMesh = null
+      this.blockColliderMesh = null
+      this.kickColliderMesh = null
+    }
+  }
+
   applySword() {
+    if (this.isSpectator()) {
+      this.removeCombatGear()
+      return
+    }
     // Load and attach sword to right hand
     this.world.loader
       .load('model', 'asset://sword.glb')
@@ -663,6 +723,7 @@ export class PlayerRemote extends Entity {
 
     if (this.isDead) return
 
+    if (!this.isSpectator()) {
     // Handle sword collider activation for attack animations
     const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
     const isAttacking = this.data.effect?.emote && attackEmotes.includes(this.data.effect.emote)
@@ -801,6 +862,7 @@ export class PlayerRemote extends Entity {
     } else if (!isKicking && this.currentlyKicking) {
       this.clearKickColliderTimeouts()
     }
+    }
   }
 
   lateUpdate(delta) {
@@ -892,7 +954,7 @@ export class PlayerRemote extends Entity {
         this.aura.position.setFromMatrixPosition(matrix)
       }
     }
-    if (this.avatar && this.sword) {
+    if (this.avatar && this.sword && !this.isSpectator()) {
       const matrix = this.avatar.getBoneTransform('rightHand')
       if (matrix) {
         const v5 = new THREE.Vector3()

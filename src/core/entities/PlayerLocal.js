@@ -16,6 +16,7 @@ import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
+import { isSpectatorSessionAvatar } from '../extras/playerAvatars'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
@@ -279,6 +280,56 @@ export class PlayerLocal extends Entity {
     return this.data.sessionAvatar || this.data.avatar || 'asset://avatar.vrm'
   }
 
+  isSpectator() {
+    return isSpectatorSessionAvatar(this.data.sessionAvatar)
+  }
+
+  removeCombatGear() {
+    this.cancelAttackCompletely()
+    this.cancelBlock()
+    this.clearKickColliderTimeouts()
+    this.clearCombatAnimation()
+
+    if (this.sword) {
+      this.sword.deactivate()
+      this.sword = null
+    }
+    if (this.swordHandle) {
+      this.swordHandle.destroy()
+      this.swordHandle = null
+    }
+    this.swordBody = null
+    this.swordShape = null
+    this.swordColliderActive = false
+
+    if (this.blockHandle) {
+      this.blockHandle.destroy()
+      this.blockHandle = null
+    }
+    this.blockBody = null
+    this.blockShape = null
+    this.isBlocking = false
+    this.isHoldingBlock = false
+
+    if (this.kickHandle) {
+      this.kickHandle.destroy()
+      this.kickHandle = null
+    }
+    this.kickBody = null
+    this.kickShape = null
+
+    if (this.world.stage?.scene) {
+      for (const mesh of [this.swordColliderMesh, this.blockColliderMesh, this.kickColliderMesh]) {
+        if (mesh) {
+          this.world.stage.scene.remove(mesh)
+        }
+      }
+      this.swordColliderMesh = null
+      this.blockColliderMesh = null
+      this.kickColliderMesh = null
+    }
+  }
+
   applyAvatar() {
     const avatarUrl = this.getAvatarUrl()
     if (this.avatarUrl === avatarUrl) return Promise.resolve()
@@ -296,6 +347,10 @@ export class PlayerLocal extends Entity {
         }
         this.avatarUrl = avatarUrl
         this.camHeight = this.avatar.height * 0.9
+        if (this.isSpectator()) {
+          this.removeCombatGear()
+          return
+        }
         return this.applySword()
       })
       .catch(err => {
@@ -306,6 +361,10 @@ export class PlayerLocal extends Entity {
   }
 
   applySword() {
+    if (this.isSpectator()) {
+      this.removeCombatGear()
+      return Promise.resolve()
+    }
     return this.world.loader
       .load('model', SWORD_SRC)
       .then(src => {
@@ -789,6 +848,7 @@ export class PlayerLocal extends Entity {
   }
 
   startAttack(emote, chargeMode = false) {
+    if (this.isSpectator()) return
     // Can't attack while sprinting
     if (this.running) {
       console.log('[Attack] Cannot attack while sprinting')
@@ -1146,6 +1206,7 @@ export class PlayerLocal extends Entity {
   }
 
   startKick() {
+    if (this.isSpectator()) return
     if (this.isDead) return
     if (this.running) return
     if (this.data.effect?.emote === Emotes.KICK && this.data.effect?.duration > 0) return
@@ -1206,6 +1267,7 @@ export class PlayerLocal extends Entity {
   }
 
   startBlock(emote = Emotes.BLOCK, holdMode = false) {
+    if (this.isSpectator()) return
     // Can't block while dead
     if (this.isDead) return
 
@@ -2123,7 +2185,7 @@ export class PlayerLocal extends Entity {
 
     // handle attack animations (keys 1, 2, 3, 4, 5) and kick (key F)
     // Use proper attack timing with windup, commit, and canceling
-    if (!xr && !this.isDead) {
+    if (!xr && !this.isDead && !this.isSpectator()) {
       if (this.control.digit1.pressed) {
         this.startAttack(Emotes.ATTACK_LEFT)
       } else if (this.control.digit2.pressed) {
@@ -3010,6 +3072,8 @@ export class PlayerLocal extends Entity {
     }
     if (!this.avatar) {
       this.applyAvatar()
+    } else if (this.isSpectator()) {
+      this.removeCombatGear()
     } else {
       this.applySword()
     }

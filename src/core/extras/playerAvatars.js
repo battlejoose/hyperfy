@@ -14,6 +14,10 @@ export function getTeamFromAvatar(sessionAvatar) {
   return sessionAvatar === AVATAR_SARACEN ? 'saracen' : 'crusader'
 }
 
+export function isSpectatorSessionAvatar(sessionAvatar) {
+  return sessionAvatar === AVATAR_SARACEN
+}
+
 const UP = new THREE.Vector3(0, 1, 0)
 const spawnQuat = new THREE.Quaternion()
 const offset = new THREE.Vector3()

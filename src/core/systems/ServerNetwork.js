@@ -8,7 +8,7 @@ import { cloneDeep, isNumber } from 'lodash-es'
 import * as THREE from '../extras/three'
 import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
-import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion } from '../extras/playerAvatars'
+import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion, isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import { loadArenaEnvironment } from '../extras/arenaEnvironment'
 import { ROUND_DURATION, RESULTS_DURATION } from '../extras/matchConfig'
 
@@ -568,6 +568,10 @@ export class ServerNetwork extends System {
       console.warn('[Server] Player', socket.player.data.id, 'tried to claim hit as', attackerId)
       return
     }
+
+    if (isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) {
+      return
+    }
     
     // Get target player
     const targetPlayer = this.world.entities.get(targetId)
@@ -643,6 +647,10 @@ export class ServerNetwork extends System {
 
     if (socket.player.data.id !== kickerId) {
       console.warn('[Server] Player', socket.player.data.id, 'tried to claim kick break as', kickerId)
+      return
+    }
+
+    if (isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) {
       return
     }
 
