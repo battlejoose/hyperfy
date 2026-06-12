@@ -3,10 +3,86 @@ import { createNode } from './createNode'
 
 export const ARENA_SRC = 'asset://smallarenarome.glb'
 
+/** Separates gladiator floor (inside) from spectator ring (outside). */
+export const ARENA_RING_WALL_RADIUS = 12.2
+export const ARENA_RING_WALL_HEIGHT = 10
+export const ARENA_RING_WALL_THICKNESS = 0.2
+export const ARENA_RING_WALL_SEGMENTS = 64
+
 let arenaPromise = null
 
 const _matrix = new THREE.Matrix4()
 const _bodyMatrixInverse = new THREE.Matrix4()
+const _segmentAngle = (Math.PI * 2) / ARENA_RING_WALL_SEGMENTS
+const _segmentWidth = 2 * ARENA_RING_WALL_RADIUS * Math.sin(_segmentAngle / 2)
+const _segmentHalfHeight = ARENA_RING_WALL_HEIGHT / 2
+
+function forEachArenaRingWallSegment(callback) {
+  for (let i = 0; i < ARENA_RING_WALL_SEGMENTS; i++) {
+    const angle = i * _segmentAngle
+    callback({
+      x: Math.cos(angle) * ARENA_RING_WALL_RADIUS,
+      y: _segmentHalfHeight,
+      z: Math.sin(angle) * ARENA_RING_WALL_RADIUS,
+      rotY: Math.PI / 2 - angle,
+      width: _segmentWidth,
+      height: ARENA_RING_WALL_HEIGHT,
+      depth: ARENA_RING_WALL_THICKNESS,
+    })
+  }
+}
+
+function createArenaRingWallDebugMeshes(world) {
+  if (!world.stage?.scene) return []
+
+  const geometry = new THREE.BoxGeometry(_segmentWidth, ARENA_RING_WALL_HEIGHT, ARENA_RING_WALL_THICKNESS)
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x4488ff,
+    transparent: true,
+    opacity: 0.25,
+    wireframe: false,
+    depthTest: true,
+  })
+
+  const meshes = []
+  forEachArenaRingWallSegment(segment => {
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(segment.x, segment.y, segment.z)
+    mesh.rotation.y = segment.rotY
+    mesh.visible = false
+    world.stage.scene.add(mesh)
+    meshes.push(mesh)
+  })
+
+  return meshes
+}
+
+function setArenaRingWallDebugVisible(world, show) {
+  if (world.network?.isServer || !world.stage?.scene) return
+
+  if (!world._arenaRingWallDebugMeshes?.length) {
+    world._arenaRingWallDebugMeshes = createArenaRingWallDebugMeshes(world)
+  }
+
+  if (!world._arenaRingWallDebugMeshes.length) return
+
+  for (const mesh of world._arenaRingWallDebugMeshes) {
+    mesh.visible = show
+  }
+}
+
+function setupArenaRingWallColliderDebug(world) {
+  if (world.network?.isServer || world._arenaRingWallDebugReady) return
+  world._arenaRingWallDebugReady = true
+
+  world.on('showColliders', show => {
+    setArenaRingWallDebugVisible(world, show)
+  })
+
+  if (world.showColliders) {
+    setArenaRingWallDebugVisible(world, true)
+  }
+}
 
 function centerNodeTree(root) {
   root.updateTransform()
@@ -63,6 +139,24 @@ function addStaticColliders(root) {
   }
 }
 
+function addArenaRingWall(root) {
+  const body = createNode('rigidbody', { type: 'static' })
+  root.add(body)
+
+  forEachArenaRingWallSegment(segment => {
+    const collider = createNode('collider', {
+      type: 'box',
+      width: segment.width,
+      height: segment.height,
+      depth: segment.depth,
+      layer: 'environment',
+    })
+    collider.position.set(segment.x, segment.y, segment.z)
+    collider.rotation.y = segment.rotY
+    body.add(collider)
+  })
+}
+
 export function loadArenaEnvironment(world) {
   if (arenaPromise) return arenaPromise
 
@@ -73,7 +167,9 @@ export function loadArenaEnvironment(world) {
     const root = src.toNodes()
     centerNodeTree(root)
     addStaticColliders(root)
+    addArenaRingWall(root)
     root.activate({ world })
+    setupArenaRingWallColliderDebug(world)
     root.setDirty()
     world.stage?.clean()
     return root
@@ -88,4 +184,15 @@ export function loadArenaEnvironment(world) {
 
 export function clearArenaEnvironment() {
   arenaPromise = null
+}
+
+export function clearArenaRingWallColliderDebug(world) {
+  if (!world?._arenaRingWallDebugMeshes) return
+
+  for (const mesh of world._arenaRingWallDebugMeshes) {
+    world.stage?.scene?.remove(mesh)
+  }
+
+  world._arenaRingWallDebugMeshes = null
+  world._arenaRingWallDebugReady = false
 }
