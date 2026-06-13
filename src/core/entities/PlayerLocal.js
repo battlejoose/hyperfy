@@ -844,6 +844,7 @@ export class PlayerLocal extends Entity {
   }
 
   applyJumpCooldown() {
+    if (this.isSpectator()) return
     this.jumpCooldownUntil = Date.now() + JumpTiming.cooldown * 1000
   }
 
@@ -1999,7 +2000,7 @@ export class PlayerLocal extends Entity {
       }
 
       // ground/air jump
-      const jumpOnCooldown = Date.now() < this.jumpCooldownUntil
+      const jumpOnCooldown = !this.isSpectator() && Date.now() < this.jumpCooldownUntil
       const shouldJump =
         this.grounded &&
         !this.jumping &&
