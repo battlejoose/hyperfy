@@ -125,20 +125,6 @@ export function Sidebar({ world, ui }) {
       >
         <div className='sidebar-sections'>
           <Section active={activePane} bottom>
-            <Btn
-              active={activePane === 'prefs'}
-              suspended={ui.pane === 'prefs' && !activePane}
-              onClick={() => world.ui.togglePane('prefs')}
-            >
-              <MenuIcon size='1.25rem' />
-            </Btn>
-            <Btn
-              active={activePane === 'players'}
-              suspended={ui.pane === 'players' && !activePane}
-              onClick={() => world.ui.togglePane('players')}
-            >
-              <UsersIcon size='1.25rem' />
-            </Btn>
             {isTouch && (
               <Btn
                 onClick={() => {
@@ -165,15 +151,6 @@ export function Sidebar({ world, ui }) {
                 ) : (
                   <MicOffIcon size='1.25rem' />
                 )}
-              </Btn>
-            )}
-            {world.xr.supportsVR && (
-              <Btn
-                onClick={() => {
-                  world.xr.enter()
-                }}
-              >
-                <VRIcon size='1.25rem' />
               </Btn>
             )}
           </Section>
