@@ -10,7 +10,7 @@ import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
 import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion, isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import { loadArenaEnvironment } from '../extras/arenaEnvironment'
-import { ROUND_DURATION, RESULTS_DURATION } from '../extras/matchConfig'
+import { ROUND_DURATION, RESULTS_DURATION, QUEUE_COUNTDOWN_DURATION, MIN_QUEUE_PLAYERS } from '../extras/matchConfig'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -50,6 +50,7 @@ export class ServerNetwork extends System {
     this.teamKills = { crusader: 0, saracen: 0 }
     this.match = null
     this.matchTickAccumulator = 0
+    this.fightQueue = new Set()
   }
 
   init({ db }) {
@@ -95,7 +96,7 @@ export class ServerNetwork extends System {
     if (SAVE_INTERVAL) {
       this.saveTimerId = setTimeout(this.save, SAVE_INTERVAL * 1000)
     }
-    this.startRound()
+    this.startLobby()
     loadArenaEnvironment(this.world).catch(err => console.error('[Arena]', err))
   }
 
@@ -112,7 +113,9 @@ export class ServerNetwork extends System {
     let remaining = 0
     if (this.match.phase === 'playing') {
       remaining = Math.max(0, Math.ceil(this.match.roundEndsAt - now))
-    } else {
+    } else if (this.match.phase === 'countdown') {
+      remaining = Math.max(0, Math.ceil(this.match.countdownEndsAt - now))
+    } else if (this.match.phase === 'results') {
       remaining = Math.max(0, Math.ceil(this.match.resultsEndsAt - now))
     }
     return {
@@ -121,6 +124,8 @@ export class ServerNetwork extends System {
       winner: this.match.winner,
       roundEndsAt: this.match.roundEndsAt,
       resultsEndsAt: this.match.resultsEndsAt,
+      countdownEndsAt: this.match.countdownEndsAt,
+      queuedCount: this.fightQueue.size,
     }
   }
 
@@ -191,12 +196,79 @@ export class ServerNetwork extends System {
     this.send('matchState', this.getMatchStatePayload())
   }
 
-  startRound() {
+  syncQueueToScoreboard() {
+    for (const entry of this.scoreboard.values()) {
+      entry.queued = this.fightQueue.has(entry.id)
+    }
+    this.broadcastScoreboard()
+  }
+
+  canToggleFightQueue() {
+    return ['lobby', 'countdown', 'results'].includes(this.match?.phase)
+  }
+
+  updateFightQueueCountdown() {
+    if (!this.canToggleFightQueue()) return
+
+    const queuedCount = this.fightQueue.size
+
+    if (queuedCount >= MIN_QUEUE_PLAYERS) {
+      if (this.match.phase === 'lobby') {
+        this.match.phase = 'countdown'
+        this.match.countdownEndsAt = this.getTime() + QUEUE_COUNTDOWN_DURATION
+        this.match.winner = null
+        this.match.resultsEndsAt = null
+      }
+    } else if (this.match.phase === 'countdown') {
+      this.match.phase = 'lobby'
+      this.match.countdownEndsAt = null
+    }
+
+    this.broadcastMatchState()
+  }
+
+  startLobby() {
+    this.match = {
+      phase: 'lobby',
+      winner: null,
+      roundEndsAt: null,
+      resultsEndsAt: null,
+      countdownEndsAt: null,
+    }
+    this.syncQueueToScoreboard()
+    this.updateFightQueueCountdown()
+  }
+
+  startQueuedRound() {
+    if (this.fightQueue.size < MIN_QUEUE_PLAYERS) {
+      this.match.phase = 'lobby'
+      this.match.countdownEndsAt = null
+      this.syncQueueToScoreboard()
+      this.broadcastMatchState()
+      return
+    }
+
+    const queuedIds = new Set(this.fightQueue)
+    this.fightQueue.clear()
+
+    this.teamKills = { crusader: 0, saracen: 0 }
+    this.resetScoreboardStats()
+
+    for (const socket of this.sockets.values()) {
+      if (!socket.player) continue
+      const isFighter = queuedIds.has(socket.player.data.id)
+      this.setPlayerSessionAvatar(socket.player, isFighter ? AVATAR_CRUSADER : AVATAR_SARACEN)
+      this.teleportPlayerToSpawn(socket.player)
+    }
+
+    this.syncQueueToScoreboard()
+
     this.match = {
       phase: 'playing',
       winner: null,
       roundEndsAt: this.getTime() + ROUND_DURATION,
       resultsEndsAt: null,
+      countdownEndsAt: null,
     }
     this.broadcastMatchState()
   }
@@ -209,6 +281,7 @@ export class ServerNetwork extends System {
       winner: winner ?? this.getMostKillsWinner(),
       roundEndsAt: this.match.roundEndsAt,
       resultsEndsAt: this.getTime() + RESULTS_DURATION,
+      countdownEndsAt: null,
     }
     this.broadcastMatchState()
   }
@@ -263,7 +336,7 @@ export class ServerNetwork extends System {
     })
   }
 
-  async resetRound() {
+  async returnToLobby() {
     this.teamKills = { crusader: 0, saracen: 0 }
     try {
       await this.saveTeamKills()
@@ -271,29 +344,34 @@ export class ServerNetwork extends System {
       console.error('failed to save teamKills:', err)
     }
     this.resetScoreboardStats()
-    this.broadcastScoreboard()
 
     for (const socket of this.sockets.values()) {
       if (socket.player) {
-        this.setPlayerSessionAvatar(socket.player, AVATAR_CRUSADER)
+        this.setPlayerSessionAvatar(socket.player, AVATAR_SARACEN)
         this.teleportPlayerToSpawn(socket.player)
       }
     }
 
-    this.broadcastScoreboard()
-    this.startRound()
+    this.startLobby()
   }
 
   tickMatch() {
     const now = this.getTime()
-    if (this.match.phase === 'playing') {
+    if (this.match.phase === 'countdown') {
+      if (now >= this.match.countdownEndsAt) {
+        this.startQueuedRound()
+        return
+      }
+    } else if (this.match.phase === 'playing') {
       if (now >= this.match.roundEndsAt) {
         this.endRound()
         return
       }
-    } else if (now >= this.match.resultsEndsAt) {
-      this.resetRound()
-      return
+    } else if (this.match.phase === 'results') {
+      if (now >= this.match.resultsEndsAt) {
+        this.returnToLobby()
+        return
+      }
     }
     this.broadcastMatchState()
   }
@@ -350,13 +428,13 @@ export class ServerNetwork extends System {
     this.send('scoreboard', this.getScoreboardPayload())
   }
 
-  addScoreboardPlayer(id, name, team = 'crusader') {
+  addScoreboardPlayer(id, name, team = 'saracen') {
     const entry = this.scoreboard.get(id)
     if (entry) {
       entry.name = name
       entry.team = team
     } else {
-      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team })
+      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team, queued: false })
     }
   }
 
@@ -555,8 +633,8 @@ export class ServerNetwork extends System {
       // create socket
       const socket = new Socket({ id: user.id, ws, network: this })
 
-      // spawn player — everyone starts each round as a crusader in the arena
-      const sessionAvatar = AVATAR_CRUSADER
+      // spawn player — everyone starts as a spectator in the stands
+      const sessionAvatar = AVATAR_SARACEN
       const { position, quaternion } = getPlayerSpawn(this.spawn, sessionAvatar)
 
       socket.player = this.world.entities.add(
@@ -618,6 +696,22 @@ export class ServerNetwork extends System {
   onChatAdded = async (socket, msg) => {
     this.world.chat.add(msg, false)
     this.send('chatAdded', msg, socket.id)
+  }
+
+  onFightQueueToggle = (socket, data) => {
+    if (!this.canToggleFightQueue()) return
+    if (!socket.player) return
+    if (!isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
+
+    const id = socket.player.data.id
+    if (this.fightQueue.has(id)) {
+      this.fightQueue.delete(id)
+    } else {
+      this.fightQueue.add(id)
+    }
+
+    this.syncQueueToScoreboard()
+    this.updateFightQueueCountdown()
   }
 
   onPlayerHit = async (socket, data) => {
@@ -1008,9 +1102,17 @@ export class ServerNetwork extends System {
   }
 
   onDisconnect = (socket, code) => {
-    this.removeScoreboardPlayer(socket.player.data.id)
+    const playerId = socket.player?.data?.id
+    if (playerId) {
+      this.fightQueue.delete(playerId)
+      if (this.canToggleFightQueue()) {
+        this.syncQueueToScoreboard()
+        this.updateFightQueueCountdown()
+      }
+      this.removeScoreboardPlayer(playerId)
+    }
     this.world.livekit.clearModifiers(socket.id)
-    socket.player.destroy(true)
+    socket.player?.destroy(true)
     this.sockets.delete(socket.id)
   }
 }

@@ -32,6 +32,7 @@ const names = [
   'blockBroken',
   'scoreboard',
   'matchState',
+  'fightQueueToggle',
   'attackCanceled',
 ]
 

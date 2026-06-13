@@ -39,7 +39,10 @@ export class ClientNetwork extends System {
     const prevPhase = this.matchState?.phase
     this.matchState = data
     this.world.emit('matchState', data)
-    if (prevPhase === 'results' && data.phase === 'playing') {
+    if (
+      (prevPhase === 'results' && (data.phase === 'lobby' || data.phase === 'countdown')) ||
+      (prevPhase === 'countdown' && data.phase === 'playing')
+    ) {
       clearCorpses()
       clearBloodEffects(this.world)
     }
