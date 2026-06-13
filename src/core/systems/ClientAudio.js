@@ -4,6 +4,7 @@ import { System } from './System'
 
 const AMBIENT_WIND_SRC = 'asset://desertwind.mp3'
 const AMBIENT_WIND_VOLUME = 0.2
+const VOICE_VOLUME_MULTIPLIER = 2
 
 const up = new THREE.Vector3(0, 1, 0)
 const v1 = new THREE.Vector3()
@@ -22,7 +23,7 @@ export class ClientAudio extends System {
     }
     this.groupGains.music.gain.value = world.prefs.music
     this.groupGains.sfx.gain.value = world.prefs.sfx
-    this.groupGains.voice.gain.value = world.prefs.voice
+    this.groupGains.voice.gain.value = world.prefs.voice * VOICE_VOLUME_MULTIPLIER
     this.groupGains.music.connect(this.masterGain)
     this.groupGains.sfx.connect(this.masterGain)
     this.groupGains.voice.connect(this.masterGain)
@@ -156,7 +157,7 @@ export class ClientAudio extends System {
       this.groupGains.sfx.gain.value = changes.sfx.value
     }
     if (changes.voice) {
-      this.groupGains.voice.gain.value = changes.voice.value
+      this.groupGains.voice.gain.value = changes.voice.value * VOICE_VOLUME_MULTIPLIER
     }
   }
 
