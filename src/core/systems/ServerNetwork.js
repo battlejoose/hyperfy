@@ -204,11 +204,11 @@ export class ServerNetwork extends System {
   }
 
   canToggleFightQueue() {
-    return ['lobby', 'countdown', 'results'].includes(this.match?.phase)
+    return ['lobby', 'countdown'].includes(this.match?.phase)
   }
 
   updateFightQueueCountdown() {
-    if (!this.canToggleFightQueue()) return
+    if (!['lobby', 'countdown'].includes(this.match?.phase)) return
 
     const queuedCount = this.fightQueue.size
 
@@ -283,6 +283,8 @@ export class ServerNetwork extends System {
       resultsEndsAt: this.getTime() + RESULTS_DURATION,
       countdownEndsAt: null,
     }
+    this.fightQueue.clear()
+    this.syncQueueToScoreboard()
     this.broadcastMatchState()
   }
 
@@ -1105,7 +1107,7 @@ export class ServerNetwork extends System {
     const playerId = socket.player?.data?.id
     if (playerId) {
       this.fightQueue.delete(playerId)
-      if (this.canToggleFightQueue()) {
+      if (['lobby', 'countdown'].includes(this.match?.phase)) {
         this.syncQueueToScoreboard()
         this.updateFightQueueCountdown()
       }

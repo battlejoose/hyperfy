@@ -3,7 +3,8 @@ import { css } from '@firebolt-dev/css'
 import { CheckIcon } from 'lucide-react'
 import { getScoreboardPlayers } from '../../core/extras/scoreboardUtils'
 
-const queueablePhases = new Set(['lobby', 'countdown', 'results'])
+const visibleQueuePhases = new Set(['lobby', 'countdown'])
+const queueTogglePhases = new Set(['lobby', 'countdown'])
 
 export function PlayerQueueList({ world }) {
   const [rows, setRows] = useState(() => getScoreboardPlayers(world.network?.scoreboard))
@@ -31,7 +32,7 @@ export function PlayerQueueList({ world }) {
   }, [world])
 
   const localPlayerId = world.entities?.player?.data?.id
-  const canQueue = queueablePhases.has(match?.phase)
+  const canQueue = queueTogglePhases.has(match?.phase)
 
   useEffect(() => {
     if (!localPlayerId) return
@@ -44,7 +45,7 @@ export function PlayerQueueList({ world }) {
     [rows]
   )
 
-  if (!match || match.phase === 'playing') return null
+  if (!match || !visibleQueuePhases.has(match.phase)) return null
 
   const toggleQueue = () => {
     if (!canQueue) return
