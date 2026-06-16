@@ -9,6 +9,9 @@ const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
 const q1 = new THREE.Quaternion()
 
+const VOICE_REF_DISTANCE = 2
+const VOICE_MAX_DISTANCE = 80
+
 export class ClientLiveKit extends System {
   constructor(world) {
     super(world)
@@ -302,8 +305,8 @@ class PlayerVoice {
     this.panner.panningModel = 'HRTF'
     this.panner.panningModel = 'HRTF'
     this.panner.distanceModel = 'inverse'
-    this.panner.refDistance = 1
-    this.panner.maxDistance = 40
+    this.panner.refDistance = VOICE_REF_DISTANCE
+    this.panner.maxDistance = VOICE_MAX_DISTANCE
     this.panner.rolloffFactor = 3
     this.panner.coneInnerAngle = 360
     this.panner.coneOuterAngle = 360
