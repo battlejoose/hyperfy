@@ -5,8 +5,8 @@ import { BARRIZER_IDS } from './arenaFireFx.js'
 
 export const ARENA_GENERAL_SRC = 'asset://general.glb'
 const IDLE_CLIP_NAME = 'Idle_11'
-const GENERAL_Y_OFFSET = 4
-const GENERAL_SCALE = 1.1
+const GENERAL_Y_OFFSET = 3
+const GENERAL_SCALE = 1.3
 
 const _mid = new THREE.Vector3()
 const _center = new THREE.Vector3()
