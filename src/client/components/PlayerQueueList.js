@@ -9,6 +9,7 @@ import {
   payEntryFee,
 } from '../extras/solanaWallet.js'
 
+const SCROLL_SRC = '/assets/scroll.png'
 const ENTRY_FEE_SOL = ENTRY_FEE_LAMPORTS / 1_000_000_000
 
 function truncateAddress(address) {
@@ -91,76 +92,115 @@ export function PlayerQueueList({ world }) {
         position: absolute;
         top: 5.5rem;
         right: 1rem;
-        width: min(18rem, calc(100vw - 2rem));
-        display: flex;
-        flex-direction: column;
-        gap: 0.65rem;
+        width: min(22rem, calc(100vw - 2rem));
         pointer-events: auto;
         z-index: 997;
-        background: rgba(15, 16, 24, 0.72);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
-        backdrop-filter: blur(8px);
-        padding: 0.85rem 1rem;
+        .arena-panel {
+          position: relative;
+          width: 100%;
+          min-height: 14rem;
+          padding: 14% 14% 16%;
+          box-sizing: border-box;
+          border: none;
+          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+        }
+        .arena-scroll {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: fill;
+          pointer-events: none;
+        }
+        .arena-panel-content {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
         .arena-title {
-          font-size: 0.95rem;
-          font-weight: 600;
-          color: rgba(255, 255, 255, 0.95);
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
+          font-size: clamp(1.25rem, 4vw, 1.6rem);
+          font-weight: 700;
+          margin: 0;
+          color: #3d2817;
+          text-align: center;
+          letter-spacing: 0.02em;
         }
         .arena-subtitle {
-          font-size: 0.8rem;
-          color: rgba(255, 255, 255, 0.55);
+          color: #5c4033;
+          font-size: 0.88rem;
+          margin: 0;
+          text-align: center;
           line-height: 1.35;
         }
         .arena-wallet,
         .arena-enter {
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          background: rgba(255, 255, 255, 0.06);
-          color: white;
-          border-radius: 8px;
-          padding: 0.55rem 0.75rem;
-          font-size: 0.85rem;
-          font-weight: 600;
+          width: 100%;
+          box-sizing: border-box;
+          padding: 0.75rem 1rem;
+          border: none;
+          border-radius: 6px;
+          font-size: 0.95rem;
+          font-weight: 700;
           cursor: pointer;
-          transition: background 0.15s ease, border-color 0.15s ease;
+          transition: opacity 0.2s, filter 0.2s, background 0.2s;
+        }
+        .arena-wallet {
+          color: #3d2817;
+          background: rgba(255, 248, 235, 0.65);
+          border: 1px solid rgba(61, 40, 23, 0.35);
           &:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.28);
+            background: rgba(255, 248, 235, 0.85);
+            border-color: rgba(61, 40, 23, 0.65);
           }
           &:disabled {
-            opacity: 0.55;
+            opacity: 0.35;
+            cursor: not-allowed;
+          }
+        }
+        .arena-enter {
+          color: #fff8f0;
+          background: #7a1515;
+          &:hover:not(:disabled) {
+            background: #8b1a1a;
+          }
+          &:disabled {
+            opacity: 0.35;
             cursor: not-allowed;
           }
         }
         .arena-error {
           font-size: 0.78rem;
-          color: #f87171;
+          color: #7a1515;
           line-height: 1.35;
+          text-align: center;
         }
       `}
     >
-      <div className='arena-title'>The Arena</div>
-      <div className='arena-subtitle'>
-        Enter the arena to fight as a gladiator. Entry fee: {ENTRY_FEE_SOL} SOL. If you fall, return here as a
-        spectator.
+      <div className='arena-panel'>
+        <img className='arena-scroll' src={SCROLL_SRC} alt='' />
+        <div className='arena-panel-content'>
+          <h2 className='arena-title'>The Arena</h2>
+          <p className='arena-subtitle'>
+            Enter the arena to fight as a gladiator. Entry fee: {ENTRY_FEE_SOL} SOL. If you fall, return here as a
+            spectator.
+          </p>
+          {!wallet ? (
+            <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
+              Connect Wallet
+            </button>
+          ) : (
+            <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
+              {truncateAddress(wallet)}
+            </button>
+          )}
+          <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
+            {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
+          </button>
+          {error ? <div className='arena-error'>{error}</div> : null}
+        </div>
       </div>
-      {!wallet ? (
-        <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
-          Connect Wallet
-        </button>
-      ) : (
-        <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
-          {truncateAddress(wallet)}
-        </button>
-      )}
-      <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
-        {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
-      </button>
-      {error ? <div className='arena-error'>{error}</div> : null}
     </div>
   )
 }
