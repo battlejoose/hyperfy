@@ -33,6 +33,8 @@ const names = [
   'scoreboard',
   'matchState',
   'enterArena',
+  'enterArenaResult',
+  'setSolanaWallet',
   'attackCanceled',
 ]
 

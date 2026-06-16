@@ -12,6 +12,7 @@ import statics from '@fastify/static'
 import multipart from '@fastify/multipart'
 
 import { createServerWorld } from '../core/createServerWorld'
+import { initSolanaPayments } from '../core/extras/solanaPayments.js'
 import { getDB } from './db'
 import { Storage } from './Storage'
 import { assets } from './assets'
@@ -59,6 +60,12 @@ if (process.env.ASSETS === 's3' && !process.env.ASSETS_BASE_URL) {
 if (process.env.ASSETS === 's3' && !process.env.ASSETS_S3_URI) {
   throw new Error(`[envs] ASSETS_S3_URI must be set when using ASSETS=s3`)
 }
+if (!process.env.SOLANA_RPC_URL) {
+  throw new Error('[envs] SOLANA_RPC_URL not set')
+}
+if (!process.env.SOLANA_TREASURY_SEED_PHRASE) {
+  throw new Error('[envs] SOLANA_TREASURY_SEED_PHRASE not set')
+}
 
 const fastify = Fastify({ logger: { level: 'error' } })
 
@@ -73,6 +80,13 @@ await collections.init({ rootDir, worldDir })
 
 // init db
 const db = await getDB({ worldDir })
+
+// init Solana payments (treasury pubkey exposed to client via PUBLIC_ env prefix)
+process.env.PUBLIC_SOLANA_TREASURY_PUBKEY = initSolanaPayments(db)
+console.log(`[solana] Treasury address: ${process.env.PUBLIC_SOLANA_TREASURY_PUBKEY}`)
+if (!process.env.PUBLIC_SOLANA_RPC_URL) {
+  process.env.PUBLIC_SOLANA_RPC_URL = process.env.SOLANA_RPC_URL
+}
 
 // init cleaner
 await cleaner.init({ db })

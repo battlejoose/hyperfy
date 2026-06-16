@@ -441,4 +441,16 @@ const migrations = [
       await trx.schema.renameTable('_config_new', 'config')
     })
   },
+  // Solana arena payments: wallet on users + tx dedup table
+  async db => {
+    await db.schema.alterTable('users', table => {
+      table.string('wallet_pubkey').nullable()
+    })
+    await db.schema.createTable('solana_txs', table => {
+      table.string('signature').primary()
+      table.string('player_id').notNullable()
+      table.string('type').notNullable() // 'entry' | 'kill_reward'
+      table.timestamp('created_at').notNullable()
+    })
+  },
 ]

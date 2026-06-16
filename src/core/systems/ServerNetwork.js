@@ -10,6 +10,9 @@ import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
 import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion, isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import { loadArenaEnvironment } from '../extras/arenaEnvironment'
+import { verifyEntryPayment, sendKillReward } from '../extras/solanaPayments.js'
+import { PublicKey } from '@solana/web3.js'
+import { KILL_REWARD_LAMPORTS } from '../extras/solanaConfig.js'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -189,9 +192,9 @@ export class ServerNetwork extends System {
   }
 
   getScoreboardArray() {
-    return [...this.scoreboard.values()].sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    )
+    return [...this.scoreboard.values()]
+      .map(({ wallet, ...entry }) => entry)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   }
 
   getScoreboardPayload() {
@@ -205,13 +208,14 @@ export class ServerNetwork extends System {
     this.send('scoreboard', this.getScoreboardPayload())
   }
 
-  addScoreboardPlayer(id, name, team = 'saracen') {
+  addScoreboardPlayer(id, name, team = 'saracen', wallet = null) {
     const entry = this.scoreboard.get(id)
     if (entry) {
       entry.name = name
       entry.team = team
+      if (wallet) entry.wallet = wallet
     } else {
-      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team })
+      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team, wallet })
     }
   }
 
@@ -224,6 +228,8 @@ export class ServerNetwork extends System {
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
+    const killerPlayer = this.world.entities.get(attackerId)
+    const victimPlayer = this.world.entities.get(targetId)
     if (killer) {
       killer.kills += 1
       const team = killer.team ?? 'crusader'
@@ -236,6 +242,24 @@ export class ServerNetwork extends System {
     }
     if (victim) victim.deaths += 1
     this.broadcastScoreboard()
+
+    const killerIsGladiator =
+      killerPlayer && !isSpectatorSessionAvatar(killerPlayer.data.sessionAvatar)
+    const victimIsGladiator =
+      victimPlayer && !isSpectatorSessionAvatar(victimPlayer.data.sessionAvatar)
+    const killerWallet = killer?.wallet
+    if (killerIsGladiator && victimIsGladiator && killerWallet) {
+      const signature = await sendKillReward(killerWallet, attackerId)
+      if (signature) {
+        this.sendTo(attackerId, 'chatAdded', {
+          id: uuid(),
+          from: null,
+          fromId: null,
+          body: `You earned ${KILL_REWARD_LAMPORTS / 1_000_000_000} SOL for the kill.`,
+          createdAt: moment().toISOString(),
+        })
+      }
+    }
   }
 
   saveTeamKills = async () => {
@@ -434,7 +458,8 @@ export class ServerNetwork extends System {
       this.addScoreboardPlayer(
         socket.player.data.id,
         socket.player.data.name,
-        getTeamFromAvatar(sessionAvatar)
+        getTeamFromAvatar(sessionAvatar),
+        user.wallet_pubkey ?? null
       )
 
       // send snapshot
@@ -474,13 +499,57 @@ export class ServerNetwork extends System {
     this.send('chatAdded', msg, socket.id)
   }
 
-  onEnterArena = (socket, data) => {
+  onSetSolanaWallet = async (socket, data) => {
+    if (!socket.player) return
+    const wallet = data?.wallet
+    if (!wallet || typeof wallet !== 'string') return
+
+    let pubkey
+    try {
+      pubkey = new PublicKey(wallet)
+    } catch {
+      return
+    }
+    const walletPubkey = pubkey.toBase58()
+
+    await this.db('users').where('id', socket.player.data.userId).update({ wallet_pubkey: walletPubkey })
+
+    const entry = this.scoreboard.get(socket.player.data.id)
+    if (entry) {
+      entry.wallet = walletPubkey
+    }
+  }
+
+  onEnterArena = async (socket, data) => {
     if (!socket.player) return
     if (!isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
+
+    const signature = data?.signature
+    const wallet = data?.wallet
+    if (!signature || !wallet) {
+      this.sendTo(socket.id, 'enterArenaResult', { ok: false, error: 'Payment required' })
+      return
+    }
+
+    try {
+      await verifyEntryPayment({
+        signature,
+        walletPubkey: wallet,
+        playerId: socket.player.data.id,
+      })
+    } catch (err) {
+      console.error('[solana] Entry payment verification failed:', err)
+      this.sendTo(socket.id, 'enterArenaResult', {
+        ok: false,
+        error: err.message || 'Payment verification failed',
+      })
+      return
+    }
 
     this.setPlayerSessionAvatar(socket.player, AVATAR_CRUSADER)
     this.teleportPlayerToSpawn(socket.player)
     this.broadcastScoreboard()
+    this.sendTo(socket.id, 'enterArenaResult', { ok: true })
   }
 
   onPlayerHit = async (socket, data) => {

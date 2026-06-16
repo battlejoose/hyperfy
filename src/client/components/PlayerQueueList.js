@@ -2,10 +2,27 @@ import { useEffect, useMemo, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 import { getScoreboardPlayers } from '../../core/extras/scoreboardUtils'
 import { isSpectatorSessionAvatar } from '../../core/extras/playerAvatars'
+import { ENTRY_FEE_LAMPORTS } from '../../core/extras/solanaConfig.js'
+import {
+  connectPhantom,
+  getTreasuryPubkey,
+  isPhantomInstalled,
+  payEntryFee,
+} from '../extras/solanaWallet.js'
+
+const ENTRY_FEE_SOL = ENTRY_FEE_LAMPORTS / 1_000_000_000
+
+function truncateAddress(address) {
+  if (!address || address.length < 10) return address
+  return `${address.slice(0, 4)}…${address.slice(-4)}`
+}
 
 export function PlayerQueueList({ world }) {
   const [rows, setRows] = useState(() => getScoreboardPlayers(world.network?.scoreboard))
   const [player, setPlayer] = useState(() => world.entities?.player)
+  const [wallet, setWallet] = useState(null)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const onScoreboard = data => {
@@ -25,6 +42,19 @@ export function PlayerQueueList({ world }) {
     return () => world.off('player', onPlayer)
   }, [world])
 
+  useEffect(() => {
+    const onResult = data => {
+      setPending(false)
+      if (!data?.ok) {
+        setError(data?.error || 'Failed to enter the arena')
+        return
+      }
+      setError(null)
+    }
+    world.on('enterArenaResult', onResult)
+    return () => world.off('enterArenaResult', onResult)
+  }, [world])
+
   const isSpectator = player && isSpectatorSessionAvatar(player.data.sessionAvatar)
 
   const sortedRows = useMemo(
@@ -34,8 +64,44 @@ export function PlayerQueueList({ world }) {
 
   if (!isSpectator) return null
 
-  const enterArena = () => {
-    world.network.send('enterArena', {})
+  const connectWallet = async () => {
+    setError(null)
+    try {
+      const pubkey = await connectPhantom()
+      setWallet(pubkey)
+      world.network.send('setSolanaWallet', { wallet: pubkey })
+    } catch (err) {
+      setError(err.message || 'Failed to connect wallet')
+    }
+  }
+
+  const enterArena = async () => {
+    setError(null)
+    const treasury = getTreasuryPubkey()
+    if (!treasury) {
+      setError('Arena payments are not configured')
+      return
+    }
+    if (!isPhantomInstalled()) {
+      setError('Phantom wallet not found')
+      return
+    }
+
+    setPending(true)
+    try {
+      let activeWallet = wallet
+      if (!activeWallet) {
+        activeWallet = await connectPhantom()
+        setWallet(activeWallet)
+        world.network.send('setSolanaWallet', { wallet: activeWallet })
+      }
+
+      const signature = await payEntryFee(treasury)
+      world.network.send('enterArena', { signature, wallet: activeWallet })
+    } catch (err) {
+      setPending(false)
+      setError(err.message || 'Payment failed')
+    }
   }
 
   return (
@@ -75,6 +141,7 @@ export function PlayerQueueList({ world }) {
           color: rgba(255, 255, 255, 0.55);
           line-height: 1.35;
         }
+        .arena-wallet,
         .arena-enter {
           border: 1px solid rgba(255, 255, 255, 0.18);
           background: rgba(255, 255, 255, 0.06);
@@ -85,10 +152,23 @@ export function PlayerQueueList({ world }) {
           font-weight: 600;
           cursor: pointer;
           transition: background 0.15s ease, border-color 0.15s ease;
-          &:hover {
+          &:hover:not(:disabled) {
             background: rgba(255, 255, 255, 0.1);
             border-color: rgba(255, 255, 255, 0.28);
           }
+          &:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+          }
+        }
+        .arena-fee {
+          font-size: 0.78rem;
+          color: rgba(255, 255, 255, 0.5);
+        }
+        .arena-error {
+          font-size: 0.78rem;
+          color: #f87171;
+          line-height: 1.35;
         }
         .arena-list {
           overflow-y: auto;
@@ -126,17 +206,32 @@ export function PlayerQueueList({ world }) {
     >
       <div className='arena-header'>
         <div className='arena-title'>The Arena</div>
-        <div className='arena-subtitle'>Enter the arena to fight as a gladiator. If you fall, return here as a spectator.</div>
-        <button type='button' className='arena-enter' onClick={enterArena}>
-          Enter the Arena
+        <div className='arena-subtitle'>
+          Enter the arena to fight as a gladiator. Entry fee: {ENTRY_FEE_SOL} SOL. If you fall, return here as a
+          spectator.
+        </div>
+        {!wallet ? (
+          <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
+            Connect Wallet
+          </button>
+        ) : (
+          <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
+            {truncateAddress(wallet)}
+          </button>
+        )}
+        <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
+          {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
         </button>
+        {error ? <div className='arena-error'>{error}</div> : null}
       </div>
       <div className='arena-list'>
         {sortedRows.length ? (
           sortedRows.map(row => (
             <div className='arena-row' key={row.id}>
               <span className='arena-name'>{row.name}</span>
-              <span className='arena-stat'>{row.kills}K / {row.deaths}D</span>
+              <span className='arena-stat'>
+                {row.kills}K / {row.deaths}D
+              </span>
             </div>
           ))
         ) : (

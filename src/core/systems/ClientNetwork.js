@@ -227,6 +227,10 @@ export class ClientNetwork extends System {
     this.setMatchState(data)
   }
 
+  onEnterArenaResult = data => {
+    this.world.emit('enterArenaResult', data)
+  }
+
   onEntityEvent = event => {
     const [id, version, name, data] = event
     const entity = this.world.entities.get(id)

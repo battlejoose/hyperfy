@@ -1,0 +1,2 @@
+export const ENTRY_FEE_LAMPORTS = 5_000_000 // 0.005 SOL
+export const KILL_REWARD_LAMPORTS = 4_800_000 // 0.0048 SOL
