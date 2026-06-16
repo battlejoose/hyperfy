@@ -1,6 +1,6 @@
 import { AVATAR_CRUSADER, AVATAR_SARACEN } from './playerAvatars'
 import { ARENA_SRC, loadArenaEnvironment } from './arenaEnvironment'
-import { addArenaFireEffects } from './arenaFireEffects.js'
+import { ARENA_FIRE_SRC } from './arenaFireFx.js'
 import { BLOOD_SPLATTER_SRC } from './bloodEffects'
 import { emoteUrls } from './playerEmotes'
 
@@ -10,6 +10,7 @@ export function queueClientGamePreloads(world, data) {
   const loader = world.loader
 
   loader.preload('model', ARENA_SRC)
+  loader.preload('model', ARENA_FIRE_SRC)
   loader.preload('model', SWORD_SRC)
   loader.preload('avatar', AVATAR_CRUSADER)
   loader.preload('avatar', AVATAR_SARACEN)
@@ -53,9 +54,7 @@ export async function prepareClientGameAssets(world, data) {
   let arenaSetup = Promise.resolve()
   try {
     await world.loader.waitFor('model', ARENA_SRC)
-    arenaSetup = loadArenaEnvironment(world).then(arenaRoot => {
-      addArenaFireEffects(world, arenaRoot)
-    })
+    arenaSetup = loadArenaEnvironment(world)
   } catch (err) {
     console.warn('[gameAssets] arena setup failed:', err)
   }

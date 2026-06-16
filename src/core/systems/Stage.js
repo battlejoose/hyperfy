@@ -2,6 +2,7 @@ import * as THREE from '../extras/three'
 import { isNumber } from 'lodash-es'
 
 import { System } from './System'
+import { updateArenaFireFx } from '../extras/arenaFireFx.js'
 import { LooseOctree } from '../extras/LooseOctree'
 
 const vec2 = new THREE.Vector2()
@@ -41,6 +42,7 @@ export class Stage extends System {
 
   update(delta) {
     this.models.forEach(model => model.clean())
+    updateArenaFireFx(this.world, delta)
   }
 
   postUpdate() {

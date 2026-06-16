@@ -1,5 +1,6 @@
 import * as THREE from './three'
 import { createNode } from './createNode'
+import { addArenaFireFx, clearArenaFireFx } from './arenaFireFx.js'
 
 export const ARENA_SRC = 'asset://smallarenarome.glb'
 
@@ -190,6 +191,9 @@ export function loadArenaEnvironment(world) {
     addArenaRingWalls(root)
     root.activate({ world })
     setupArenaRingWallColliderDebug(world)
+    if (!world.network?.isServer) {
+      await addArenaFireFx(world, root)
+    }
     root.setDirty()
     world.stage?.clean()
     return root
@@ -202,8 +206,9 @@ export function loadArenaEnvironment(world) {
   return arenaPromise
 }
 
-export function clearArenaEnvironment() {
+export function clearArenaEnvironment(world) {
   arenaPromise = null
+  if (world) clearArenaFireFx(world)
 }
 
 export function clearArenaRingWallColliderDebug(world) {
