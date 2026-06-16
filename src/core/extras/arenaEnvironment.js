@@ -1,6 +1,5 @@
 import * as THREE from './three'
 import { createNode } from './createNode'
-import { addArenaFireEffects } from './arenaFireEffects.js'
 
 export const ARENA_SRC = 'asset://smallarenarome.glb'
 
@@ -190,7 +189,6 @@ export function loadArenaEnvironment(world) {
     addStaticColliders(root)
     addArenaRingWalls(root)
     root.activate({ world })
-    addArenaFireEffects(world, root)
     setupArenaRingWallColliderDebug(world)
     root.setDirty()
     world.stage?.clean()
