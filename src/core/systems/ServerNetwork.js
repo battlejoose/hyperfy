@@ -10,7 +10,6 @@ import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
 import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion, isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import { loadArenaEnvironment } from '../extras/arenaEnvironment'
-import { ROUND_DURATION, RESULTS_DURATION, QUEUE_COUNTDOWN_DURATION, MIN_QUEUE_PLAYERS } from '../extras/matchConfig'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -49,8 +48,6 @@ export class ServerNetwork extends System {
     this.scoreboard = new Map()
     this.teamKills = { crusader: 0, saracen: 0 }
     this.match = null
-    this.matchTickAccumulator = 0
-    this.fightQueue = new Set()
   }
 
   init({ db }) {
@@ -96,203 +93,21 @@ export class ServerNetwork extends System {
     if (SAVE_INTERVAL) {
       this.saveTimerId = setTimeout(this.save, SAVE_INTERVAL * 1000)
     }
-    this.startLobby()
+    this.initArena()
     loadArenaEnvironment(this.world).catch(err => console.error('[Arena]', err))
   }
 
-  fixedUpdate(delta) {
-    if (!this.match) return
-    this.matchTickAccumulator += delta
-    if (this.matchTickAccumulator < 1) return
-    this.matchTickAccumulator -= 1
-    this.tickMatch()
+  initArena() {
+    this.match = { phase: 'ongoing' }
+    this.broadcastMatchState()
   }
 
   getMatchStatePayload() {
-    const now = this.getTime()
-    let remaining = 0
-    if (this.match.phase === 'playing') {
-      remaining = Math.max(0, Math.ceil(this.match.roundEndsAt - now))
-    } else if (this.match.phase === 'countdown') {
-      remaining = Math.max(0, Math.ceil(this.match.countdownEndsAt - now))
-    } else if (this.match.phase === 'results') {
-      remaining = Math.max(0, Math.ceil(this.match.resultsEndsAt - now))
-    }
-    return {
-      phase: this.match.phase,
-      remaining,
-      winner: this.match.winner,
-      roundEndsAt: this.match.roundEndsAt,
-      resultsEndsAt: this.match.resultsEndsAt,
-      countdownEndsAt: this.match.countdownEndsAt,
-      queuedCount: this.fightQueue.size,
-    }
-  }
-
-  getConnectedPlayerCount() {
-    let count = 0
-    for (const socket of this.sockets.values()) {
-      if (socket.player) count++
-    }
-    return count
-  }
-
-  getActiveFighters() {
-    const fighters = []
-    for (const socket of this.sockets.values()) {
-      if (!socket.player) continue
-      const player = socket.player
-      if (isSpectatorSessionAvatar(player.data.sessionAvatar)) continue
-      const health = player.data.health !== undefined ? player.data.health : HEALTH_MAX
-      if (health > 0) fighters.push(player)
-    }
-    return fighters
-  }
-
-  getMostKillsWinner() {
-    const players = [...this.scoreboard.values()]
-    if (!players.length) {
-      return { id: null, name: null, reason: 'draw' }
-    }
-
-    let maxKills = 0
-    for (const player of players) {
-      if (player.kills > maxKills) maxKills = player.kills
-    }
-
-    const top = players.filter(player => player.kills === maxKills)
-    if (top.length !== 1) {
-      return { id: null, name: null, reason: 'draw' }
-    }
-
-    return { id: top[0].id, name: top[0].name, reason: 'mostKills' }
-  }
-
-  checkLastStanding() {
-    if (this.match?.phase !== 'playing') return
-
-    const fighters = this.getActiveFighters()
-    const connectedPlayers = this.getConnectedPlayerCount()
-
-    if (fighters.length === 1 && connectedPlayers > 1) {
-      const player = fighters[0]
-      const entry = this.scoreboard.get(player.data.id)
-      this.endRound({
-        winner: {
-          id: player.data.id,
-          name: entry?.name || player.data.name || 'Unknown',
-          reason: 'lastStanding',
-        },
-      })
-      return
-    }
-
-    if (fighters.length === 0 && connectedPlayers > 1) {
-      this.endRound()
-    }
+    return { phase: this.match?.phase ?? 'ongoing' }
   }
 
   broadcastMatchState() {
     this.send('matchState', this.getMatchStatePayload())
-  }
-
-  syncQueueToScoreboard() {
-    for (const entry of this.scoreboard.values()) {
-      entry.queued = this.fightQueue.has(entry.id)
-    }
-    this.broadcastScoreboard()
-  }
-
-  canToggleFightQueue() {
-    return ['lobby', 'countdown'].includes(this.match?.phase)
-  }
-
-  updateFightQueueCountdown() {
-    if (!['lobby', 'countdown'].includes(this.match?.phase)) return
-
-    const queuedCount = this.fightQueue.size
-
-    if (queuedCount >= MIN_QUEUE_PLAYERS) {
-      if (this.match.phase === 'lobby') {
-        this.match.phase = 'countdown'
-        this.match.countdownEndsAt = this.getTime() + QUEUE_COUNTDOWN_DURATION
-        this.match.winner = null
-        this.match.resultsEndsAt = null
-      }
-    } else if (this.match.phase === 'countdown') {
-      this.match.phase = 'lobby'
-      this.match.countdownEndsAt = null
-    }
-
-    this.broadcastMatchState()
-  }
-
-  startLobby() {
-    this.match = {
-      phase: 'lobby',
-      winner: null,
-      roundEndsAt: null,
-      resultsEndsAt: null,
-      countdownEndsAt: null,
-    }
-    this.syncQueueToScoreboard()
-    this.updateFightQueueCountdown()
-  }
-
-  startQueuedRound() {
-    if (this.fightQueue.size < MIN_QUEUE_PLAYERS) {
-      this.match.phase = 'lobby'
-      this.match.countdownEndsAt = null
-      this.syncQueueToScoreboard()
-      this.broadcastMatchState()
-      return
-    }
-
-    const queuedIds = new Set(this.fightQueue)
-    this.fightQueue.clear()
-
-    this.teamKills = { crusader: 0, saracen: 0 }
-    this.resetScoreboardStats()
-
-    for (const socket of this.sockets.values()) {
-      if (!socket.player) continue
-      const isFighter = queuedIds.has(socket.player.data.id)
-      this.setPlayerSessionAvatar(socket.player, isFighter ? AVATAR_CRUSADER : AVATAR_SARACEN)
-      this.teleportPlayerToSpawn(socket.player)
-    }
-
-    this.syncQueueToScoreboard()
-
-    this.match = {
-      phase: 'playing',
-      winner: null,
-      roundEndsAt: this.getTime() + ROUND_DURATION,
-      resultsEndsAt: null,
-      countdownEndsAt: null,
-    }
-    this.broadcastMatchState()
-  }
-
-  endRound({ winner } = {}) {
-    if (this.match?.phase !== 'playing') return
-
-    this.match = {
-      phase: 'results',
-      winner: winner ?? this.getMostKillsWinner(),
-      roundEndsAt: this.match.roundEndsAt,
-      resultsEndsAt: this.getTime() + RESULTS_DURATION,
-      countdownEndsAt: null,
-    }
-    this.fightQueue.clear()
-    this.syncQueueToScoreboard()
-    this.broadcastMatchState()
-  }
-
-  resetScoreboardStats() {
-    for (const entry of this.scoreboard.values()) {
-      entry.kills = 0
-      entry.deaths = 0
-    }
   }
 
   setPlayerSessionAvatar(player, sessionAvatar) {
@@ -336,46 +151,6 @@ export class ServerNetwork extends System {
       position,
       rotationY,
     })
-  }
-
-  async returnToLobby() {
-    this.teamKills = { crusader: 0, saracen: 0 }
-    try {
-      await this.saveTeamKills()
-    } catch (err) {
-      console.error('failed to save teamKills:', err)
-    }
-    this.resetScoreboardStats()
-
-    for (const socket of this.sockets.values()) {
-      if (socket.player) {
-        this.setPlayerSessionAvatar(socket.player, AVATAR_SARACEN)
-        this.teleportPlayerToSpawn(socket.player)
-      }
-    }
-
-    this.startLobby()
-  }
-
-  tickMatch() {
-    const now = this.getTime()
-    if (this.match.phase === 'countdown') {
-      if (now >= this.match.countdownEndsAt) {
-        this.startQueuedRound()
-        return
-      }
-    } else if (this.match.phase === 'playing') {
-      if (now >= this.match.roundEndsAt) {
-        this.endRound()
-        return
-      }
-    } else if (this.match.phase === 'results') {
-      if (now >= this.match.resultsEndsAt) {
-        this.returnToLobby()
-        return
-      }
-    }
-    this.broadcastMatchState()
   }
 
   preFixedUpdate() {
@@ -436,7 +211,7 @@ export class ServerNetwork extends System {
       entry.name = name
       entry.team = team
     } else {
-      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team, queued: false })
+      this.scoreboard.set(id, { id, name, kills: 0, deaths: 0, team })
     }
   }
 
@@ -446,7 +221,6 @@ export class ServerNetwork extends System {
   }
 
   recordKill = async (attackerId, targetId) => {
-    if (this.match?.phase !== 'playing') return
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
@@ -700,20 +474,13 @@ export class ServerNetwork extends System {
     this.send('chatAdded', msg, socket.id)
   }
 
-  onFightQueueToggle = (socket, data) => {
-    if (!this.canToggleFightQueue()) return
+  onEnterArena = (socket, data) => {
     if (!socket.player) return
     if (!isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
 
-    const id = socket.player.data.id
-    if (this.fightQueue.has(id)) {
-      this.fightQueue.delete(id)
-    } else {
-      this.fightQueue.add(id)
-    }
-
-    this.syncQueueToScoreboard()
-    this.updateFightQueueCountdown()
+    this.setPlayerSessionAvatar(socket.player, AVATAR_CRUSADER)
+    this.teleportPlayerToSpawn(socket.player)
+    this.broadcastScoreboard()
   }
 
   onPlayerHit = async (socket, data) => {
@@ -762,7 +529,6 @@ export class ServerNetwork extends System {
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
       await this.recordKill(attackerId, targetId)
-      this.checkLastStanding()
     }
     
     // Broadcast health update to ALL clients (including attacker)
@@ -797,7 +563,6 @@ export class ServerNetwork extends System {
     if (teamChanged) {
       this.broadcastScoreboard()
     }
-    this.checkLastStanding()
   }
 
   onBlockBroken = async (socket, data) => {
@@ -1106,11 +871,6 @@ export class ServerNetwork extends System {
   onDisconnect = (socket, code) => {
     const playerId = socket.player?.data?.id
     if (playerId) {
-      this.fightQueue.delete(playerId)
-      if (['lobby', 'countdown'].includes(this.match?.phase)) {
-        this.syncQueueToScoreboard()
-        this.updateFightQueueCountdown()
-      }
       this.removeScoreboardPlayer(playerId)
     }
     this.world.livekit.clearModifiers(socket.id)

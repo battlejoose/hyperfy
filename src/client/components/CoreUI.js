@@ -18,7 +18,6 @@ import { ControlPriorities } from '../../core/extras/ControlPriorities'
 import { ChevronDoubleUpIcon, HandIcon } from './Icons'
 import { Sidebar } from './Sidebar'
 import { Scoreboard } from './Scoreboard'
-import { MatchRound } from './MatchRound'
 import { PlayerQueueList } from './PlayerQueueList'
 
 export function CoreUI({ world }) {
@@ -97,7 +96,6 @@ export function CoreUI({ world }) {
       {disconnected && <Disconnected />}
       {!ui.reticleSuppressors && <Reticle world={world} />}
       {<Toast world={world} />}
-      {ready && <MatchRound world={world} />}
       {ready && <PlayerQueueList world={world} />}
       {ready && <Scoreboard world={world} />}
       {ready && <ActionsBlock world={world} />}
