@@ -92,23 +92,26 @@ export function PlayerQueueList({ world }) {
         position: absolute;
         top: 5.5rem;
         right: 1rem;
-        width: min(22rem, calc(100vw - 2rem));
+        width: min(36rem, calc(100vw - 2rem));
         pointer-events: auto;
         z-index: 997;
         .arena-panel {
           position: relative;
           width: 100%;
-          min-height: 14rem;
+          min-height: 20rem;
           padding: 14% 14% 16%;
           box-sizing: border-box;
           border: none;
-          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+          overflow: hidden;
+          background: transparent;
         }
         .arena-scroll {
           position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
+          left: 50%;
+          top: 50%;
+          width: 118%;
+          height: 135%;
+          transform: translate(-50%, -50%);
           object-fit: fill;
           pointer-events: none;
         }
