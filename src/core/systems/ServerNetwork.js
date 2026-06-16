@@ -224,7 +224,7 @@ export class ServerNetwork extends System {
     this.broadcastScoreboard()
   }
 
-  recordKill = async (attackerId, targetId) => {
+  recordKill = (attackerId, targetId) => {
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
@@ -234,31 +234,40 @@ export class ServerNetwork extends System {
       killer.kills += 1
       const team = killer.team ?? 'crusader'
       this.teamKills[team] = (this.teamKills[team] ?? 0) + 1
+    }
+    if (victim) victim.deaths += 1
+    this.broadcastScoreboard()
+
+    this.processKillReward(attackerId, killer, killerPlayer, victimPlayer).catch(err => {
+      console.error('[solana] Kill reward processing failed:', err)
+    })
+  }
+
+  processKillReward = async (attackerId, killer, killerPlayer, victimPlayer) => {
+    if (killer) {
       try {
         await this.saveTeamKills()
       } catch (err) {
         console.error('failed to save teamKills:', err)
       }
     }
-    if (victim) victim.deaths += 1
-    this.broadcastScoreboard()
 
     const killerIsGladiator =
       killerPlayer && !isSpectatorSessionAvatar(killerPlayer.data.sessionAvatar)
     const victimIsGladiator =
       victimPlayer && !isSpectatorSessionAvatar(victimPlayer.data.sessionAvatar)
     const killerWallet = killer?.wallet
-    if (killerIsGladiator && victimIsGladiator && killerWallet) {
-      const signature = await sendKillReward(killerWallet, attackerId)
-      if (signature) {
-        this.sendTo(attackerId, 'chatAdded', {
-          id: uuid(),
-          from: null,
-          fromId: null,
-          body: `You earned ${KILL_REWARD_LAMPORTS / 1_000_000_000} SOL for the kill.`,
-          createdAt: moment().toISOString(),
-        })
-      }
+    if (!killerIsGladiator || !victimIsGladiator || !killerWallet) return
+
+    const signature = await sendKillReward(killerWallet, attackerId)
+    if (signature) {
+      this.sendTo(attackerId, 'chatAdded', {
+        id: uuid(),
+        from: null,
+        fromId: null,
+        body: `You earned ${KILL_REWARD_LAMPORTS / 1_000_000_000} SOL for the kill.`,
+        createdAt: moment().toISOString(),
+      })
     }
   }
 
@@ -596,16 +605,16 @@ export class ServerNetwork extends System {
     // Update target player's health (and clear combat effect on death)
     targetPlayer.modify({ health: newHealth, ...(deathEffect && { ef: deathEffect }) })
 
-    if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
-      await this.recordKill(attackerId, targetId)
-    }
-    
-    // Broadcast health update to ALL clients (including attacker)
+    // Broadcast health update immediately — don't wait on kill payout
     this.send('entityModified', {
       id: targetId,
       health: newHealth,
       ...(deathEffect && { ef: deathEffect }),
     })
+
+    if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
+      this.recordKill(attackerId, targetId)
+    }
   }
 
   onPlayerRespawn = (socket, data) => {
