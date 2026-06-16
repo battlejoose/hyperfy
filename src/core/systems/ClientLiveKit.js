@@ -10,7 +10,7 @@ const v2 = new THREE.Vector3()
 const q1 = new THREE.Quaternion()
 
 const VOICE_REF_DISTANCE = 2
-const VOICE_MAX_DISTANCE = 80
+const VOICE_MAX_DISTANCE = 40
 
 export class ClientLiveKit extends System {
   constructor(world) {
