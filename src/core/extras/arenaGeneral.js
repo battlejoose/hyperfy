@@ -5,7 +5,8 @@ import { BARRIZER_IDS } from './arenaFireFx.js'
 
 export const ARENA_GENERAL_SRC = 'asset://general.glb'
 const IDLE_CLIP_NAME = 'Idle_11'
-const GENERAL_Y_OFFSET = 5
+const GENERAL_Y_OFFSET = 4
+const GENERAL_SCALE = 1.1
 
 const _mid = new THREE.Vector3()
 const _center = new THREE.Vector3()
@@ -33,6 +34,7 @@ function faceArenaCenter(object, position, arenaRoot) {
 
   object.position.copy(position)
   object.rotation.y = Math.atan2(_center.x - position.x, _center.z - position.z)
+  object.scale.setScalar(GENERAL_SCALE)
 }
 
 export async function addArenaGeneral(world, arenaRoot) {
