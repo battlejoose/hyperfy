@@ -92,14 +92,14 @@ export function PlayerQueueList({ world }) {
         position: absolute;
         top: 5.5rem;
         right: 1rem;
-        width: min(36rem, calc(100vw - 2rem));
+        width: min(27rem, calc(100vw - 2rem));
         pointer-events: auto;
         z-index: 997;
         .arena-panel {
           position: relative;
           width: 100%;
-          min-height: 20rem;
-          padding: 14% 14% 16%;
+          min-height: 15rem;
+          padding: 18% 26% 19%;
           box-sizing: border-box;
           border: none;
           overflow: hidden;
@@ -120,10 +120,11 @@ export function PlayerQueueList({ world }) {
           z-index: 1;
           display: flex;
           flex-direction: column;
-          gap: 0.75rem;
+          align-items: center;
+          gap: 0.6rem;
         }
         .arena-title {
-          font-size: clamp(1.25rem, 4vw, 1.6rem);
+          font-size: clamp(1.1rem, 3vw, 1.35rem);
           font-weight: 700;
           margin: 0;
           color: #3d2817;
@@ -132,21 +133,31 @@ export function PlayerQueueList({ world }) {
         }
         .arena-subtitle {
           color: #5c4033;
-          font-size: 0.88rem;
+          font-size: 0.82rem;
           margin: 0;
+          max-width: 13rem;
           text-align: center;
-          line-height: 1.35;
+          line-height: 1.4;
+        }
+        .arena-actions {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.5rem;
+          width: 100%;
         }
         .arena-wallet,
         .arena-enter {
-          width: 100%;
+          width: fit-content;
+          max-width: 100%;
           box-sizing: border-box;
-          padding: 0.75rem 1rem;
+          padding: 0.5rem 0.9rem;
           border: none;
           border-radius: 6px;
-          font-size: 0.95rem;
+          font-size: 0.88rem;
           font-weight: 700;
           cursor: pointer;
+          white-space: nowrap;
           transition: opacity 0.2s, filter 0.2s, background 0.2s;
         }
         .arena-wallet {
@@ -174,10 +185,11 @@ export function PlayerQueueList({ world }) {
           }
         }
         .arena-error {
-          font-size: 0.78rem;
+          font-size: 0.72rem;
           color: #7a1515;
           line-height: 1.35;
           text-align: center;
+          max-width: 13rem;
         }
       `}
     >
@@ -189,18 +201,20 @@ export function PlayerQueueList({ world }) {
             Enter the arena to fight as a gladiator. Entry fee: {ENTRY_FEE_SOL} SOL. If you fall, return here as a
             spectator.
           </p>
-          {!wallet ? (
-            <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
-              Connect Wallet
+          <div className='arena-actions'>
+            {!wallet ? (
+              <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
+                Connect Wallet
+              </button>
+            ) : (
+              <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
+                {truncateAddress(wallet)}
+              </button>
+            )}
+            <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
+              {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
             </button>
-          ) : (
-            <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
-              {truncateAddress(wallet)}
-            </button>
-          )}
-          <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
-            {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
-          </button>
+          </div>
           {error ? <div className='arena-error'>{error}</div> : null}
         </div>
       </div>
