@@ -1716,6 +1716,10 @@ export class PlayerLocal extends Entity {
     this.setCapsuleColliderActive(!this.isDead && !this.getAnchorMatrix())
   }
 
+  isCapsuleSimulationActive() {
+    return !!this.capsule && !this.capsuleDisabled
+  }
+
   fixedUpdate(delta) {
     const xr = this.isXR
     const freeze = this.data.effect?.freeze
@@ -1727,6 +1731,12 @@ export class PlayerLocal extends Entity {
     }
 
     this.updateCapsuleColliderActive()
+
+    // Death and anchor modes disable capsule simulation — skip PhysX updates entirely.
+    if (!this.isCapsuleSimulationActive()) {
+      this.jumpPressed = false
+      return
+    }
 
     if (anchor) {
       /**
@@ -2897,8 +2907,15 @@ export class PlayerLocal extends Entity {
   }
 
   teleport({ position, rotationY }) {
+    if (this.isDead) {
+      this.completeRespawn()
+    }
+
     position = position.isVector3 ? position : new THREE.Vector3().fromArray(position)
     const hasRotation = isNumber(rotationY)
+    if (!this.isCapsuleSimulationActive()) {
+      this.setCapsuleColliderActive(true)
+    }
     // snap to position
     const pose = this.capsule.getGlobalPose()
     position.toPxTransform(pose)
@@ -2990,6 +3007,9 @@ export class PlayerLocal extends Entity {
     this.isDead = true
     this.respawnSent = false
     this.flying = false
+    this.pushForce = null
+    this.pushForceInit = false
+    this.platform.actor = null
     
     // Cancel any active attacks
     if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
