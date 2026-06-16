@@ -2,8 +2,10 @@ import * as THREE from '../extras/three'
 
 import { System } from './System'
 
-const AMBIENT_WIND_SRC = 'asset://desertwind.mp3'
-const AMBIENT_WIND_VOLUME = 0.2
+const AMBIENT_LOOPS = [
+  { src: 'asset://desertwind.mp3', volume: 0.2 },
+  { src: 'asset://drums.mp3', volume: 0.2 },
+]
 const VOICE_VOLUME_MULTIPLIER = 2
 
 const up = new THREE.Vector3(0, 1, 0)
@@ -95,16 +97,14 @@ export class ClientAudio extends System {
 
   async init() {
     this.world.prefs.on('change', this.onPrefsChange)
-    this.world.on('ready', this.startAmbientWind)
+    this.world.on('ready', this.startAmbientLoops)
   }
 
-  startAmbientWind = () => {
-    if (this.ambientWindElem) return
-
-    const url = this.world.resolveURL(AMBIENT_WIND_SRC)
+  startAmbientLoop = ({ src, volume }) => {
+    const url = this.world.resolveURL(src)
     if (url.startsWith('asset://')) {
-      console.error('[audio] ambient wind url not resolved')
-      return
+      console.error('[audio] ambient loop url not resolved:', src)
+      return null
     }
 
     const elem = new Audio(url)
@@ -113,17 +113,21 @@ export class ClientAudio extends System {
 
     const source = this.ctx.createMediaElementSource(elem)
     const gain = this.ctx.createGain()
-    gain.gain.value = AMBIENT_WIND_VOLUME
+    gain.gain.value = volume
     source.connect(gain)
     gain.connect(this.groupGains.music)
 
-    this.ambientWindElem = elem
-    this.ambientWindSource = source
-    this.ambientWindGain = gain
-
     this.ready(() => {
-      elem.play().catch(err => console.error('[audio] ambient wind failed:', err))
+      elem.play().catch(err => console.error('[audio] ambient loop failed:', src, err))
     })
+
+    return { elem, source, gain }
+  }
+
+  startAmbientLoops = () => {
+    if (this.ambientLoops?.length) return
+
+    this.ambientLoops = AMBIENT_LOOPS.map(loop => this.startAmbientLoop(loop)).filter(Boolean)
   }
 
   lateUpdate(delta) {
@@ -162,18 +166,14 @@ export class ClientAudio extends System {
   }
 
   destroy() {
-    if (this.ambientWindElem) {
-      this.ambientWindElem.pause()
-      this.ambientWindElem.src = ''
-      this.ambientWindElem = null
-    }
-    if (this.ambientWindSource) {
-      this.ambientWindSource.disconnect()
-      this.ambientWindSource = null
-    }
-    if (this.ambientWindGain) {
-      this.ambientWindGain.disconnect()
-      this.ambientWindGain = null
+    if (this.ambientLoops?.length) {
+      for (const { elem, source, gain } of this.ambientLoops) {
+        elem.pause()
+        elem.src = ''
+        source.disconnect()
+        gain.disconnect()
+      }
+      this.ambientLoops = null
     }
     this.groupGains.music.disconnect()
     this.groupGains.sfx.disconnect()
