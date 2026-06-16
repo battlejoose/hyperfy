@@ -1,6 +1,7 @@
 import { AVATAR_CRUSADER, AVATAR_SARACEN } from './playerAvatars'
 import { ARENA_SRC, loadArenaEnvironment } from './arenaEnvironment'
 import { ARENA_FIRE_SRC } from './arenaFireFx.js'
+import { ARENA_GENERAL_SRC } from './arenaGeneral.js'
 import { BLOOD_SPLATTER_SRC } from './bloodEffects'
 import { emoteUrls } from './playerEmotes'
 
@@ -11,6 +12,7 @@ export function queueClientGamePreloads(world, data) {
 
   loader.preload('model', ARENA_SRC)
   loader.preload('model', ARENA_FIRE_SRC)
+  loader.preload('model', ARENA_GENERAL_SRC)
   loader.preload('model', SWORD_SRC)
   loader.preload('avatar', AVATAR_CRUSADER)
   loader.preload('avatar', AVATAR_SARACEN)
