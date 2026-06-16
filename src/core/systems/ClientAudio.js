@@ -4,7 +4,7 @@ import { System } from './System'
 
 const AMBIENT_LOOPS = [
   { src: 'asset://desertwind.mp3', volume: 0.2 },
-  { src: 'asset://drums.mp3', volume: 0.2 },
+  { src: 'asset://drums.mp3', volume: 0.3 },
 ]
 const VOICE_VOLUME_MULTIPLIER = 2
 
