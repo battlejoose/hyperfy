@@ -4,11 +4,13 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 export const ARENA_FIRE_SRC = 'asset://animated_fire.glb'
 
 const BARRIZER_IDS = ['barrizer', 'barrizer_2']
-const FIRE_Y_OFFSET = 0.75
+const FIRE_Y_OFFSET = 1.75
+const FIRE_TILT_X = -Math.PI / 2
 
 const _pos = new THREE.Vector3()
 const _quat = new THREE.Quaternion()
 const _scale = new THREE.Vector3()
+const _tilt = new THREE.Quaternion()
 
 export async function addArenaFireFx(world, arenaRoot) {
   if (world.network?.isServer) return
@@ -60,6 +62,8 @@ export async function addArenaFireFx(world, arenaRoot) {
     fire.position.copy(_pos)
     fire.position.y += FIRE_Y_OFFSET
     fire.quaternion.copy(_quat)
+    _tilt.setFromAxisAngle(new THREE.Vector3(1, 0, 0), FIRE_TILT_X)
+    fire.quaternion.multiply(_tilt)
 
     fire.traverse(obj => {
       if (!obj.isMesh) return
