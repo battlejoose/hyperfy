@@ -10,6 +10,12 @@ import { Ranks } from '../extras/ranks'
 import { Emotes } from '../extras/playerEmotes'
 import { AVATAR_CRUSADER, AVATAR_SARACEN, getPlayerSpawn, getTeamFromAvatar, getRotationYFromQuaternion, isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import { loadArenaEnvironment } from '../extras/arenaEnvironment'
+import {
+  addArenaBloodHit,
+  addArenaCorpse,
+  createArenaRemnants,
+  serializeArenaRemnants,
+} from '../extras/arenaRemnants'
 import { verifyEntryPayment, sendKillReward } from '../extras/solanaPayments.js'
 import { PublicKey } from '@solana/web3.js'
 import { KILL_REWARD_LAMPORTS } from '../extras/solanaConfig.js'
@@ -51,6 +57,7 @@ export class ServerNetwork extends System {
     this.scoreboard = new Map()
     this.teamKills = { crusader: 0, saracen: 0 }
     this.match = null
+    this.arenaRemnants = createArenaRemnants()
   }
 
   init({ db }) {
@@ -489,6 +496,7 @@ export class ServerNetwork extends System {
         hasAdminCode: !!process.env.ADMIN_CODE,
         scoreboard: this.getScoreboardPayload(),
         matchState: this.match ? this.getMatchStatePayload() : null,
+        arenaRemnants: serializeArenaRemnants(this.arenaRemnants),
       })
 
       this.sockets.set(socket.id, socket)
@@ -562,7 +570,7 @@ export class ServerNetwork extends System {
   }
 
   onPlayerHit = async (socket, data) => {
-    const { attackerId, targetId, damage } = data
+    const { attackerId, targetId, damage, hitPos } = data
     
     // Validate attacker is the socket's player
     if (socket.player.data.id !== attackerId) {
@@ -612,6 +620,10 @@ export class ServerNetwork extends System {
       ...(deathEffect && { ef: deathEffect }),
     })
 
+    if (damage > 0 && hitPos) {
+      addArenaBloodHit(this.arenaRemnants, hitPos)
+    }
+
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
       this.recordKill(attackerId, targetId)
     }
@@ -624,14 +636,19 @@ export class ServerNetwork extends System {
 
     const p = data?.p || player.data.position
     const q = data?.q || player.data.quaternion
+    const corpse = {
+      p,
+      q,
+      sessionAvatar: player.data.sessionAvatar,
+    }
+
+    addArenaCorpse(this.arenaRemnants, corpse)
 
     this.send(
       'playerCorpse',
       {
         playerId: player.data.id,
-        p,
-        q,
-        sessionAvatar: player.data.sessionAvatar,
+        ...corpse,
       },
       socket.id
     )

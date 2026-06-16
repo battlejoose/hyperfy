@@ -1,12 +1,7 @@
 import moment from 'moment'
-import { clearBloodEffects } from '../extras/bloodEffects'
+import { clearBloodEffects, replayBloodSplatters } from '../extras/bloodEffects'
 import { prepareClientGameAssets } from '../extras/gameAssets'
-import { clearCorpses } from '../extras/playerCorpse'
-import { readPacket, writePacket } from '../packets'
-import { storage } from '../storage'
-import { uuid } from '../utils'
-import { hashFile } from '../utils-client'
-import { spawnCorpse } from '../extras/playerCorpse'
+import { clearCorpses, replayCorpses, spawnCorpse } from '../extras/playerCorpse'
 import { System } from './System'
 
 /**
@@ -153,6 +148,10 @@ export class ClientNetwork extends System {
     }
     if (data.matchState) {
       this.setMatchState(data.matchState)
+    }
+    if (data.arenaRemnants) {
+      replayCorpses(this.world, data.arenaRemnants.corpses)
+      replayBloodSplatters(this.world, data.arenaRemnants.blood)
     }
     storage.set('authToken', data.authToken)
   }

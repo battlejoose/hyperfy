@@ -70,6 +70,14 @@ export function clearBloodEffects(world) {
   clearBloodParticles(world)
 }
 
+export function replayBloodSplatters(world, bloodHits) {
+  if (!Array.isArray(bloodHits)) return
+  for (const hit of bloodHits) {
+    if (!hit?.p) continue
+    spawnBloodSplatters(world, { x: hit.p[0], y: hit.p[1], z: hit.p[2] })
+  }
+}
+
 export function spawnBloodEffect(world, activeParticles, hitPosition) {
   spawnBloodParticles(world, activeParticles, hitPosition)
   spawnBloodSplatters(world, hitPosition)

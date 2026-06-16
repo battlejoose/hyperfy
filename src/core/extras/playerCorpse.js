@@ -82,6 +82,13 @@ export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar
   trimCorpses(world)
 }
 
+export function replayCorpses(world, corpses) {
+  if (!Array.isArray(corpses)) return
+  for (const corpse of corpses) {
+    spawnCorpse(world, corpse)
+  }
+}
+
 export function clearCorpses() {
   while (corpses.length) {
     corpses.pop()?.deactivate()

@@ -797,13 +797,14 @@ export class PlayerLocal extends Entity {
     }
     
     this.hitPlayersThisSwing.add(playerId)
-    
-    // Spawn blood particles and play hit audio at hit location (use sword mesh position)
+
+    const hitPos = new THREE.Vector3()
     if (this.sword) {
-      const hitPos = new THREE.Vector3()
       this.sword.getWorldPosition(hitPos)
       spawnBloodHitEffect(this.world, this.activeParticles, hitPos)
       this.playHitAudio(hitPos)
+    } else if (target?.base) {
+      target.base.getWorldPosition(hitPos)
     }
     
     // Send hit notification to server (server will validate and apply damage)
@@ -812,6 +813,7 @@ export class PlayerLocal extends Entity {
       attackerId: this.data.id,
       targetId: playerId,
       damage: 25,
+      hitPos: hitPos.toArray(),
     })
   }
 
