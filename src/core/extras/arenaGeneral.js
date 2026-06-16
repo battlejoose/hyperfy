@@ -5,6 +5,7 @@ import { BARRIZER_IDS } from './arenaFireFx.js'
 
 export const ARENA_GENERAL_SRC = 'asset://general.glb'
 const IDLE_CLIP_NAME = 'Idle_11'
+const GENERAL_Y_OFFSET = 5
 
 const _mid = new THREE.Vector3()
 const _center = new THREE.Vector3()
@@ -21,6 +22,7 @@ function getBarrizerMidpointWorld(arenaRoot) {
     (a.position.z + b.position.z) * 0.5
   )
   _mid.applyMatrix4(arenaRoot.matrixWorld)
+  _mid.y += GENERAL_Y_OFFSET
   return _mid
 }
 
@@ -30,8 +32,7 @@ function faceArenaCenter(object, position, arenaRoot) {
   _center.y = position.y
 
   object.position.copy(position)
-  object.lookAt(_center)
-  object.rotateY(Math.PI)
+  object.rotation.y = Math.atan2(_center.x - position.x, _center.z - position.z)
 }
 
 export async function addArenaGeneral(world, arenaRoot) {
