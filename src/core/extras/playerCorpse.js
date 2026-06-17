@@ -82,10 +82,14 @@ export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar
   trimCorpses(world)
 }
 
-export function replayCorpses(world, corpses) {
-  if (!Array.isArray(corpses)) return
-  for (const corpse of corpses) {
-    spawnCorpse(world, corpse)
+export function replayCorpses(world, corpseList) {
+  if (!Array.isArray(corpseList)) return
+  for (const corpse of corpseList) {
+    spawnCorpse(world, {
+      position: corpse.p,
+      quaternion: corpse.q,
+      sessionAvatar: corpse.sessionAvatar,
+    })
   }
 }
 

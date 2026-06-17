@@ -2,6 +2,10 @@ import moment from 'moment'
 import { clearBloodEffects, replayBloodSplatters } from '../extras/bloodEffects'
 import { prepareClientGameAssets } from '../extras/gameAssets'
 import { clearCorpses, replayCorpses, spawnCorpse } from '../extras/playerCorpse'
+import { readPacket, writePacket } from '../packets'
+import { storage } from '../storage'
+import { uuid } from '../utils'
+import { hashFile } from '../utils-client'
 import { System } from './System'
 
 /**
@@ -150,8 +154,12 @@ export class ClientNetwork extends System {
       this.setMatchState(data.matchState)
     }
     if (data.arenaRemnants) {
-      replayCorpses(this.world, data.arenaRemnants.corpses)
-      replayBloodSplatters(this.world, data.arenaRemnants.blood)
+      try {
+        replayCorpses(this.world, data.arenaRemnants.corpses)
+        replayBloodSplatters(this.world, data.arenaRemnants.blood)
+      } catch (err) {
+        console.error('[ClientNetwork] failed to replay arena remnants:', err)
+      }
     }
     storage.set('authToken', data.authToken)
   }
