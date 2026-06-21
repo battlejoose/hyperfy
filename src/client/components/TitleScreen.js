@@ -223,13 +223,16 @@ export function TitleScreen({ onStart }) {
           padding: 14% 14% 16%;
           box-sizing: border-box;
           border: none;
-          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+          overflow: hidden;
+          background: transparent;
         }
         .title-scroll {
           position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
+          left: 50%;
+          top: 50%;
+          width: 118%;
+          height: 135%;
+          transform: translate(-50%, -50%);
           object-fit: fill;
           pointer-events: none;
         }
