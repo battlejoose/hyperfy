@@ -10,7 +10,7 @@ const MAX_NAME_LENGTH = 24
 const FADE_MS = 600
 
 const ASSETS = {
-  bg: '/assets/willsitbackground.png',
+  bg: '/assets/gladimage.png',
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
   enterArena: '/assets/war.mp3',
