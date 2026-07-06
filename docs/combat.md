@@ -2,12 +2,16 @@
 
 ## Overview
 
-Combat is **client-predicted for hits and blocks, server-validated for health only**:
+Combat is **client-predicted for hits and blocks, server-arbitrated for the final outcome**:
 
 1. Attacker's client detects sword contact locally (PhysX trigger)
-2. Block vs damage is decided on the attacker's client (tag match) — **no server packet for blocks**
-3. On damage only: client sends `playerHit` → server applies health → broadcasts `entityModified`
-4. All clients update health bars / death state from server; VFX (sparks/blood) from local PhysX
+2. Block vs damage is first predicted on the attacker's client (tag match) — a locally-confirmed block sends **no packet**
+3. On predicted damage: client sends `playerHit` → **server re-checks the defender's synced block state** (`ef` effect) with the same tag-match table
+   - Not blocked → server applies health → broadcasts `entityModified`
+   - Blocked → server sends `hitBlocked` back to the attacker (no damage); attacker's client ends the swing and shows sparks
+4. All clients update health bars / death state from server; VFX (sparks/blood) from local PhysX prediction
+
+This means the server is the single authority when the attacker's and defender's simulations disagree (e.g. the defender raised a block that the attacker's lagged replica hadn't shown yet). The defender's block wins if their block `ef` reached the server before the attacker's `playerHit` — which is nearly always the case, because block effects are sent immediately at block start while the hit packet is only sent at sword contact (≥500 ms later in the swing).
 
 ---
 
@@ -86,16 +90,24 @@ Called on the **attacker's client** when the sword trigger overlaps another coll
    c. Mismatch → fall through — treat blocker as hit target (damage through wrong block)
 3. Guard: already hit this player this swing?
 4. spawnBloodParticles + playHitAudio
-5. network.send('playerHit', { attackerId, targetId, damage: 25 })
+5. network.send('playerHit', { attackerId, targetId, damage: 25, hitPos })
 ```
 
-Server receives `playerHit`, validates, applies damage, broadcasts `entityModified`.
+Server receives `playerHit` and validates:
+
+1. `attackerId` must be the sender's player; sender must not be a spectator
+2. `damage` must be ≤ 25 (melee cap)
+3. Sender's synced `ef` must be an attack emote (same-socket ordering guarantees the attack effect always arrives before the hit packet)
+4. **Block arbitration**: the target's synced `ef` is checked with the same tag-match table — if the block matches, the server sends `hitBlocked` to the attacker and applies **no damage**
+5. Otherwise: applies damage, broadcasts `entityModified`, records `hitPos` for blood remnants
+
+On receiving `hitBlocked`, the attacker's client (`PlayerLocal.onServerHitBlocked`) disables the sword collider, applies the post-block attack cooldown, and plays sparks + block audio at the target — converging with what the defender already saw.
 
 ---
 
 ## Block System
 
-Blocking is **fully client-authoritative** — the server is not involved in block outcomes. Only **`playerHit`** touches the server (when damage goes through).
+Block prediction runs on each client, but the **server has the final say**: when an attacker claims damage via `playerHit`, the server re-checks the defender's synced block effect and rejects the hit (`hitBlocked`) if the block matches. A block the attacker confirms locally never touches the server.
 
 Blocking is **directional**: your block pose must match the incoming attack direction. A wrong block does not stop the sword — the attack deals damage as if it passed through the shield.
 
@@ -116,7 +128,7 @@ Key 5 uses **normal mode** (1 s timed block). Mouse drag uses **hold mode** (col
 | `BLOCK_LOW` | `low` | `low` |
 | `BLOCK_LEFT` | `left` | `right` (mirror) |
 | `BLOCK_RIGHT` | `right` | `left` (mirror) |
-| `BLOCK` (key 5) | `null` | all directions |
+| `BLOCK` (key 5) | `high` | `high` only — shares `blockhigh.glb` with `BLOCK_HIGH`, so every simulation (local, remote, server) resolves it as a high block |
 
 Left/right mirror: you block left to stop a swing coming from your right.
 
@@ -175,12 +187,18 @@ sequenceDiagram
     A->>A: PlayerLocal.onSwordHit — tag match?
     alt Tags match
         A->>A: Disable A's sword, sparks/audio
-        Note over A,S: No network — block is client-only
-    else Tags mismatch
+        Note over A,S: No network — block confirmed locally
+    else Tags mismatch (or A never saw the block)
         A->>S: playerHit {attackerId:A, targetId:B, damage:25}
-        S->>S: Apply health
-        S->>A: entityModified health
-        S->>B: entityModified health
+        S->>S: Re-check B's synced block effect vs A's attack effect
+        alt Server: block matches
+            S->>A: hitBlocked — A ends swing, sparks/cooldown
+            Note over S,B: No damage — B's block wins
+        else Server: not blocked
+            S->>S: Apply health
+            S->>A: entityModified health
+            S->>B: entityModified health
+        end
     end
 
     B->>B: B's block hit by A's remote sword
@@ -326,11 +344,17 @@ Only **`playerHit`** is used for combat damage today. **`attackCanceled`** remai
 
 ### `playerHit`  (Client → Server)
 ```js
-{ attackerId: playerId, targetId: playerId, damage: 25 }
+{ attackerId: playerId, targetId: playerId, damage: 25, hitPos: [x, y, z] }
 ```
-Server validation: `attackerId` must be the sender's player. Applies damage, broadcasts `entityModified`.
+Server validation: `attackerId` must be the sender's player; damage capped at 25; sender must have an active attack effect; target's synced block effect is re-checked (block arbitration). Applies damage and broadcasts `entityModified`, or replies `hitBlocked`.
 
-Not sent on a successful block (tags match).
+Not sent on a locally-confirmed block (tags match on the attacker's client).
+
+### `hitBlocked`  (Server → attacking Client)
+```js
+{ attackerId, targetId }
+```
+Server verdict that a claimed hit was actually blocked. The attacker's client ends the swing (sword collider off + post-block cooldown) and plays sparks/block audio at the target.
 
 ### `playerRespawn`  (Client → Server)
 ```js

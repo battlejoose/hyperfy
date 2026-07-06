@@ -210,6 +210,12 @@ export class ClientNetwork extends System {
     player.breakBlockFromKick()
   }
 
+  onHitBlocked = data => {
+    const player = this.world.entities.player
+    if (player?.data.id !== data.attackerId) return
+    player.onServerHitBlocked(data.targetId)
+  }
+
   onPlayerCorpse = data => {
     const player = this.world.entities.get(data.playerId)
     let avatar = null

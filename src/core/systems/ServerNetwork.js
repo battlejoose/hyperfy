@@ -28,6 +28,33 @@ const blockEmotes = [
   Emotes.BLOCK_LOW,
 ]
 
+// Emote → direction tag maps for server-side block arbitration.
+// Note: Emotes.BLOCK (key 5) shares blockhigh.glb with BLOCK_HIGH, so it resolves as a high block.
+const attackTagByEmote = {
+  [Emotes.ATTACK_HIGH]: 'high',
+  [Emotes.ATTACK_LEFT]: 'left',
+  [Emotes.ATTACK_RIGHT]: 'right',
+  [Emotes.ATTACK_LOW]: 'low',
+}
+const blockTagByEmote = {
+  [Emotes.BLOCK_HIGH]: 'high',
+  [Emotes.BLOCK_LEFT]: 'left',
+  [Emotes.BLOCK_RIGHT]: 'right',
+  [Emotes.BLOCK_LOW]: 'low',
+}
+
+// Same mirror table the clients use: left blocks right and vice versa.
+function isAttackBlocked(attackTag, blockTag) {
+  if (!blockTag) return false
+  if (blockTag === 'high' && attackTag === 'high') return true
+  if (blockTag === 'low' && attackTag === 'low') return true
+  if (blockTag === 'left' && attackTag === 'right') return true
+  if (blockTag === 'right' && attackTag === 'left') return true
+  return false
+}
+
+const SWORD_DAMAGE_MAX = 25
+
 const SAVE_INTERVAL = parseInt(process.env.SAVE_INTERVAL || '60') // seconds
 const PING_RATE = 10 // seconds
 const defaultSpawn = '{ "position": [0, 0, 0], "quaternion": [0, 0, 0, 1] }'
@@ -595,6 +622,31 @@ export class ServerNetwork extends System {
 
     if (damage > 0 && currentHealth <= 0) {
       return
+    }
+
+    if (damage > 0) {
+      // Cap melee damage — clients can't claim more than a sword hit
+      if (typeof damage !== 'number' || damage > SWORD_DAMAGE_MAX) {
+        console.warn('[Server] Rejected playerHit with invalid damage:', damage, 'from', attackerId)
+        return
+      }
+      // The attacker must actually be mid-attack (their ef effect is synced on the
+      // same socket before the hit packet, so ordering is guaranteed)
+      const attackTag = attackTagByEmote[socket.player.data.effect?.emote]
+      if (!attackTag) {
+        console.warn('[Server] Rejected playerHit — attacker has no active attack effect:', attackerId)
+        return
+      }
+      // Server-side block arbitration: if the target's synced effect says they are
+      // holding a matching block, the hit is blocked — regardless of what the
+      // attacker's local simulation concluded. This makes the server the single
+      // authority when the two clients disagree.
+      const blockTag = blockTagByEmote[targetPlayer.data.effect?.emote]
+      if (isAttackBlocked(attackTag, blockTag)) {
+        console.log('[Server] Hit BLOCKED — attack:', attackTag, 'vs block:', blockTag, '-', attackerId, '->', targetId)
+        this.sendTo(socket.id, 'hitBlocked', { attackerId, targetId })
+        return
+      }
     }
 
     const newHealth = Math.max(0, Math.min(HEALTH_MAX, currentHealth - damage))

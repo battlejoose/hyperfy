@@ -9,7 +9,7 @@ This fork uses a **split authority** model — not fully server-authoritative fo
 | **Client (owner)** | Position, rotation, locomotion (`m`, `a`, `g`, `e`), combat effects (`ef`), hit detection, block detection, VFX/audio |
 | **Server** | Health/damage (validates `playerHit` sender), spawn, ranks, persistence, teleport/push routing |
 
-Movement is **client-trusted**: the server relays `entityModified` without validating physics. **Block tag matching** is fully client-side on the attacker's machine. The server only validates `playerHit` (identity + health). Blocking sends **no** server packet.
+Movement is **client-trusted**: the server relays `entityModified` without validating physics. **Block tag matching** is predicted client-side on the attacker's machine, but the server re-checks the defender's synced block effect on every `playerHit` and rejects blocked hits with `hitBlocked` (server-side block arbitration). The server also validates `playerHit` identity, damage cap (≤ 25), and that the sender has an active attack effect. Blocking sends **no** server packet.
 
 There is **no movement prediction or server reconciliation** — remote players use buffered interpolation (~187 ms delay). See [character-sync.md](character-sync.md).
 
@@ -63,7 +63,8 @@ All packet names are defined in `src/core/packets.js`.
 | `modifyRank` | S→C | Change player rank |
 | `kick` | S→C | Disconnect a player |
 | `ping` / `pong` | both | Latency measurement |
-| `playerHit` | **C→S** | Client reports sword damage (not sent on successful block) |
+| `playerHit` | **C→S** | Client reports sword damage (not sent on locally-confirmed block) |
+| `hitBlocked` | **S→C** | Server verdict: claimed hit was blocked — attacker ends swing, no damage |
 | `attackCanceled` | **C→S→others** | Charged attack released before 500 ms |
 
 ### Sending Packets

@@ -46,18 +46,18 @@ Transport: WebSocket binary MessagePack (`src/core/packets.js`).
 | Client-authoritative | Server-authoritative |
 |---------------------|---------------------|
 | Movement (p, q) | Health / damage |
-| Locomotion (m, a, g, e) | Combat hit validation (identity only) |
-| Combat effects (ef) | Spawn, ranks, persistence |
-| Hit detection (PhysX triggers) | Teleport / push routing |
+| Locomotion (m, a, g, e) | Combat hit validation (identity, damage cap, attack state) |
+| Combat effects (ef) | Block arbitration on `playerHit` (`hitBlocked` verdict) |
+| Hit detection (PhysX triggers) | Spawn, ranks, persistence, teleport / push routing |
 
-Movement is **not** server-validated. Damage is **server-authoritative** via `playerHit`. Blocking is **fully client-authoritative** — no server packet.
+Movement is **not** server-validated. Damage is **server-authoritative** via `playerHit`. Blocks are client-predicted, but the server re-checks the defender's synced block effect on every claimed hit and rejects blocked hits with `hitBlocked`.
 
 ## Combat Quick Facts
 
 - Damage: 25 per hit, max health 100
 - Sword collider: trigger, `weapon` layer, 16 ms phantom-hit guard
 - Block collider: simulation shape (not trigger), directional tag matching on **attacker's client**
-- Block: client-only on tag match (no server packet); `playerHit` only on damage / wrong block
+- Block: locally-confirmed block sends no packet; claimed hits are re-checked server-side against the defender's synced block effect (`hitBlocked` on rejection)
 - Input: keys 1–4 attacks, 5 generic block; mouse drag ≥ 30px for charged attack / held directional block
 - Death: fall anim → 5 s → getup → heal via `playerHit` with `damage: -100`
 

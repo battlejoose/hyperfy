@@ -36,6 +36,7 @@ const names = [
   'enterArenaResult',
   'setSolanaWallet',
   'attackCanceled',
+  'hitBlocked',
 ]
 
 const byName = {}

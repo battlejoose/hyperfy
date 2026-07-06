@@ -817,6 +817,24 @@ export class PlayerLocal extends Entity {
     })
   }
 
+  // Server ruled our claimed hit was actually blocked (the defender's synced block
+  // state beat our local prediction). Converge: end the swing and show block feedback.
+  onServerHitBlocked(targetId) {
+    console.log('[Sword] Server ruled hit on', targetId, 'was BLOCKED - ending swing')
+    if (this.swordColliderActive) {
+      this.setSwordColliderActive(false)
+    }
+    this.attackBlockCooldownUntil = Date.now() + AttackTiming.cooldownAfterBlock * 1000
+    const blocker = this.world.entities.get(targetId)
+    if (blocker?.base) {
+      const blockPos = new THREE.Vector3()
+      blockPos.copy(blocker.base.position)
+      blockPos.y += 1.8 * 0.6
+      this.spawnSparkParticles(blockPos)
+      this.playBlockAudio(blockPos)
+    }
+  }
+
   onKickHit(otherHandle) {
     if (!this.kickColliderActive) return
     if (otherHandle.tag !== 'block') return
