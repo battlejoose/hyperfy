@@ -255,6 +255,7 @@ export function createVRMFactory(glb, setupMaterial) {
     }
     
     let currentAttack = null
+    let kickVisualComplete = false // kick played once; ignore effect ticks until cleared
     
     let currentEmote
     let isInDeathState = false // Track if player is dead (affects locomotion)
@@ -270,9 +271,16 @@ export function createVRMFactory(glb, setupMaterial) {
       if (!currentAttack) return
       const action = poses[currentAttack]?.action
       if (isCombatActionFinished(action)) {
-        // Block poses clamp at the end — keep weight up until the effect clears
         if (currentAttack.startsWith('block')) {
+          // Held blocks clamp at the end until the effect clears
           poses[currentAttack].target = 1
+          return
+        }
+        if (currentAttack === 'kick') {
+          // Kick plays once, then blend back to locomotion (no end-pose hold)
+          kickVisualComplete = true
+          stopCombatPose('kick')
+          currentAttack = null
           return
         }
         poses[currentAttack].target = 0
@@ -365,6 +373,7 @@ export function createVRMFactory(glb, setupMaterial) {
           }
         }
         clearCurrentCombatPose({ immediate: options.immediate })
+        kickVisualComplete = false
       }
       
       // Check if this is an attack animation
@@ -378,6 +387,11 @@ export function createVRMFactory(glb, setupMaterial) {
           return // Same attack — let the clip play out; don't reset or re-time from network ticks
         }
 
+        // Kick effect duration can outlive the clip — don't replay after one pass
+        if (attackKey === 'kick' && kickVisualComplete) {
+          return
+        }
+
         if (currentAttack) {
           clearCurrentCombatPose({ immediate: true })
         }
@@ -387,6 +401,9 @@ export function createVRMFactory(glb, setupMaterial) {
         console.log('[VRM] Attack detected:', attackKey, 'duration:', attackDuration, 'pose exists:', !!poses[attackKey])
         if (poses[attackKey]) {
           currentAttack = attackKey
+          if (attackKey === 'kick') {
+            kickVisualComplete = false
+          }
           if (poses[attackKey].action) {
             // Reset and restart the attack animation with high priority
             poses[attackKey].action.reset()
