@@ -716,7 +716,10 @@ export function createVRMFactory(glb, setupMaterial) {
             const effectiveWeight = upperBodyOnly || fullBodyCombat ? value * 5.0 : value
             pose.action.weight = value
             pose.action.setEffectiveWeight(effectiveWeight)
-            if (!pose.active && value > 0) {
+            // Auto-start only while the pose is being driven IN (target > 0).
+            // A canceled pose fades out with weight > 0 and active = false —
+            // restarting it here would replay the clip from frame 0.
+            if (!pose.active && value > 0 && pose.target > 0) {
               if (upperBodyOnly) {
                 // For attacks, reset and play immediately
                 pose.action.reset().play()
@@ -726,7 +729,7 @@ export function createVRMFactory(glb, setupMaterial) {
               pose.active = true
             }
             // Enable the action
-            if (value > 0 && !pose.action.isRunning()) {
+            if (value > 0 && pose.target > 0 && !pose.action.isRunning()) {
               pose.action.play()
             }
           }
