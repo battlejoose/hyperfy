@@ -302,6 +302,10 @@ export function createVRMFactory(glb, setupMaterial) {
           pose.action.stop()
         }
       } else if (pose.action) {
+        // Freeze the clip so a canceled swing doesn't keep playing (e.g. a
+        // charge-hold resuming into the strike) while its weight blends out.
+        // action.reset() on the next play clears paused.
+        pose.action.paused = true
         pose.action.fadeOut(0.1)
       }
     }
