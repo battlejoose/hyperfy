@@ -312,6 +312,22 @@ Hit sound:   asset://audiohit.mp3   — volume 0.5, spatial, 20m max
 Block sound: asset://audioblock.mp3 — same settings
 ```
 
+### Impact Juice (`src/core/extras/combatJuice.js`)
+
+Layered, client-side-only feedback on top of the simulation (never changes damage/timing):
+
+| Event | Hitstop | Camera kick | Shake (trauma) |
+|-------|---------|-------------|----------------|
+| Hit landed (attacker) | 75 ms both fighters | directional per attack | 0.26–0.34 |
+| Attack blocked (attacker) | 55 ms self | backward recoil | 0.2 |
+| Block absorbed (defender) | none | small backward | 0.2 |
+| Took damage (victim) | 90 ms self | down + back jolt | 0.45 |
+
+- **Hitstop** — mixer `timeScale = 0.05` (not `0`, so charge-pause detection and effect timers are unaffected), restored after the duration via a guard that respects real charge/block pauses.
+- **Camera kick** — spring impulse in camera-local space, distinct per attack direction: left swing kicks right, right swing kicks left, high chop kicks down, low cut kicks up. Small roll (~1.3°) on horizontal swings.
+- **Camera shake** — trauma-based (`shake = trauma²`), layered-sine noise ≈ 20 Hz, exponential decay ≈ 0.33 s, max amplitude 4.5 cm. Applied additively after `simpleCamLerp` in `PlayerLocal.lateUpdate`.
+- **Directional sparks** — 8 hot white/orange chips fly along the swing path per attack tag on every landed hit (in addition to blood).
+
 ---
 
 ## Damage Values

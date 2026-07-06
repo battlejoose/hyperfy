@@ -17,6 +17,13 @@ import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
 import { isSpectatorSessionAvatar, applyTestFighterTint } from '../extras/playerAvatars'
+import {
+  AttackJuiceProfiles,
+  CombatCameraFX,
+  JuiceEvents,
+  applyHitstop,
+  spawnImpactSparks,
+} from '../extras/combatJuice'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
@@ -244,6 +251,8 @@ export class PlayerLocal extends Entity {
     }
 
     this.camHeight = DEFAULT_CAM_HEIGHT
+
+    this.camFX = new CombatCameraFX()
 
     this.cam = {}
     this.cam.position = new THREE.Vector3().copy(this.base.position)
@@ -584,7 +593,11 @@ export class PlayerLocal extends Entity {
       blockPos.y += this.capsuleHeight * 0.6 // Match block collider height
       this.spawnSparkParticles(blockPos)
       this.playBlockAudio(blockPos)
-      
+
+      // Absorbed a hit on our shield — small jolt, no hitstop
+      this.camFX.addShake(JuiceEvents.hitBlocked.shake)
+      this.camFX.addKick(JuiceEvents.hitBlocked.kick, 0)
+
     } else {
       console.log('[Block] Block does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack goes through, taking damage!')
       
@@ -597,6 +610,28 @@ export class PlayerLocal extends Entity {
       
       // Don't notify server about block - the attacker will send damage normally
     }
+  }
+
+  // Impact juice when our attack lands: hitstop both fighters, directional
+  // camera kick + shake per swing direction, and sparks along the swing path.
+  applyAttackImpactJuice(target, hitPos) {
+    const profile = AttackJuiceProfiles[this.currentAttackTag] || AttackJuiceProfiles.right
+    applyHitstop(this, JuiceEvents.hitLanded.hitstopMs)
+    if (target) applyHitstop(target, JuiceEvents.hitLanded.hitstopMs)
+    this.camFX.addKick(profile.kick, profile.roll)
+    this.camFX.addShake(profile.shake)
+    if (hitPos) {
+      v1.copy(profile.sparkDir).normalize().applyQuaternion(this.base.quaternion)
+      spawnImpactSparks(this.world, this.activeParticles, hitPos, v1)
+    }
+  }
+
+  // Recoil juice when our attack gets blocked: clang recoil + brief hitstop.
+  applyBlockedRecoilJuice() {
+    const e = JuiceEvents.hitBlocked
+    applyHitstop(this, e.hitstopMs)
+    this.camFX.addKick(e.kick, e.roll)
+    this.camFX.addShake(e.shake)
   }
 
   spawnSparkParticles(position) {
@@ -779,7 +814,9 @@ export class PlayerLocal extends Entity {
           // Play block audio
           this.playBlockAudio(blockPos)
         }
-        
+
+        this.applyBlockedRecoilJuice()
+
         return
       } else {
         // Block doesn't match attack direction - attack goes through!
@@ -810,7 +847,9 @@ export class PlayerLocal extends Entity {
     } else if (target?.base) {
       target.base.getWorldPosition(hitPos)
     }
-    
+
+    this.applyAttackImpactJuice(target, hitPos)
+
     // Send hit notification to server (server will validate and apply damage)
     console.log('[Sword] VALID HIT on player:', playerId, '- notifying server NOW')
     this.world.network.send('playerHit', {
@@ -919,6 +958,7 @@ export class PlayerLocal extends Entity {
     if (this.swordColliderActive) {
       this.setSwordColliderActive(false)
     }
+    this.applyBlockedRecoilJuice()
     this.attackBlockCooldownUntil = Date.now() + AttackTiming.cooldownAfterBlock * 1000
     const blocker = this.world.entities.get(targetId)
     if (blocker?.base) {
@@ -2819,6 +2859,8 @@ export class PlayerLocal extends Entity {
     } else {
       // otherwise interpolate camera towards target
       simpleCamLerp(this.world, this.control.camera, this.cam, delta)
+      // additive combat impact feedback (kick/shake) on top of the lerped camera
+      this.camFX.update(delta, this.control.camera)
     }
     if (this.avatar) {
       const matrix = this.avatar.getBoneTransform('head')
@@ -3175,6 +3217,11 @@ export class PlayerLocal extends Entity {
         this.interruptAttackFromHit()
         this.applySprintCooldown()
         this.applyAttackHitCooldown()
+        // Taking a hit — strongest feedback tier: jolt + shake + brief hitstop
+        const e = JuiceEvents.tookDamage
+        this.camFX.addKick(e.kick, e.roll)
+        this.camFX.addShake(e.shake)
+        applyHitstop(this, e.hitstopMs)
       }
       this.data.health = data.health
       this.nametag.health = data.health
