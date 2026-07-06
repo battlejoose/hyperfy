@@ -1142,9 +1142,10 @@ export class PlayerRemote extends Entity {
       this.attackAnimationPaused = false
     }
 
-    // Force switch back to locomotion by clearing the emote
+    // Force switch back to locomotion by clearing the emote — immediate so
+    // the swing stops now instead of playing out visually
     if (this.avatar?.instance) {
-      this.avatar.instance.setEmote(null)
+      this.avatar.instance.setEmote(null, undefined, { immediate: true })
     }
 
     // Clear the effect data

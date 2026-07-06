@@ -318,18 +318,18 @@ Layered, client-side feedback on top of the simulation (visual/physics polish on
 
 | Event | Hitstop | Camera kick + zoom | Shake | Extra |
 |-------|---------|--------------------|-------|-------|
-| Hit landed (attacker) | 120 ms both fighters | directional per attack, punch-IN 0.28–0.38 m | 0.5–0.62 | victim red flash, knockback push, sparks |
-| Kill shot (attacker) | +200 ms both | punch-IN 0.7 m, roll | 1.0 | stacked on hit-landed |
-| Attack blocked (attacker) | 90 ms self | backward recoil, punch-OUT 0.25 m | 0.45 | — |
-| Block absorbed (defender) | none | backward, punch-OUT 0.15 m | 0.4 | — |
-| Took damage (victim) | 140 ms self | down+back jolt, punch-IN 0.3 m | 0.85 | self flash, red screen vignette |
+| Hit landed (attacker) | 70 ms both fighters | directional per attack, punch-IN 0.14–0.19 m | 0.5–0.62 | victim red flash, knockback push, sparks |
+| Kill shot (attacker) | +120 ms both | punch-IN 0.35 m, roll | 1.0 | stacked on hit-landed |
+| Attack blocked (attacker) | 50 ms self | backward recoil, punch-OUT 0.12 m | 0.45 | — |
+| Block absorbed (defender) | none | backward, punch-OUT 0.08 m | 0.4 | — |
+| Took damage (victim) | 85 ms self | down+back jolt, punch-IN 0.15 m | 0.85 | self flash, red screen vignette |
 
 - **Hitstop** — mixer `timeScale = 0.04` (not `0`, so charge-pause detection and effect timers are unaffected), restored via a guard that respects real charge/block pauses.
-- **Camera kick** — spring impulse in camera-local space per attack direction: left swing kicks right, right swing kicks left, high chop kicks down, low cut kicks up (±0.13–0.16 m, roll up to ~2.4°).
+- **Camera kick** — spring impulse in camera-local space per attack direction: left swing kicks right, right swing kicks left, high chop kicks down, low cut kicks up (±0.065–0.08 m, roll up to ~1.2°).
 - **Zoom punch** — spring on `camera.zoom`: punch-in frames a landed hit, punch-out sells rejection (blocked).
-- **Camera shake** — trauma-based (`shake = trauma²`), layered-sine noise ≈ 20 Hz, decay ≈ 0.45 s, max amplitude 12 cm. Applied additively after `simpleCamLerp` in `PlayerLocal.lateUpdate`. Skipped in XR.
+- **Camera shake** — trauma-based (`shake = trauma²`), layered-sine noise ≈ 20 Hz, decay ≈ 0.45 s, max amplitude 6 cm. Applied additively after `simpleCamLerp` in `PlayerLocal.lateUpdate`. Skipped in XR.
 - **Hit flash** — victim's avatar materials flash red-hot for 90 ms (emissive override). Materials are lazily cloned per avatar instance in `createVRMFactory` so the flash (and test-fighter tint) only affects that one player.
-- **Knockback** — attacker sends `playerPush` (4.5 m/s away + small pop up) routed through the server to the victim, so hits physically shove.
+- **Knockback** — attacker sends `playerPush` (2.2 m/s away + small pop up) routed through the server to the victim, so hits physically shove.
 - **Damage vignette** — red radial screen flash (`DamageVignette` in `CoreUI.js`) on the victim via `damageFlash` world event; stronger when health ≤ 25.
 - **Directional sparks** — 14 hot white/orange chips fly along the swing path per attack tag on every landed hit (in addition to blood).
 - **Spectator view** — remote-vs-remote hits also flash the victim and hitstop both fighters on every client (`PlayerRemote.onSwordHit`).
@@ -362,7 +362,7 @@ When health reaches 0:
 
 ## Network Packets (Combat)
 
-Only **`playerHit`** is used for combat damage today. **`attackCanceled`** remains in the protocol but is no longer sent by mouse charged attacks. Blocking uses local PhysX only.
+Only **`playerHit`** is used for combat damage today. **`attackCanceled`** is sent when an attack is interrupted mid-swing so remote clients stop the animation. Blocking uses local PhysX only.
 
 ### `playerHit`  (Client → Server)
 ```js
@@ -394,7 +394,7 @@ Spawns a static dead avatar at the death location. Not sent back to the respawni
 ```js
 { playerId: playerId }
 ```
-Legacy packet for clearing remote attack state. Not sent by mouse charged attacks anymore (early release completes the swing instead).
+Sent when a player's attack is interrupted mid-swing (hit while attacking). Remote clients stop the swing animation immediately (`setEmote(null, undefined, { immediate: true })`) instead of letting the clip play out. Not sent by mouse charged attacks (early release completes the swing instead).
 
 ---
 

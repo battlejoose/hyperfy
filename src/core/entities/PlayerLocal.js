@@ -636,7 +636,7 @@ export class PlayerLocal extends Entity {
       v2.y = 0
       if (v2.lengthSq() > 0.0001) {
         v2.normalize().multiplyScalar(JuiceEvents.knockbackForce)
-        v2.y = 1.2 // slight pop so they don't grind along the ground
+        v2.y = 0.6 // slight pop so they don't grind along the ground
         this.world.network.send('playerPush', {
           networkId: target.data.id,
           force: v2.toArray(),
@@ -1248,6 +1248,8 @@ export class PlayerLocal extends Entity {
       if (this.avatar?.instance) {
         this.avatar.instance.setEmote(null, undefined, { immediate: true })
       }
+      // tell other clients to stop our swing animation immediately too
+      this.world.network.send('attackCanceled', { playerId: this.data.id })
     }
 
     this.mouseDragStart = null

@@ -65,7 +65,7 @@ All packet names are defined in `src/core/packets.js`.
 | `ping` / `pong` | both | Latency measurement |
 | `playerHit` | **C→S** | Client reports sword damage (not sent on locally-confirmed block) |
 | `hitBlocked` | **S→C** | Server verdict: claimed hit was blocked — attacker ends swing, no damage |
-| `attackCanceled` | **C→S→others** | Charged attack released before 500 ms |
+| `attackCanceled` | **C→S→others** | Attack interrupted mid-swing (e.g. attacker was hit) — remotes stop the swing animation immediately |
 
 ### Sending Packets
 

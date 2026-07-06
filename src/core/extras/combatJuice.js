@@ -22,66 +22,66 @@ const CAM_FORWARD = new THREE.Vector3(0, 0, -1)
 // sparkDir is in attacker-local space (-z forward).
 export const AttackJuiceProfiles = {
   left: {
-    kick: new THREE.Vector3(0.16, 0, 0.02), // swing travels left→right
-    roll: -0.042,
+    kick: new THREE.Vector3(0.08, 0, 0.01), // swing travels left→right
+    roll: -0.021,
     shake: 0.55,
-    zoom: -0.3,
+    zoom: -0.15,
     sparkDir: new THREE.Vector3(1, 0.1, -0.3),
   },
   right: {
-    kick: new THREE.Vector3(-0.16, 0, 0.02), // swing travels right→left
-    roll: 0.042,
+    kick: new THREE.Vector3(-0.08, 0, 0.01), // swing travels right→left
+    roll: 0.021,
     shake: 0.55,
-    zoom: -0.3,
+    zoom: -0.15,
     sparkDir: new THREE.Vector3(-1, 0.1, -0.3),
   },
   high: {
-    kick: new THREE.Vector3(0, -0.15, 0.025), // overhead chop follows through down
+    kick: new THREE.Vector3(0, -0.075, 0.012), // overhead chop follows through down
     roll: 0,
     shake: 0.62,
-    zoom: -0.38,
+    zoom: -0.19,
     sparkDir: new THREE.Vector3(0, -0.7, -0.7),
   },
   low: {
-    kick: new THREE.Vector3(0.03, 0.13, 0.025), // rising cut kicks up
-    roll: 0.028,
+    kick: new THREE.Vector3(0.015, 0.065, 0.012), // rising cut kicks up
+    roll: 0.014,
     shake: 0.5,
-    zoom: -0.28,
+    zoom: -0.14,
     sparkDir: new THREE.Vector3(0.2, 0.9, -0.5),
   },
 }
 
 // Non-directional feedback tiers
 export const JuiceEvents = {
-  hitLanded: { hitstopMs: 120 },
+  hitLanded: { hitstopMs: 70 },
   hitBlocked: {
-    kick: new THREE.Vector3(0, 0.03, 0.14), // clang recoil, camera pushed back
-    roll: 0.02,
+    kick: new THREE.Vector3(0, 0.015, 0.07), // clang recoil, camera pushed back
+    roll: 0.01,
     shake: 0.45,
-    zoom: 0.25, // punch OUT — rejected
-    hitstopMs: 90,
+    zoom: 0.12, // punch OUT — rejected
+    hitstopMs: 50,
   },
   blockAbsorbed: {
-    kick: new THREE.Vector3(0, 0.02, 0.1),
+    kick: new THREE.Vector3(0, 0.01, 0.05),
     roll: 0,
     shake: 0.4,
-    zoom: 0.15,
+    zoom: 0.08,
   },
   tookDamage: {
-    kick: new THREE.Vector3(0, -0.06, 0.18), // hard jolt down and back
-    roll: 0.05,
+    kick: new THREE.Vector3(0, -0.03, 0.09), // hard jolt down and back
+    roll: 0.025,
     shake: 0.85,
-    zoom: -0.3,
-    hitstopMs: 140,
+    zoom: -0.15,
+    hitstopMs: 85,
   },
   kill: {
-    kick: new THREE.Vector3(0, 0.04, 0.06),
-    roll: 0.06,
+    kick: new THREE.Vector3(0, 0.02, 0.03),
+    roll: 0.03,
     shake: 1.0,
-    zoom: -0.7, // big punch-in to frame the kill
-    hitstopMs: 200,
+    zoom: -0.35, // big punch-in to frame the kill
+    hitstopMs: 120,
   },
-  knockbackForce: 4.5, // m/s impulse applied to the victim capsule
+  knockbackForce: 2.2, // m/s impulse applied to the victim capsule
 }
 
 /**
@@ -99,7 +99,7 @@ export class CombatCameraFX {
     this.zoom = 0
     this.zoomVel = 0
     this.noiseT = Math.random() * 100
-    this.maxShakeAmp = 0.12 // meters at trauma 1
+    this.maxShakeAmp = 0.06 // meters at trauma 1
     this.traumaDecay = 2.2 // full shake gone in ~0.45s
   }
 
@@ -151,7 +151,7 @@ export class CombatCameraFX {
     _v.applyQuaternion(camera.quaternion)
     camera.position.add(_v)
 
-    const rollAngle = this.roll + nx * shake * 0.03
+    const rollAngle = this.roll + nx * shake * 0.015
     if (Math.abs(rollAngle) > 0.00005) {
       _q.setFromAxisAngle(CAM_FORWARD, rollAngle)
       camera.quaternion.multiply(_q)

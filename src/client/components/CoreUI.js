@@ -128,7 +128,7 @@ function DamageVignette({ world }) {
     return () => world.off('damageFlash', onFlash)
   }, [])
   if (!pulse) return null
-  const intensity = pulse.health <= 25 ? 0.75 : 0.5
+  const intensity = pulse.health <= 25 ? 0.4 : 0.25
   return (
     <div
       key={pulse.id}

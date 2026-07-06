@@ -366,7 +366,9 @@ export function createVRMFactory(glb, setupMaterial) {
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
         if (poses.getup) poses.getup.target = 0
-        if (currentAttack) {
+        // Natural effect expiry lets the clip finish visually, but explicit
+        // cancels (interrupt from hit, death) must stop the swing NOW
+        if (currentAttack && !options.immediate) {
           const action = poses[currentAttack]?.action
           if (action && !isCombatActionFinished(action)) {
             return // Gameplay ended; let the attack clip finish visually
@@ -969,7 +971,7 @@ export function createVRMFactory(glb, setupMaterial) {
       for (const t of mats) {
         if (t.mat.emissive) {
           t.mat.emissive.setHex(color)
-          t.mat.emissiveIntensity = 2.5
+          t.mat.emissiveIntensity = 1.4
         } else if (t.mat.color) {
           t.mat.color.setHex(color)
         }
