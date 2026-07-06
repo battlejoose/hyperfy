@@ -22,6 +22,7 @@ import {
   CombatCameraFX,
   JuiceEvents,
   applyHitstop,
+  flashAvatar,
   spawnImpactSparks,
 } from '../extras/combatJuice'
 
@@ -594,9 +595,10 @@ export class PlayerLocal extends Entity {
       this.spawnSparkParticles(blockPos)
       this.playBlockAudio(blockPos)
 
-      // Absorbed a hit on our shield — small jolt, no hitstop
-      this.camFX.addShake(JuiceEvents.hitBlocked.shake)
-      this.camFX.addKick(JuiceEvents.hitBlocked.kick, 0)
+      // Absorbed a hit on our shield — solid jolt, no hitstop
+      const abs = JuiceEvents.blockAbsorbed
+      this.camFX.addShake(abs.shake)
+      this.camFX.addKick(abs.kick, abs.roll, abs.zoom)
 
     } else {
       console.log('[Block] Block does NOT match - Attack:', attackTag, 'vs Block:', blockTag, '- attack goes through, taking damage!')
@@ -612,17 +614,34 @@ export class PlayerLocal extends Entity {
     }
   }
 
-  // Impact juice when our attack lands: hitstop both fighters, directional
-  // camera kick + shake per swing direction, and sparks along the swing path.
+  // Impact juice when our attack lands: hitstop both fighters, victim flash,
+  // directional camera kick + shake + zoom punch, sparks along the swing path,
+  // and a physical knockback impulse on the victim.
   applyAttackImpactJuice(target, hitPos) {
     const profile = AttackJuiceProfiles[this.currentAttackTag] || AttackJuiceProfiles.right
     applyHitstop(this, JuiceEvents.hitLanded.hitstopMs)
-    if (target) applyHitstop(target, JuiceEvents.hitLanded.hitstopMs)
-    this.camFX.addKick(profile.kick, profile.roll)
+    if (target) {
+      applyHitstop(target, JuiceEvents.hitLanded.hitstopMs)
+      flashAvatar(target)
+    }
+    this.camFX.addKick(profile.kick, profile.roll, profile.zoom)
     this.camFX.addShake(profile.shake)
     if (hitPos) {
       v1.copy(profile.sparkDir).normalize().applyQuaternion(this.base.quaternion)
       spawnImpactSparks(this.world, this.activeParticles, hitPos, v1)
+    }
+    // knockback: shove the victim away from us (routed via server playerPush)
+    if (target?.base) {
+      v2.copy(target.base.position).sub(this.base.position)
+      v2.y = 0
+      if (v2.lengthSq() > 0.0001) {
+        v2.normalize().multiplyScalar(JuiceEvents.knockbackForce)
+        v2.y = 1.2 // slight pop so they don't grind along the ground
+        this.world.network.send('playerPush', {
+          networkId: target.data.id,
+          force: v2.toArray(),
+        })
+      }
     }
   }
 
@@ -630,7 +649,7 @@ export class PlayerLocal extends Entity {
   applyBlockedRecoilJuice() {
     const e = JuiceEvents.hitBlocked
     applyHitstop(this, e.hitstopMs)
-    this.camFX.addKick(e.kick, e.roll)
+    this.camFX.addKick(e.kick, e.roll, e.zoom)
     this.camFX.addShake(e.shake)
   }
 
@@ -848,7 +867,16 @@ export class PlayerLocal extends Entity {
       target.base.getWorldPosition(hitPos)
     }
 
+    // Kill shot? (server damage is 25; victim health is synced to us)
+    const willKill = (target?.data?.health ?? 100) <= 25
     this.applyAttackImpactJuice(target, hitPos)
+    if (willKill) {
+      const k = JuiceEvents.kill
+      applyHitstop(this, k.hitstopMs)
+      if (target) applyHitstop(target, k.hitstopMs)
+      this.camFX.addKick(k.kick, k.roll, k.zoom)
+      this.camFX.addShake(k.shake)
+    }
 
     // Send hit notification to server (server will validate and apply damage)
     console.log('[Sword] VALID HIT on player:', playerId, '- notifying server NOW')
@@ -3217,11 +3245,14 @@ export class PlayerLocal extends Entity {
         this.interruptAttackFromHit()
         this.applySprintCooldown()
         this.applyAttackHitCooldown()
-        // Taking a hit — strongest feedback tier: jolt + shake + brief hitstop
+        // Taking a hit — strongest feedback tier: jolt + shake + hitstop +
+        // avatar flash + red screen vignette
         const e = JuiceEvents.tookDamage
-        this.camFX.addKick(e.kick, e.roll)
+        this.camFX.addKick(e.kick, e.roll, e.zoom)
         this.camFX.addShake(e.shake)
         applyHitstop(this, e.hitstopMs)
+        flashAvatar(this)
+        this.world.emit('damageFlash', { health: data.health })
       }
       this.data.health = data.health
       this.nametag.health = data.health

@@ -65,20 +65,11 @@ export function createVRMFactory(glb, setupMaterial) {
   // remove secondary
   const secondaries = glb.scene.children.filter(n => n.name === 'secondary') // prettier-ignore
   for (const node of secondaries) node.removeFromParent()
-  const tintTargets = []
-  const testTintColor = new THREE.Color(0x4488ff)
-
   // enable shadows
   glb.scene.traverse(obj => {
     if (obj.isMesh) {
       obj.castShadow = true
       obj.receiveShadow = true
-      const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
-      for (const mat of materials) {
-        if (mat?.color) {
-          tintTargets.push({ mat, base: mat.color.clone() })
-        }
-      }
     }
   })
   // calculate root to hips
@@ -921,14 +912,79 @@ export function createVRMFactory(glb, setupMaterial) {
       firstPersonActive = active
     }
 
-    const setTint = active => {
-      for (const { mat, base } of tintTargets) {
-        if (active) {
-          mat.color.copy(base).lerp(testTintColor, 0.42)
+    // Per-instance materials (lazily cloned) so tint/flash affect only THIS
+    // avatar — instances from cloneGLB share materials by default.
+    const TEST_TINT = new THREE.Color(0x4488ff)
+    let ownMaterials = null
+    const ensureOwnMaterials = () => {
+      if (ownMaterials) return ownMaterials
+      ownMaterials = []
+      vrm.scene.traverse(obj => {
+        if (obj.isMesh && obj.material) {
+          const isArray = Array.isArray(obj.material)
+          const source = isArray ? obj.material : [obj.material]
+          const clones = source.map(m => {
+            const c = m.clone()
+            c.shadowSide = THREE.BackSide
+            setupMaterial(c)
+            return c
+          })
+          obj.material = isArray ? clones : clones[0]
+          for (const c of clones) {
+            ownMaterials.push({
+              mat: c,
+              baseColor: c.color ? c.color.clone() : null,
+              baseEmissive: c.emissive ? c.emissive.clone() : null,
+              baseEmissiveIntensity: c.emissiveIntensity ?? 1,
+            })
+          }
+        }
+      })
+      return ownMaterials
+    }
+
+    let tintActive = false
+    const applyTint = () => {
+      for (const t of ownMaterials) {
+        if (!t.baseColor) continue
+        if (tintActive) {
+          t.mat.color.copy(t.baseColor).lerp(TEST_TINT, 0.45)
         } else {
-          mat.color.copy(base)
+          t.mat.color.copy(t.baseColor)
         }
       }
+    }
+
+    const setTint = active => {
+      if (tintActive === !!active && !ownMaterials) return
+      tintActive = !!active
+      ensureOwnMaterials()
+      applyTint()
+    }
+
+    // Hit flash — brief emissive override (receiver hit confirm, 2-4 frames)
+    let flashTimeout = null
+    const flash = (color = 0xff3020, durationMs = 90) => {
+      const mats = ensureOwnMaterials()
+      for (const t of mats) {
+        if (t.mat.emissive) {
+          t.mat.emissive.setHex(color)
+          t.mat.emissiveIntensity = 2.5
+        } else if (t.mat.color) {
+          t.mat.color.setHex(color)
+        }
+      }
+      if (flashTimeout) clearTimeout(flashTimeout)
+      flashTimeout = setTimeout(() => {
+        flashTimeout = null
+        for (const t of mats) {
+          if (t.mat.emissive && t.baseEmissive) {
+            t.mat.emissive.copy(t.baseEmissive)
+            t.mat.emissiveIntensity = t.baseEmissiveIntensity
+          }
+        }
+        applyTint() // restore correct base/tinted colors
+      }, durationMs)
     }
 
     return {
@@ -940,6 +996,7 @@ export function createVRMFactory(glb, setupMaterial) {
       setDeathState,
       setFirstPerson,
       setTint,
+      flash,
       update,
       updateRate,
       getBoneTransform,
@@ -957,6 +1014,7 @@ export function createVRMFactory(glb, setupMaterial) {
         rateCheck = false
       },
       destroy() {
+        if (flashTimeout) clearTimeout(flashTimeout)
         hooks.scene.remove(vrm.scene)
         // world.updater.remove(update)
         hooks.octree?.remove(sItem)

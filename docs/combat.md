@@ -314,19 +314,25 @@ Block sound: asset://audioblock.mp3 — same settings
 
 ### Impact Juice (`src/core/extras/combatJuice.js`)
 
-Layered, client-side-only feedback on top of the simulation (never changes damage/timing):
+Layered, client-side feedback on top of the simulation (visual/physics polish only — never changes damage or attack timing):
 
-| Event | Hitstop | Camera kick | Shake (trauma) |
-|-------|---------|-------------|----------------|
-| Hit landed (attacker) | 75 ms both fighters | directional per attack | 0.26–0.34 |
-| Attack blocked (attacker) | 55 ms self | backward recoil | 0.2 |
-| Block absorbed (defender) | none | small backward | 0.2 |
-| Took damage (victim) | 90 ms self | down + back jolt | 0.45 |
+| Event | Hitstop | Camera kick + zoom | Shake | Extra |
+|-------|---------|--------------------|-------|-------|
+| Hit landed (attacker) | 120 ms both fighters | directional per attack, punch-IN 0.28–0.38 m | 0.5–0.62 | victim red flash, knockback push, sparks |
+| Kill shot (attacker) | +200 ms both | punch-IN 0.7 m, roll | 1.0 | stacked on hit-landed |
+| Attack blocked (attacker) | 90 ms self | backward recoil, punch-OUT 0.25 m | 0.45 | — |
+| Block absorbed (defender) | none | backward, punch-OUT 0.15 m | 0.4 | — |
+| Took damage (victim) | 140 ms self | down+back jolt, punch-IN 0.3 m | 0.85 | self flash, red screen vignette |
 
-- **Hitstop** — mixer `timeScale = 0.05` (not `0`, so charge-pause detection and effect timers are unaffected), restored after the duration via a guard that respects real charge/block pauses.
-- **Camera kick** — spring impulse in camera-local space, distinct per attack direction: left swing kicks right, right swing kicks left, high chop kicks down, low cut kicks up. Small roll (~1.3°) on horizontal swings.
-- **Camera shake** — trauma-based (`shake = trauma²`), layered-sine noise ≈ 20 Hz, exponential decay ≈ 0.33 s, max amplitude 4.5 cm. Applied additively after `simpleCamLerp` in `PlayerLocal.lateUpdate`.
-- **Directional sparks** — 8 hot white/orange chips fly along the swing path per attack tag on every landed hit (in addition to blood).
+- **Hitstop** — mixer `timeScale = 0.04` (not `0`, so charge-pause detection and effect timers are unaffected), restored via a guard that respects real charge/block pauses.
+- **Camera kick** — spring impulse in camera-local space per attack direction: left swing kicks right, right swing kicks left, high chop kicks down, low cut kicks up (±0.13–0.16 m, roll up to ~2.4°).
+- **Zoom punch** — spring on `camera.zoom`: punch-in frames a landed hit, punch-out sells rejection (blocked).
+- **Camera shake** — trauma-based (`shake = trauma²`), layered-sine noise ≈ 20 Hz, decay ≈ 0.45 s, max amplitude 12 cm. Applied additively after `simpleCamLerp` in `PlayerLocal.lateUpdate`. Skipped in XR.
+- **Hit flash** — victim's avatar materials flash red-hot for 90 ms (emissive override). Materials are lazily cloned per avatar instance in `createVRMFactory` so the flash (and test-fighter tint) only affects that one player.
+- **Knockback** — attacker sends `playerPush` (4.5 m/s away + small pop up) routed through the server to the victim, so hits physically shove.
+- **Damage vignette** — red radial screen flash (`DamageVignette` in `CoreUI.js`) on the victim via `damageFlash` world event; stronger when health ≤ 25.
+- **Directional sparks** — 14 hot white/orange chips fly along the swing path per attack tag on every landed hit (in addition to blood).
+- **Spectator view** — remote-vs-remote hits also flash the victim and hitstop both fighters on every client (`PlayerRemote.onSwordHit`).
 
 ---
 

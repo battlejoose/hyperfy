@@ -94,6 +94,7 @@ export function CoreUI({ world }) {
       `}
     >
       {disconnected && <Disconnected />}
+      {ready && <DamageVignette world={world} />}
       {!ui.reticleSuppressors && <Reticle world={world} />}
       {<Toast world={world} />}
       {ready && <PlayerQueueList world={world} />}
@@ -112,6 +113,42 @@ export function CoreUI({ world }) {
       {confirm && <Confirm options={confirm} />}
       <div id='core-ui-portal' />
     </div>
+  )
+}
+
+// Red screen-edge flash when the local player takes damage. Pulse strength
+// scales as health drops so heavy danger reads without checking the bar.
+function DamageVignette({ world }) {
+  const [pulse, setPulse] = useState(null)
+  useEffect(() => {
+    const onFlash = data => {
+      setPulse({ id: Date.now(), health: data?.health ?? 100 })
+    }
+    world.on('damageFlash', onFlash)
+    return () => world.off('damageFlash', onFlash)
+  }, [])
+  if (!pulse) return null
+  const intensity = pulse.health <= 25 ? 0.75 : 0.5
+  return (
+    <div
+      key={pulse.id}
+      css={css`
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 996;
+        background: radial-gradient(ellipse at center, rgba(160, 0, 0, 0) 35%, rgba(160, 0, 0, ${intensity}) 100%);
+        animation: damage-vignette-fade 0.5s ease-out forwards;
+        @keyframes damage-vignette-fade {
+          0% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0;
+          }
+        }
+      `}
+    />
   )
 }
 

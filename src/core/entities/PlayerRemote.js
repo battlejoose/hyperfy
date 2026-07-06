@@ -12,6 +12,7 @@ import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
 import { isSpectatorSessionAvatar, applyTestFighterTint } from '../extras/playerAvatars'
+import { JuiceEvents, applyHitstop, flashAvatar } from '../extras/combatJuice'
 
 let capsuleGeometry
 {
@@ -476,6 +477,15 @@ export class PlayerRemote extends Entity {
       this.sword.getWorldPosition(hitPos)
       spawnBloodHitEffect(this.world, this.activeParticles, hitPos)
       this.playHitAudio(hitPos)
+    }
+
+    // Hit confirm for spectators/victims watching this attacker: flash the
+    // victim and hitstop both fighters on this client too
+    const hitTarget = this.world.entities.get(playerId)
+    if (hitTarget) {
+      flashAvatar(hitTarget)
+      applyHitstop(this, JuiceEvents.hitLanded.hitstopMs)
+      applyHitstop(hitTarget, JuiceEvents.hitLanded.hitstopMs)
     }
     
     // Log collision for debugging (damage is handled by server via playerHit message)
