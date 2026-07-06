@@ -871,9 +871,8 @@ export class PlayerLocal extends Entity {
     }
 
     if (this.earlyReleaseHoldActive) {
-      if (!this.isCombatAnimationPaused()) {
-        this.earlyReleaseHoldElapsed += delta
-      }
+      // Hold timer runs on simulation time even while the backswing pose is frozen
+      this.earlyReleaseHoldElapsed += delta
       if (this.earlyReleaseHoldElapsed >= this.attackEarlyReleaseHoldTime) {
         this.earlyReleaseHoldActive = false
         this.earlyReleaseHoldElapsed = 0
