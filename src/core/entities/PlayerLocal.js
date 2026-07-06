@@ -102,6 +102,9 @@ export class PlayerLocal extends Entity {
     this.isInWindup = false
     this.isCommitted = false
     this.attackAnimationPaused = false
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.earlyReleaseHoldElapsed = 0
     
     // Block state
     this.isBlocking = false
@@ -819,6 +822,98 @@ export class PlayerLocal extends Entity {
 
   // Server ruled our claimed hit was actually blocked (the defender's synced block
   // state beat our local prediction). Converge: end the swing and show block feedback.
+  isCombatAnimationPaused() {
+    return this.avatar?.instance?.mixer?.timeScale === 0
+  }
+
+  clearAttackTimeouts() {
+    if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
+    if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
+    if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+    if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
+    this.attackWindupTimeout = null
+    this.attackEndTimeout = null
+    this.attackFreezeTimeout = null
+    this.attackEarlyReleaseHoldTimeout = null
+  }
+
+  resetAttackState() {
+    this.setSwordColliderActive(false)
+    this.currentAttackEmote = null
+    this.currentAttackTag = null
+    this.isInWindup = false
+    this.isCommitted = false
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.earlyReleaseHoldElapsed = 0
+    this.earlyReleaseHoldActive = false
+
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    if (attackEmotes.includes(this.data.effect?.emote)) {
+      this.setEffect(null)
+      this.emote = null
+    }
+  }
+
+  updateCombatAttackTiming(delta) {
+    const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+    const inAttack =
+      this.isInWindup ||
+      this.isCommitted ||
+      this.isChargingAttack ||
+      attackEmotes.includes(this.data.effect?.emote)
+
+    if (!inAttack) {
+      this.combatAnimElapsed = 0
+      this.combatSwingDuration = null
+      this.earlyReleaseHoldElapsed = 0
+      return
+    }
+
+    if (this.earlyReleaseHoldActive) {
+      if (!this.isCombatAnimationPaused()) {
+        this.earlyReleaseHoldElapsed += delta
+      }
+      if (this.earlyReleaseHoldElapsed >= this.attackEarlyReleaseHoldTime) {
+        this.earlyReleaseHoldActive = false
+        this.earlyReleaseHoldElapsed = 0
+        if (this.isChargingAttack) {
+          this.completeChargedAttack()
+        }
+      }
+      return
+    }
+
+    if (!this.isCombatAnimationPaused()) {
+      this.combatAnimElapsed += delta
+    }
+
+    if (this.isChargingAttack && !this.attackAnimationPaused && this.combatAnimElapsed >= this.attackWindupTime) {
+      if (this.pendingChargedRelease) {
+        this.pendingChargedRelease = false
+        this.earlyReleaseHoldActive = true
+        this.earlyReleaseHoldElapsed = 0
+        this.attackAnimationPaused = true
+        this.pauseAttackAnimation()
+      } else {
+        this.attackAnimationPaused = true
+        this.pauseAttackAnimation()
+      }
+      return
+    }
+
+    if (!this.isChargingAttack && this.isInWindup && !this.isCommitted && this.combatAnimElapsed >= this.attackWindupTime) {
+      this.isInWindup = false
+      this.isCommitted = true
+      this.setSwordColliderActive(true)
+    }
+
+    const swingLimit = this.combatSwingDuration ?? this.attackDuration
+    if (this.isCommitted && this.combatAnimElapsed >= swingLimit) {
+      this.resetAttackState()
+    }
+  }
+
   onServerHitBlocked(targetId) {
     console.log('[Sword] Server ruled hit on', targetId, 'was BLOCKED - ending swing')
     if (this.swordColliderActive) {
@@ -904,16 +999,17 @@ export class PlayerLocal extends Entity {
     
     // If we're in windup, this is a cancel + new attack
     if (this.isInWindup) {
-      // Cancel previous attack timers
-      if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
-      if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-      if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
-      if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
+      this.clearAttackTimeouts()
       if (this.attackAnimationPaused) this.resumeAttackAnimation()
       this.setSwordColliderActive(false)
       this.pendingChargedRelease = false
       this.earlyReleaseHoldActive = false
     }
+
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.earlyReleaseHoldElapsed = 0
+    this.earlyReleaseHoldActive = false
     
     // IMPORTANT: Clear hit tracking NOW, before any collider activation
     this.hitPlayersThisSwing.clear()
@@ -941,59 +1037,18 @@ export class PlayerLocal extends Entity {
         duration: 999, // Very long so player can hold as long as they want
         cancellable: false,
       })
-      
-      // After windup, pause at backswing — early release gets a mandatory hold before swinging
-      this.attackFreezeTimeout = setTimeout(() => {
-        if (this.isChargingAttack && this.chargedAttackEmote === emote) {
-          if (this.pendingChargedRelease) {
-            this.pendingChargedRelease = false
-            this.earlyReleaseHoldActive = true
-            this.attackAnimationPaused = true
-            this.pauseAttackAnimation()
-            console.log('[Attack] Early release — holding backswing before swing')
-            this.attackEarlyReleaseHoldTimeout = setTimeout(() => {
-              this.attackEarlyReleaseHoldTimeout = null
-              this.earlyReleaseHoldActive = false
-              if (this.isChargingAttack) {
-                this.completeChargedAttack()
-              }
-            }, this.attackEarlyReleaseHoldTime * 1000)
-          } else {
-            console.log('[Attack] Pausing animation at backswing pose - hold as long as you want!')
-            this.attackAnimationPaused = true
-            this.pauseAttackAnimation()
-          }
-        }
-      }, this.attackWindupTime * 1000)
     } else {
       // Normal mode: full attack
       console.log('[Attack] Starting FULL attack:', emote)
       this.currentAttackEmote = emote
       this.isInWindup = true
       this.isCommitted = false
-      
-      // Play full attack animation
+
       this.setEffect({
         emote: emote,
         duration: this.attackDuration,
         cancellable: false,
       })
-      
-      // After windup time, activate sword collider and commit to attack
-      this.attackWindupTimeout = setTimeout(() => {
-        this.isInWindup = false
-        this.isCommitted = true
-        this.setSwordColliderActive(true)
-      }, this.attackWindupTime * 1000)
-      
-      // After full attack duration, deactivate and reset
-      this.attackEndTimeout = setTimeout(() => {
-        this.setSwordColliderActive(false)
-        this.currentAttackEmote = null
-        this.currentAttackTag = null // Clear attack tag
-        this.isInWindup = false
-        this.isCommitted = false
-      }, this.attackDuration * 1000)
     }
   }
   
@@ -1033,17 +1088,9 @@ export class PlayerLocal extends Entity {
     if (!this.isChargingAttack || !this.chargedAttackEmote) return
     
     console.log('[Attack] RELEASING charged attack - resuming animation:', this.chargedAttackEmote)
-    
-    // Clear any pending timeouts
-    if (this.attackFreezeTimeout) {
-      clearTimeout(this.attackFreezeTimeout)
-      this.attackFreezeTimeout = null
-    }
-    if (this.attackEarlyReleaseHoldTimeout) {
-      clearTimeout(this.attackEarlyReleaseHoldTimeout)
-      this.attackEarlyReleaseHoldTimeout = null
-    }
-    
+
+    this.clearAttackTimeouts()
+
     const emote = this.chargedAttackEmote
     this.isChargingAttack = false
     this.chargedAttackEmote = null
@@ -1052,31 +1099,21 @@ export class PlayerLocal extends Entity {
     this.earlyReleaseHoldActive = false
     this.isInWindup = false
     this.isCommitted = true
-    
-    // Resume the animation if it was paused
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = this.attackDuration
+
     if (this.attackAnimationPaused) {
       this.attackAnimationPaused = false
       this.resumeAttackAnimation()
     }
-    
-    // Restart the effect with proper duration so it ends at the right time
+
     this.setEffect({
       emote: emote,
-      duration: this.attackDuration - this.attackWindupTime, // Remaining time
+      duration: this.attackDuration,
       cancellable: false,
     })
-    
+
     this.setSwordColliderActive(true)
-    
-    // After remaining attack duration (minus the backswing we already played), deactivate and reset
-    this.attackEndTimeout = setTimeout(() => {
-      this.setSwordColliderActive(false)
-      this.currentAttackEmote = null
-      this.currentAttackTag = null // Clear attack tag
-      this.isInWindup = false
-      this.isCommitted = false
-      console.log('[Attack] Charged attack complete')
-    }, (this.attackDuration - this.attackWindupTime) * 1000)
   }
 
   cancelAttack() {
@@ -1095,14 +1132,7 @@ export class PlayerLocal extends Entity {
 
     console.log('[Attack] Canceling active attack')
 
-    if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
-    if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-    if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
-    if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
-    this.attackWindupTimeout = null
-    this.attackEndTimeout = null
-    this.attackFreezeTimeout = null
-    this.attackEarlyReleaseHoldTimeout = null
+    this.clearAttackTimeouts()
 
     if (this.attackAnimationPaused) {
       this.resumeAttackAnimation()
@@ -1116,6 +1146,9 @@ export class PlayerLocal extends Entity {
     this.chargedAttackEmote = null
     this.chargeStartTime = null
     this.pendingChargedRelease = false
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.earlyReleaseHoldElapsed = 0
     this.earlyReleaseHoldActive = false
     this.currentAttackEmote = null
     this.currentAttackTag = null
@@ -2465,34 +2498,7 @@ export class PlayerLocal extends Entity {
     // Cancel any active attacks when sprinting starts
     if (this.running && (this.isInWindup || this.isCommitted || this.isChargingAttack)) {
       console.log('[Attack] Sprinting started - canceling active attack')
-      
-      // Clear all attack timeouts
-      if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
-      if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-      if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
-      if (this.attackEarlyReleaseHoldTimeout) clearTimeout(this.attackEarlyReleaseHoldTimeout)
-      
-      // Resume animation if paused
-      if (this.attackAnimationPaused) {
-        this.resumeAttackAnimation()
-        this.attackAnimationPaused = false
-      }
-      
-      // Deactivate sword collider
-      this.setSwordColliderActive(false)
-      
-      // Reset attack state
-      this.isInWindup = false
-      this.isCommitted = false
-      this.isChargingAttack = false
-      this.chargedAttackEmote = null
-      this.chargeStartTime = null
-      this.pendingChargedRelease = false
-      this.earlyReleaseHoldActive = false
-      this.currentAttackEmote = null
-      
-      // Clear effect to stop animation
-      this.setEffect(null)
+      this.cancelAttackCompletely()
     }
 
     // normalize direction (also prevents surfing)
@@ -2578,6 +2584,8 @@ export class PlayerLocal extends Entity {
     if (this.avatar?.instance) {
       this.avatar.instance.setEmote(this.emote, duration)
     }
+
+    this.updateCombatAttackTiming(delta)
 
     // get locomotion mode
     let mode
@@ -2681,9 +2689,14 @@ export class PlayerLocal extends Entity {
       this.lastSendAt = 0
     }
 
-    // effect duration
+    // effect duration — only count down while the animation mixer is advancing.
+    // Attack emotes are ended by clip playback + resetAttackState instead.
     if (this.data.effect?.duration) {
-      this.data.effect.duration -= delta
+      const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
+      const isAttackEffect = attackEmotes.includes(this.data.effect.emote)
+      if (!isAttackEffect && !this.isCombatAnimationPaused()) {
+        this.data.effect.duration -= delta
+      }
       if (this.data.effect.duration <= 0) {
         if (this.data.effect.emote === Emotes.KICK) {
           this.clearKickColliderTimeouts()
@@ -3032,12 +3045,14 @@ export class PlayerLocal extends Entity {
     this.platform.actor = null
     
     // Cancel any active attacks
-    if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
-    if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
-    if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
+    this.clearAttackTimeouts()
     this.setSwordColliderActive(false) // This also sets swordColliderReady to false
     this.isInWindup = false
     this.isCommitted = false
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.earlyReleaseHoldElapsed = 0
+    this.earlyReleaseHoldActive = false
     this.currentAttackEmote = null
     this.currentAttackTag = null // Clear attack tag
     this.hitPlayersThisSwing.clear()

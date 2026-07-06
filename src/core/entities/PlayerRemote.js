@@ -45,6 +45,15 @@ export class PlayerRemote extends Entity {
     // Sword collision tracking
     this.swordColliderActive = false
     this.hitPlayersThisSwing = new Set()
+    this.attackWindupTime = 0.5
+    this.attackDuration = 1.0
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.remoteChargingAttack = false
+    this.remoteAttackCommitted = false
+    this.attackAnimationPaused = false
+    this.lastAttackDuration = 0
+    this.currentAttackEmote = null
     
     // Block state
     this.isBlocking = false
@@ -728,92 +737,43 @@ export class PlayerRemote extends Entity {
     const attackEmotes = [Emotes.ATTACK_LEFT, Emotes.ATTACK_RIGHT, Emotes.ATTACK_HIGH, Emotes.ATTACK_LOW]
     const isAttacking = this.data.effect?.emote && attackEmotes.includes(this.data.effect.emote)
     const attackDuration = this.data.effect?.duration || 0
-    
+
     // Detect charged attack (duration > 10 means player is holding)
     const isChargingAttack = isAttacking && attackDuration > 10
-    
-    // Track if we just started an attack
+
     if (isAttacking && !this.currentlyAttacking) {
       this.currentlyAttacking = true
-      this.attackStartTime = Date.now()
+      this.remoteChargingAttack = isChargingAttack
+      this.remoteAttackCommitted = false
+      this.combatAnimElapsed = 0
+      this.combatSwingDuration = null
       this.currentAttackEmote = this.data.effect.emote
       this.lastAttackDuration = attackDuration
-      
-      // If it's a charged attack, pause animation after 0.5s (same as local player)
-      if (isChargingAttack) {
-        if (this.attackFreezeTimeout) clearTimeout(this.attackFreezeTimeout)
-        this.attackFreezeTimeout = setTimeout(() => {
-          // Pause the animation mixer
-          if (this.avatar?.instance?.mixer) {
-            this.avatar.instance.mixer.timeScale = 0
-            this.attackAnimationPaused = true
-          }
-        }, 500)
-      } else {
-        // Normal attack - activate collider after 0.5s
-        if (this.attackColliderDelayTimeout) clearTimeout(this.attackColliderDelayTimeout)
-        this.attackColliderDelayTimeout = setTimeout(() => {
-          if (this.currentlyAttacking) {
-            this.setSwordColliderActive(true)
-          }
-          this.attackColliderDelayTimeout = null
-        }, 500)
-      }
-      
-      // Clear the flag after attack duration (use actual duration, not hardcoded 1s)
-      if (this.attackTimeout) clearTimeout(this.attackTimeout)
-      this.attackTimeout = setTimeout(() => {
-        this.currentlyAttacking = false
-        this.setSwordColliderActive(false)
-      }, attackDuration * 1000)
     } else if (isAttacking && this.currentlyAttacking) {
-      // Check if duration changed (from charging to release)
       if (this.lastAttackDuration > 10 && attackDuration <= 10) {
-        // Player released! Resume animation and activate collider
-        if (this.attackFreezeTimeout) {
-          clearTimeout(this.attackFreezeTimeout)
-          this.attackFreezeTimeout = null
-        }
-        
-        // Resume animation mixer
+        this.remoteChargingAttack = false
+        this.remoteAttackCommitted = true
+        this.combatAnimElapsed = 0
+        this.combatSwingDuration = attackDuration > 0 ? attackDuration : this.attackDuration
+
         if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
           this.avatar.instance.mixer.timeScale = 1
           this.attackAnimationPaused = false
         }
-        
-        // Activate sword collider immediately on release
+
         this.setSwordColliderActive(true)
       }
-      
+
       this.lastAttackDuration = attackDuration
     } else if (!isAttacking && this.currentlyAttacking) {
-      // Attack ended early - check if it was held for at least 0.5 seconds
-      const holdDuration = Date.now() - this.attackStartTime
-      if (holdDuration < 500) {
-        // Released too early - cancel collider activation
-        if (this.attackColliderDelayTimeout) {
-          clearTimeout(this.attackColliderDelayTimeout)
-          this.attackColliderDelayTimeout = null
-        }
-        if (this.attackFreezeTimeout) {
-          clearTimeout(this.attackFreezeTimeout)
-          this.attackFreezeTimeout = null
-        }
+      if (this.combatAnimElapsed < this.attackWindupTime) {
+        this.setSwordColliderActive(false)
       }
-      
-      // Resume animation if it was paused
-      if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
-        this.avatar.instance.mixer.timeScale = 1
-        this.attackAnimationPaused = false
-      }
-      
-      this.currentlyAttacking = false
-      this.setSwordColliderActive(false)
-      if (this.attackTimeout) {
-        clearTimeout(this.attackTimeout)
-        this.attackTimeout = null
-      }
+
+      this.resetRemoteAttackState()
     }
+
+    this.updateRemoteCombatAttackTiming(delta, { isAttacking, attackDuration, isChargingAttack: isChargingAttack || this.remoteChargingAttack })
     
     // Handle block collider activation for block animation
     const blockEmotes = [Emotes.BLOCK, Emotes.BLOCK_HIGH, Emotes.BLOCK_LEFT, Emotes.BLOCK_RIGHT, Emotes.BLOCK_LOW]
@@ -1073,40 +1033,74 @@ export class PlayerRemote extends Entity {
     }
   }
 
+  isRemoteAnimationPaused() {
+    return this.avatar?.instance?.mixer?.timeScale === 0
+  }
+
+  resetRemoteAttackState() {
+    this.currentlyAttacking = false
+    this.remoteChargingAttack = false
+    this.remoteAttackCommitted = false
+    this.combatAnimElapsed = 0
+    this.combatSwingDuration = null
+    this.currentAttackEmote = null
+    this.setSwordColliderActive(false)
+    if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+      this.attackAnimationPaused = false
+    }
+  }
+
+  updateRemoteCombatAttackTiming(delta, { isAttacking, attackDuration, isChargingAttack }) {
+    if (!isAttacking || !this.currentlyAttacking) {
+      if (!isAttacking) {
+        this.combatAnimElapsed = 0
+        this.combatSwingDuration = null
+      }
+      return
+    }
+
+    if (!this.isRemoteAnimationPaused()) {
+      this.combatAnimElapsed += delta
+    }
+
+    if (isChargingAttack && !this.attackAnimationPaused && this.combatAnimElapsed >= this.attackWindupTime) {
+      if (this.avatar?.instance?.mixer) {
+        this.avatar.instance.mixer.timeScale = 0
+        this.attackAnimationPaused = true
+      }
+      return
+    }
+
+    if (!isChargingAttack && !this.remoteAttackCommitted && this.combatAnimElapsed >= this.attackWindupTime) {
+      this.remoteAttackCommitted = true
+      this.setSwordColliderActive(true)
+    }
+
+    const swingLimit = this.combatSwingDuration ?? (isChargingAttack ? null : this.attackDuration)
+    if (this.remoteAttackCommitted && swingLimit != null && this.combatAnimElapsed >= swingLimit) {
+      this.setSwordColliderActive(false)
+    }
+  }
+
   onAttackCanceled() {
     console.log('[Attack] Remote player canceled attack early')
-    
-    // Cancel any pending timeouts
-    if (this.attackFreezeTimeout) {
-      clearTimeout(this.attackFreezeTimeout)
-      this.attackFreezeTimeout = null
-    }
-    if (this.attackColliderDelayTimeout) {
-      clearTimeout(this.attackColliderDelayTimeout)
-      this.attackColliderDelayTimeout = null
-    }
-    
+
     // Resume animation if it was paused
     if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
       this.avatar.instance.mixer.timeScale = 1
       this.attackAnimationPaused = false
     }
-    
+
     // Force switch back to locomotion by clearing the emote
     if (this.avatar?.instance) {
       this.avatar.instance.setEmote(null)
     }
-    
+
     // Clear the effect data
     this.data.effect = null
-    
-    // Immediately end the attack
-    this.currentlyAttacking = false
-    this.setSwordColliderActive(false)
-    if (this.attackTimeout) {
-      clearTimeout(this.attackTimeout)
-      this.attackTimeout = null
-    }
+
+    this.resetRemoteAttackState()
   }
 
   setPlayerColliderActive(active) {
@@ -1228,32 +1222,14 @@ export class PlayerRemote extends Entity {
     this.isDead = true
     
     // Cancel any active attacks/blocks/kicks
-    if (this.attackFreezeTimeout) {
-      clearTimeout(this.attackFreezeTimeout)
-      this.attackFreezeTimeout = null
-    }
-    if (this.attackColliderDelayTimeout) {
-      clearTimeout(this.attackColliderDelayTimeout)
-      this.attackColliderDelayTimeout = null
-    }
-    if (this.attackTimeout) {
-      clearTimeout(this.attackTimeout)
-      this.attackTimeout = null
-    }
+    this.resetRemoteAttackState()
+    this.currentlyBlocking = false
+    this.currentAttackTag = null
+    this.currentBlockTag = null
     if (this.blockTimeout) {
       clearTimeout(this.blockTimeout)
       this.blockTimeout = null
     }
-    if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
-      this.avatar.instance.mixer.timeScale = 1
-      this.attackAnimationPaused = false
-    }
-    this.currentlyAttacking = false
-    this.currentlyBlocking = false
-    this.currentAttackEmote = null
-    this.currentAttackTag = null
-    this.currentBlockTag = null
-    this.setSwordColliderActive(false)
     this.setBlockColliderActive(false)
     this.clearKickColliderTimeouts()
     this.setPlayerColliderActive(false)
@@ -1296,7 +1272,6 @@ export class PlayerRemote extends Entity {
     this.destroyed = true
 
     clearTimeout(this.chatTimer)
-    clearTimeout(this.attackTimeout)
     clearTimeout(this.deathTimeout)
     this.base.deactivate()
     this.avatar = null

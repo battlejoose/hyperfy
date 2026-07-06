@@ -255,10 +255,27 @@ export function createVRMFactory(glb, setupMaterial) {
     }
     
     let currentAttack = null
-    let attackEndTime = 0
     
     let currentEmote
     let isInDeathState = false // Track if player is dead (affects locomotion)
+
+    const isCombatActionFinished = action => {
+      if (!action?.isRunning()) return true
+      const clip = action.getClip()
+      if (!clip?.duration) return false
+      return action.time >= clip.duration - 0.03
+    }
+
+    const syncCurrentAttack = () => {
+      if (!currentAttack) return
+      const action = poses[currentAttack]?.action
+      if (isCombatActionFinished(action)) {
+        poses[currentAttack].target = 0
+        currentAttack = null
+      } else {
+        poses[currentAttack].target = 1
+      }
+    }
     
     const stopCombatPose = (poseKey, { immediate = false } = {}) => {
       const pose = poses[poseKey]
@@ -280,7 +297,6 @@ export function createVRMFactory(glb, setupMaterial) {
       if (!currentAttack) return
       const prevKey = currentAttack
       currentAttack = null
-      attackEndTime = 0
       stopCombatPose(prevKey, { immediate })
     }
     
@@ -337,6 +353,12 @@ export function createVRMFactory(glb, setupMaterial) {
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
         if (poses.getup) poses.getup.target = 0
+        if (currentAttack) {
+          const action = poses[currentAttack]?.action
+          if (action && !isCombatActionFinished(action)) {
+            return // Gameplay ended; let the attack clip finish visually
+          }
+        }
         clearCurrentCombatPose({ immediate: options.immediate })
       }
       
@@ -348,12 +370,7 @@ export function createVRMFactory(glb, setupMaterial) {
         
         // Skip if same attack is already playing with same duration
         if (currentAttack === attackKey) {
-          // Update duration if it's different (for example, when charging then releasing)
-          const remainingTime = attackEndTime - (performance.now() / 1000)
-          if (Math.abs(remainingTime - attackDuration) > 0.1) {
-            attackEndTime = performance.now() / 1000 + attackDuration
-          }
-          return // Don't reset animation if same attack is playing
+          return // Same attack — let the clip play out; don't reset or re-time from network ticks
         }
 
         if (currentAttack) {
@@ -365,7 +382,6 @@ export function createVRMFactory(glb, setupMaterial) {
         console.log('[VRM] Attack detected:', attackKey, 'duration:', attackDuration, 'pose exists:', !!poses[attackKey])
         if (poses[attackKey]) {
           currentAttack = attackKey
-          attackEndTime = performance.now() / 1000 + attackDuration // Use configurable duration
           if (poses[attackKey].action) {
             // Reset and restart the attack animation with high priority
             poses[attackKey].action.reset()
@@ -475,13 +491,7 @@ export function createVRMFactory(glb, setupMaterial) {
         // If there's a non-death emote playing, skip locomotion updates
         
         // Update attack and death effect weights (they play on top of or replace locomotion)
-        const now = performance.now() / 1000
-        if (currentAttack && now < attackEndTime) {
-          poses[currentAttack].target = 1
-        } else if (currentAttack) {
-          poses[currentAttack].target = 0
-          currentAttack = null
-        }
+        syncCurrentAttack()
         
         // Update ALL pose weights
         const lerpSpeed = 16
@@ -793,29 +803,13 @@ export function createVRMFactory(glb, setupMaterial) {
         }
       }
       
-      // Handle attacks independently
-      const now = performance.now() / 1000
-      if (currentAttack && now < attackEndTime) {
-        poses[currentAttack].target = 1
-        // Removed verbose per-frame logging
-      } else if (currentAttack) {
-        // Attack finished
-        console.log('[VRM] Attack finished:', currentAttack)
-        poses[currentAttack].target = 0
-        currentAttack = null
-      } else {
-        // No active attack, clear all attack poses
-        for (const key in poses) {
-          if (poses[key].upperBodyOnly) {
-            poses[key].target = 0
-          }
-        }
-      }
+      // Handle attacks independently — end when the clip finishes, not on a wall clock
+      syncCurrentAttack()
       
       // Update locomotion (legs only)
       // If in death state, use dead animation as locomotion
       const fullBodyAttackActive =
-        currentAttack && poses[currentAttack]?.fullBodyCombat && now < attackEndTime
+        currentAttack && poses[currentAttack]?.fullBodyCombat && !isCombatActionFinished(poses[currentAttack]?.action)
       if (fullBodyAttackActive) {
         // Full-body combat (kick) replaces locomotion entirely
       } else if (isInDeathState) {

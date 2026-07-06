@@ -399,6 +399,8 @@ Legacy packet for clearing remote attack state. Not sent by mouse charged attack
 
 ## Combat Timing Summary
 
+Attack windup, collider activation, and swing end use **simulation time** (`delta` from the game loop), not wall-clock `setTimeout`. Effect duration for attack emotes does not count down while the mixer is paused (`timeScale = 0` during charge/block hold). The VRM clip runs until `action.time >= clip.duration`, so low FPS no longer cuts animations short.
+
 ```
 ATTACK (charged):
 ─────────────────────────────────────────────────────────────
