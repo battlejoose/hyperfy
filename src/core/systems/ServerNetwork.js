@@ -291,7 +291,8 @@ export class ServerNetwork extends System {
     const victimIsGladiator =
       victimPlayer && !isSpectatorSessionAvatar(victimPlayer.data.sessionAvatar)
     const killerWallet = killer?.wallet
-    if (!killerIsGladiator || !victimIsGladiator || !killerWallet) return
+    const killerIsTestFighter = !!killerPlayer?.data?.testFighter
+    if (!killerIsGladiator || !victimIsGladiator || !killerWallet || killerIsTestFighter) return
 
     const signature = await sendKillReward(killerWallet, attackerId)
     if (signature) {
@@ -564,9 +565,30 @@ export class ServerNetwork extends System {
     }
   }
 
+  enterArenaAsFighter(socket, { testFighter = false } = {}) {
+    const player = socket.player
+    player.data.testFighter = testFighter
+    player.modify({ testFighter })
+    this.setPlayerSessionAvatar(player, AVATAR_CRUSADER)
+    this.teleportPlayerToSpawn(player)
+    this.send('entityModified', {
+      id: player.data.id,
+      tf: testFighter,
+    })
+    const entry = this.scoreboard.get(player.data.id)
+    if (entry) entry.testFighter = testFighter
+    this.broadcastScoreboard()
+    this.sendTo(socket.id, 'enterArenaResult', { ok: true, test: testFighter })
+  }
+
   onEnterArena = async (socket, data) => {
     if (!socket.player) return
     if (!isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
+
+    if (data?.test) {
+      this.enterArenaAsFighter(socket, { testFighter: true })
+      return
+    }
 
     const signature = data?.signature
     const wallet = data?.wallet
@@ -590,10 +612,7 @@ export class ServerNetwork extends System {
       return
     }
 
-    this.setPlayerSessionAvatar(socket.player, AVATAR_CRUSADER)
-    this.teleportPlayerToSpawn(socket.player)
-    this.broadcastScoreboard()
-    this.sendTo(socket.id, 'enterArenaResult', { ok: true })
+    this.enterArenaAsFighter(socket, { testFighter: false })
   }
 
   onPlayerHit = async (socket, data) => {
@@ -695,6 +714,14 @@ export class ServerNetwork extends System {
     }
 
     addArenaCorpse(this.arenaRemnants, corpse)
+
+    if (player.data.testFighter) {
+      player.data.testFighter = false
+      player.modify({ testFighter: false })
+      this.send('entityModified', { id: player.data.id, tf: false })
+      const entry = this.scoreboard.get(player.data.id)
+      if (entry) entry.testFighter = false
+    }
 
     this.send(
       'playerCorpse',

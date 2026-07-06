@@ -11,7 +11,7 @@ import { Emotes, KickTiming } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
-import { isSpectatorSessionAvatar } from '../extras/playerAvatars'
+import { isSpectatorSessionAvatar, applyTestFighterTint } from '../extras/playerAvatars'
 
 let capsuleGeometry
 {
@@ -178,6 +178,7 @@ export class PlayerRemote extends Entity {
         this.nametag.active = true
       }
       this.avatarUrl = avatarUrl
+      applyTestFighterTint(this.avatar, this.data.testFighter)
       if (this.isSpectator()) {
         this.removeCombatGear()
       } else {
@@ -1235,6 +1236,14 @@ export class PlayerRemote extends Entity {
     if (data.hasOwnProperty('sessionAvatar')) {
       this.data.sessionAvatar = data.sessionAvatar
       avatarChanged = true
+    }
+    if (data.hasOwnProperty('tf')) {
+      this.data.testFighter = !!data.tf
+      applyTestFighterTint(this.avatar, this.data.testFighter)
+    }
+    if (data.hasOwnProperty('testFighter')) {
+      this.data.testFighter = !!data.testFighter
+      applyTestFighterTint(this.avatar, this.data.testFighter)
     }
     if (data.hasOwnProperty('rank')) {
       this.data.rank = data.rank

@@ -65,11 +65,20 @@ export function createVRMFactory(glb, setupMaterial) {
   // remove secondary
   const secondaries = glb.scene.children.filter(n => n.name === 'secondary') // prettier-ignore
   for (const node of secondaries) node.removeFromParent()
+  const tintTargets = []
+  const testTintColor = new THREE.Color(0x4488ff)
+
   // enable shadows
   glb.scene.traverse(obj => {
     if (obj.isMesh) {
       obj.castShadow = true
       obj.receiveShadow = true
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
+      for (const mat of materials) {
+        if (mat?.color) {
+          tintTargets.push({ mat, base: mat.color.clone() })
+        }
+      }
     }
   })
   // calculate root to hips
@@ -912,6 +921,16 @@ export function createVRMFactory(glb, setupMaterial) {
       firstPersonActive = active
     }
 
+    const setTint = active => {
+      for (const { mat, base } of tintTargets) {
+        if (active) {
+          mat.color.copy(base).lerp(testTintColor, 0.42)
+        } else {
+          mat.color.copy(base)
+        }
+      }
+    }
+
     return {
       raw: vrm,
       mixer, // Expose mixer for direct animation control
@@ -920,6 +939,7 @@ export function createVRMFactory(glb, setupMaterial) {
       setEmote,
       setDeathState,
       setFirstPerson,
+      setTint,
       update,
       updateRate,
       getBoneTransform,

@@ -57,6 +57,12 @@ export function PlayerQueueList({ world }) {
     }
   }
 
+  const enterArenaTest = () => {
+    setError(null)
+    setPending(true)
+    world.network.send('enterArena', { test: true })
+  }
+
   const enterArena = async () => {
     setError(null)
     const treasury = getTreasuryPubkey()
@@ -147,7 +153,8 @@ export function PlayerQueueList({ world }) {
           width: 100%;
         }
         .arena-wallet,
-        .arena-enter {
+        .arena-enter,
+        .arena-enter-test {
           width: fit-content;
           max-width: 100%;
           box-sizing: border-box;
@@ -184,6 +191,17 @@ export function PlayerQueueList({ world }) {
             cursor: not-allowed;
           }
         }
+        .arena-enter-test {
+          color: #f0f8ff;
+          background: #1e4a7a;
+          &:hover:not(:disabled) {
+            background: #2563a8;
+          }
+          &:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+          }
+        }
         .arena-error {
           font-size: 0.72rem;
           color: #7a1515;
@@ -213,6 +231,9 @@ export function PlayerQueueList({ world }) {
             )}
             <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
               {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
+            </button>
+            <button type='button' className='arena-enter-test' onClick={enterArenaTest} disabled={pending}>
+              Join Fight (Test — No Pay)
             </button>
           </div>
           {error ? <div className='arena-error'>{error}</div> : null}
