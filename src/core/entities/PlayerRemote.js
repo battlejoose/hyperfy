@@ -25,6 +25,19 @@ let capsuleGeometry
 
 const DEATH_EMOTES = [Emotes.DEATH_FALL, Emotes.GETUP]
 
+const COMBAT_EMOTES = [
+  Emotes.ATTACK_LEFT,
+  Emotes.ATTACK_RIGHT,
+  Emotes.ATTACK_HIGH,
+  Emotes.ATTACK_LOW,
+  Emotes.BLOCK,
+  Emotes.BLOCK_LEFT,
+  Emotes.BLOCK_RIGHT,
+  Emotes.BLOCK_HIGH,
+  Emotes.BLOCK_LOW,
+  Emotes.KICK,
+]
+
 function isDeathEffect(effect) {
   return effect?.emote && DEATH_EMOTES.includes(effect.emote)
 }
@@ -702,6 +715,12 @@ export class PlayerRemote extends Entity {
     }
     // Check for attack emotes from effects first, otherwise use regular emote
     let emote = this.data.effect?.emote || this.data.emote
+    // Combat animations are driven exclusively by effects. `data.emote` can
+    // hold a stale attack/block emote between network ticks (e.g. right after
+    // a cancel) — never let it (re)start a combat animation.
+    if (!this.data.effect?.emote && emote && COMBAT_EMOTES.includes(emote)) {
+      emote = null
+    }
     if (this.isDead && emote && !DEATH_EMOTES.includes(emote)) {
       emote = Emotes.DEATH_FALL
     }

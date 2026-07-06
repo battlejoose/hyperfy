@@ -296,6 +296,7 @@ export function createVRMFactory(glb, setupMaterial) {
       pose.target = 0
       pose.active = false
       if (immediate) {
+        pose.fadingOut = false
         pose.weight = 0
         pose.setWeight(0)
         if (pose.action) {
@@ -303,10 +304,14 @@ export function createVRMFactory(glb, setupMaterial) {
         }
       } else if (pose.action) {
         // Freeze the clip so a canceled swing doesn't keep playing (e.g. a
-        // charge-hold resuming into the strike) while its weight blends out.
-        // action.reset() on the next play clears paused.
+        // charge-hold resuming into the strike), then fade it out in
+        // EFFECTIVE weight space via the mixer. The regular weight lerp is
+        // skipped while fadingOut — combat poses carry a 5x effective weight
+        // multiplier, which makes the lerp read as an instant snap.
+        pose.fadingOut = true
+        pose.weight = 0
         pose.action.paused = true
-        pose.action.fadeOut(0.1)
+        pose.action.fadeOut(0.25)
       }
     }
 
@@ -409,6 +414,7 @@ export function createVRMFactory(glb, setupMaterial) {
         console.log('[VRM] Attack detected:', attackKey, 'duration:', attackDuration, 'pose exists:', !!poses[attackKey])
         if (poses[attackKey]) {
           currentAttack = attackKey
+          poses[attackKey].fadingOut = false
           if (attackKey === 'kick') {
             kickVisualComplete = false
           }
@@ -714,6 +720,16 @@ export function createVRMFactory(glb, setupMaterial) {
         upperBodyOnly,
         fullBodyCombat,
         setWeight: value => {
+          if (pose.fadingOut) {
+            // A canceled combat pose is being faded out by the mixer —
+            // setEffectiveWeight would cancel that fade, so leave it alone
+            // until it completes (the fade disables the action at weight 0).
+            if (pose.action && pose.action.enabled && pose.action.getEffectiveWeight() > 0.001) {
+              return
+            }
+            pose.fadingOut = false
+            pose.action?.stop()
+          }
           pose.weight = value
           if (pose.action) {
             // Attacks get much higher effective weight to override locomotion
