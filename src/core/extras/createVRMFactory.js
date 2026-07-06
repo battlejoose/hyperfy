@@ -270,6 +270,11 @@ export function createVRMFactory(glb, setupMaterial) {
       if (!currentAttack) return
       const action = poses[currentAttack]?.action
       if (isCombatActionFinished(action)) {
+        // Block poses clamp at the end — keep weight up until the effect clears
+        if (currentAttack.startsWith('block')) {
+          poses[currentAttack].target = 1
+          return
+        }
         poses[currentAttack].target = 0
         currentAttack = null
       } else {

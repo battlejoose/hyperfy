@@ -58,6 +58,10 @@ export class PlayerRemote extends Entity {
     // Block state
     this.isBlocking = false
     this.currentlyBlocking = false
+    this.blockFreezeTime = 0.5
+    this.blockAnimElapsed = 0
+    this.remoteHoldingBlock = false
+    this.blockAnimationPaused = false
     
     // Kick state
     this.kickColliderActive = false
@@ -778,32 +782,30 @@ export class PlayerRemote extends Entity {
     // Handle block collider activation for block animation
     const blockEmotes = [Emotes.BLOCK, Emotes.BLOCK_HIGH, Emotes.BLOCK_LEFT, Emotes.BLOCK_RIGHT, Emotes.BLOCK_LOW]
     const isBlocking = this.data.effect?.emote && blockEmotes.includes(this.data.effect.emote)
-    
+    const blockDuration = this.data.effect?.duration || 1.0
+
     if (isBlocking && !this.currentlyBlocking) {
       this.currentlyBlocking = true
+      this.remoteHoldingBlock = blockDuration > 10
+      this.blockAnimElapsed = 0
+      this.blockAnimationPaused = false
+      if (this.avatar?.instance?.mixer) {
+        this.avatar.instance.mixer.timeScale = 1
+      }
       console.log('[Block Remote] Activating block collider for emote:', this.data.effect.emote, 'with tag:', this.currentBlockTag)
       this.setBlockColliderActive(true)
-      // For directional blocks with long duration (999), keep active indefinitely
-      // For normal blocks, clear after 1 second
-      const blockDuration = this.data.effect?.duration || 1.0
       if (blockDuration < 10) {
-        // Normal timed block
         if (this.blockTimeout) clearTimeout(this.blockTimeout)
         this.blockTimeout = setTimeout(() => {
-          this.currentlyBlocking = false
-          this.setBlockColliderActive(false)
+          this.resetRemoteBlockState()
         }, blockDuration * 1000)
       }
     } else if (!isBlocking && this.currentlyBlocking) {
-      // Block ended early
       console.log('[Block Remote] Deactivating block collider')
-      this.currentlyBlocking = false
-      this.setBlockColliderActive(false)
-      if (this.blockTimeout) {
-        clearTimeout(this.blockTimeout)
-        this.blockTimeout = null
-      }
+      this.resetRemoteBlockState()
     }
+
+    this.updateRemoteBlockTiming(delta, { isBlocking, blockDuration })
 
     // Handle kick collider activation for kick animation
     const isKicking = this.data.effect?.emote === Emotes.KICK
@@ -1083,6 +1085,43 @@ export class PlayerRemote extends Entity {
     }
   }
 
+  resetRemoteBlockState() {
+    this.currentlyBlocking = false
+    this.remoteHoldingBlock = false
+    this.blockAnimElapsed = 0
+    if (this.blockAnimationPaused && this.avatar?.instance?.mixer) {
+      this.avatar.instance.mixer.timeScale = 1
+      this.blockAnimationPaused = false
+    }
+    if (this.blockTimeout) {
+      clearTimeout(this.blockTimeout)
+      this.blockTimeout = null
+    }
+    this.setBlockColliderActive(false)
+  }
+
+  updateRemoteBlockTiming(delta, { isBlocking, blockDuration }) {
+    if (!isBlocking) {
+      if (this.blockAnimationPaused && this.avatar?.instance?.mixer) {
+        this.avatar.instance.mixer.timeScale = 1
+        this.blockAnimationPaused = false
+      }
+      this.remoteHoldingBlock = false
+      this.blockAnimElapsed = 0
+      return
+    }
+
+    if (!this.remoteHoldingBlock || this.blockAnimationPaused) return
+
+    this.blockAnimElapsed += delta
+    if (this.blockAnimElapsed >= this.blockFreezeTime) {
+      this.blockAnimationPaused = true
+      if (this.avatar?.instance?.mixer) {
+        this.avatar.instance.mixer.timeScale = 0
+      }
+    }
+  }
+
   onAttackCanceled() {
     console.log('[Attack] Remote player canceled attack early')
 
@@ -1223,14 +1262,9 @@ export class PlayerRemote extends Entity {
     
     // Cancel any active attacks/blocks/kicks
     this.resetRemoteAttackState()
-    this.currentlyBlocking = false
+    this.resetRemoteBlockState()
     this.currentAttackTag = null
     this.currentBlockTag = null
-    if (this.blockTimeout) {
-      clearTimeout(this.blockTimeout)
-      this.blockTimeout = null
-    }
-    this.setBlockColliderActive(false)
     this.clearKickColliderTimeouts()
     this.setPlayerColliderActive(false)
     

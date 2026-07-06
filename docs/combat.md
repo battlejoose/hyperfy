@@ -138,7 +138,7 @@ Left/right mirror: you block left to stop a swing coming from your right.
 2. Activates block collider immediately (`setBlockColliderActive(true)`)
 3. Sends `entityModified` with `ef` (effect) so remote clients mirror the block animation and tag
 
-**Hold mode** (mouse drag): effect duration 999 s, animation pauses at 500 ms via mixer `timeScale = 0`. Released via `stopBlock()` → collider off, tags cleared, `setEffect(null)`.
+**Hold mode** (mouse drag): effect duration 999 s, animation pauses at 500 ms via mixer `timeScale = 0` (local and remote). Released via `stopBlock()` → collider off, tags cleared, `setEffect(null)`.
 
 **Normal mode** (key 5): effect duration 1 s, collider auto-deactivates after `blockDuration`.
 
