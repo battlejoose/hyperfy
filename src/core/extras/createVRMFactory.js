@@ -367,14 +367,16 @@ export function createVRMFactory(glb, setupMaterial) {
         if (poses.deathFall) poses.deathFall.target = 0
         if (poses.getup) poses.getup.target = 0
         // Natural effect expiry lets the clip finish visually, but explicit
-        // cancels (interrupt from hit, death) must stop the swing NOW
+        // cancels (interrupt from hit) must end the swing now. Even then we
+        // blend out over ~0.1s rather than hard-stopping, so the avatar
+        // transitions back to locomotion instead of snapping to idle.
         if (currentAttack && !options.immediate) {
           const action = poses[currentAttack]?.action
           if (action && !isCombatActionFinished(action)) {
             return // Gameplay ended; let the attack clip finish visually
           }
         }
-        clearCurrentCombatPose({ immediate: options.immediate })
+        clearCurrentCombatPose()
         kickVisualComplete = false
       }
       
