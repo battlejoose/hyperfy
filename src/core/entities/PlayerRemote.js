@@ -7,7 +7,7 @@ import { hasRank, Ranks } from '../extras/ranks'
 import { BufferedLerpVector3 } from '../extras/BufferedLerpVector3'
 import { BufferedLerpQuaternion } from '../extras/BufferedLerpQuaternion'
 import { Layers } from '../extras/Layers'
-import { Emotes, KickTiming } from '../extras/playerEmotes'
+import { Emotes, KickTiming, getAttackSwingEndTime, getAttackSwingPhaseDuration } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
@@ -788,7 +788,8 @@ export class PlayerRemote extends Entity {
         this.remoteChargingAttack = false
         this.remoteAttackCommitted = true
         this.combatAnimElapsed = 0
-        this.combatSwingDuration = attackDuration > 0 ? attackDuration : this.attackDuration
+        this.combatSwingDuration =
+          attackDuration > 0 ? attackDuration : getAttackSwingPhaseDuration(this.attackDuration)
 
         if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
           this.avatar.instance.mixer.timeScale = 1
@@ -1109,7 +1110,9 @@ export class PlayerRemote extends Entity {
       this.setSwordColliderActive(true)
     }
 
-    const swingLimit = this.combatSwingDuration ?? (isChargingAttack ? null : this.attackDuration)
+    const swingLimit =
+      this.combatSwingDuration ??
+      (isChargingAttack ? null : getAttackSwingEndTime(this.attackWindupTime, this.attackDuration))
     if (this.remoteAttackCommitted && swingLimit != null && this.combatAnimElapsed >= swingLimit) {
       this.setSwordColliderActive(false)
     }

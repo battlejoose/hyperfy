@@ -421,7 +421,7 @@ Sent when a player's attack is interrupted mid-swing (hit while attacking). Remo
 
 ## Combat Timing Summary
 
-Attack windup, collider activation, and swing end use **simulation time** (`delta` from the game loop), not wall-clock `setTimeout`. Effect duration for attack emotes does not count down while the mixer is paused (`timeScale = 0` during charge/block hold). The VRM clip runs until `action.time >= clip.duration`, so low FPS no longer cuts animations short.
+Attack windup, collider activation, and swing end use **simulation time** (`delta` from the game loop), not wall-clock `setTimeout`. Effect duration for attack emotes does not count down while the mixer is paused (`timeScale = 0` during charge/block hold). The last **0.5 s** of each attack clip (`AttackTiming.recoveryTrim`) is skipped — gameplay, network effect duration, and VRM pose all return to locomotion early so the next attack can start sooner.
 
 ```
 ATTACK (charged):
@@ -431,13 +431,13 @@ ATTACK (charged):
 
 Early release (before 500ms windup):
   windup completes → pause at backswing 500ms → auto-swing
-  (~1000ms from attack start minimum)
+  (~550ms from attack start minimum)
 
 Hold past windup, release immediately:
-  pause at 500ms → swing on release (~500ms+ from start)
+  pause at 500ms → swing on release (~550ms+ from release)
 
 +500ms  Sword collider ACTIVE (after 16ms ready delay) on swing
-+1000ms Sword collider DEACTIVATES (total attack duration from swing)
++550ms  Sword off, locomotion restored (0.5s recovery trimmed from clip tail)
 ─────────────────────────────────────────────────────────────
 
 BLOCK (key 5, normal mode):

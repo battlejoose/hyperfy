@@ -4,7 +4,7 @@ import * as THREE from './three'
 import { DEG2RAD } from './general'
 import { getTrianglesFromGeometry } from './getTrianglesFromGeometry'
 import { getTextureBytesFromMaterial } from './getTextureBytesFromMaterial'
-import { Emotes, KickTiming } from './playerEmotes'
+import { Emotes, KickTiming, AttackTiming } from './playerEmotes'
 import { CombatHandOffsets } from './combatHandOffsets'
 
 const v1 = new THREE.Vector3()
@@ -260,17 +260,26 @@ export function createVRMFactory(glb, setupMaterial) {
     let currentEmote
     let isInDeathState = false // Track if player is dead (affects locomotion)
 
-    const isCombatActionFinished = action => {
+    const isCombatActionFinished = (action, poseKey) => {
       if (!action?.isRunning()) return true
       const clip = action.getClip()
       if (!clip?.duration) return false
-      return action.time >= clip.duration - 0.03
+      const trim =
+        poseKey &&
+        !poseKey.startsWith('block') &&
+        poseKey !== 'kick' &&
+        poseKey !== 'deathFall' &&
+        poseKey !== 'getup' &&
+        poseKey !== 'dead'
+          ? AttackTiming.recoveryTrim
+          : 0
+      return action.time >= clip.duration - 0.03 - trim
     }
 
     const syncCurrentAttack = () => {
       if (!currentAttack) return
       const action = poses[currentAttack]?.action
-      if (isCombatActionFinished(action)) {
+      if (isCombatActionFinished(action, currentAttack)) {
         if (currentAttack.startsWith('block')) {
           // Held blocks clamp at the end until the effect clears
           poses[currentAttack].target = 1
@@ -283,7 +292,7 @@ export function createVRMFactory(glb, setupMaterial) {
           currentAttack = null
           return
         }
-        poses[currentAttack].target = 0
+        stopCombatPose(currentAttack)
         currentAttack = null
       } else {
         poses[currentAttack].target = 1
@@ -375,16 +384,8 @@ export function createVRMFactory(glb, setupMaterial) {
         // Clear any death effect animations
         if (poses.deathFall) poses.deathFall.target = 0
         if (poses.getup) poses.getup.target = 0
-        // Natural effect expiry lets the clip finish visually, but explicit
-        // cancels (interrupt from hit) must end the swing now. Even then we
-        // blend out over ~0.1s rather than hard-stopping, so the avatar
-        // transitions back to locomotion instead of snapping to idle.
-        if (currentAttack && !options.immediate) {
-          const action = poses[currentAttack]?.action
-          if (action && !isCombatActionFinished(action)) {
-            return // Gameplay ended; let the attack clip finish visually
-          }
-        }
+        // Clear emote — blend attack poses back to locomotion (recovery is
+        // trimmed via AttackTiming.recoveryTrim in syncCurrentAttack).
         clearCurrentCombatPose()
         kickVisualComplete = false
       }
@@ -858,7 +859,7 @@ export function createVRMFactory(glb, setupMaterial) {
       // Update locomotion (legs only)
       // If in death state, use dead animation as locomotion
       const fullBodyAttackActive =
-        currentAttack && poses[currentAttack]?.fullBodyCombat && !isCombatActionFinished(poses[currentAttack]?.action)
+        currentAttack && poses[currentAttack]?.fullBodyCombat && !isCombatActionFinished(poses[currentAttack]?.action, currentAttack)
       if (fullBodyAttackActive) {
         // Full-body combat (kick) replaces locomotion entirely
       } else if (isInDeathState) {

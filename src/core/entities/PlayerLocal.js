@@ -7,7 +7,15 @@ import { DEG2RAD, RAD2DEG } from '../extras/general'
 import { createNode } from '../extras/createNode'
 import { bindRotations } from '../extras/bindRotations'
 import { simpleCamLerp } from '../extras/simpleCamLerp'
-import { Emotes, KickTiming, AttackTiming, SprintTiming, JumpTiming } from '../extras/playerEmotes'
+import {
+  Emotes,
+  KickTiming,
+  AttackTiming,
+  SprintTiming,
+  JumpTiming,
+  getAttackSwingEndTime,
+  getAttackSwingPhaseDuration,
+} from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { SWORD_SRC } from '../extras/gameAssets'
 import { spawnCorpse } from '../extras/playerCorpse'
@@ -920,6 +928,10 @@ export class PlayerLocal extends Entity {
     if (attackEmotes.includes(this.data.effect?.emote)) {
       this.setEffect(null)
       this.emote = null
+      // End the attack pose now (trimmed recovery) — don't wait for full clip
+      if (this.avatar?.instance) {
+        this.avatar.instance.setEmote(null)
+      }
     }
   }
 
@@ -975,7 +987,8 @@ export class PlayerLocal extends Entity {
       this.setSwordColliderActive(true)
     }
 
-    const swingLimit = this.combatSwingDuration ?? this.attackDuration
+    const swingLimit =
+      this.combatSwingDuration ?? getAttackSwingEndTime(this.attackWindupTime, this.attackDuration)
     if (this.isCommitted && this.combatAnimElapsed >= swingLimit) {
       this.resetAttackState()
     }
@@ -1114,7 +1127,7 @@ export class PlayerLocal extends Entity {
 
       this.setEffect({
         emote: emote,
-        duration: this.attackDuration,
+        duration: getAttackSwingEndTime(this.attackWindupTime, this.attackDuration),
         cancellable: false,
       })
     }
@@ -1168,7 +1181,7 @@ export class PlayerLocal extends Entity {
     this.isInWindup = false
     this.isCommitted = true
     this.combatAnimElapsed = 0
-    this.combatSwingDuration = this.attackDuration
+    this.combatSwingDuration = getAttackSwingPhaseDuration(this.attackDuration)
 
     if (this.attackAnimationPaused) {
       this.attackAnimationPaused = false
@@ -1177,7 +1190,7 @@ export class PlayerLocal extends Entity {
 
     this.setEffect({
       emote: emote,
-      duration: this.attackDuration,
+      duration: this.combatSwingDuration,
       cancellable: false,
     })
 

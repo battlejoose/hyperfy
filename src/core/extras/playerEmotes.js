@@ -40,6 +40,18 @@ export const KickTiming = {
 export const AttackTiming = {
   cooldownAfterBlock: 1,
   cooldownAfterHit: 0.5,
+  /** Seconds trimmed from the tail of attack clips before returning to locomotion */
+  recoveryTrim: 0.5,
+}
+
+/** Wall-clock swing end from attack start (includes windup). */
+export function getAttackSwingEndTime(windupTime, totalDuration = 1.0) {
+  return Math.max(windupTime + 0.05, totalDuration - AttackTiming.recoveryTrim)
+}
+
+/** Active swing phase after a charged release (elapsed resets to 0). */
+export function getAttackSwingPhaseDuration(totalDuration = 1.0) {
+  return Math.max(0.05, totalDuration - AttackTiming.recoveryTrim)
 }
 
 export const SprintTiming = {
