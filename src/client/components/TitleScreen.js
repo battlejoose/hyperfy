@@ -18,33 +18,24 @@ const ASSETS = {
 
 const imagePreloadCache = new Map()
 
-async function preloadImage(src) {
+function loadImageSrc(src) {
   if (imagePreloadCache.has(src)) return imagePreloadCache.get(src)
 
-  const promise = (async () => {
-    const response = await fetch(src)
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
+  const promise = new Promise((resolve, reject) => {
     const img = new Image()
-    img.src = url
-    await img.decode()
-    return url
-  })()
+    img.onload = () => resolve(src)
+    img.onerror = () => reject(new Error(`failed to load ${src}`))
+    img.src = src
+  })
 
   imagePreloadCache.set(src, promise)
   return promise
 }
 
-async function preloadAudio(src) {
-  const response = await fetch(src)
-  await response.blob()
-}
-
-const titleAssetsReady = Promise.all([
-  preloadImage(ASSETS.bg),
-  preloadImage(ASSETS.scroll),
-  preloadAudio(ASSETS.titleMusic),
-]).then(([bg, scroll]) => ({ bg, scroll }))
+// Only gate the spinner on the background — scroll and music load in the background.
+// index.html already preloads gladimage.png + scroll.png while the JS bundle loads.
+const titleBgReady = loadImageSrc(ASSETS.bg)
+const titleScrollReady = loadImageSrc(ASSETS.scroll)
 
 function stopAudio(audio) {
   if (!audio) return
@@ -60,42 +51,37 @@ function playEnterArenaSound() {
 
 export function TitleScreen({ onStart }) {
   const [name, setName] = useState('')
-  const [imageUrls, setImageUrls] = useState(null)
+  const [scrollReady, setScrollReady] = useState(false)
   const [showTitle, setShowTitle] = useState(false)
   const titleMusicRef = useRef(null)
-  const imageUrlsRef = useRef(null)
   const usernameRef = useRef(null)
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
 
   useEffect(() => {
-    prefetchGameAssets()
+    let cancelled = false
+    titleBgReady
+      .then(() => {
+        if (!cancelled) setShowTitle(true)
+      })
+      .catch(err => console.error('[TitleScreen] failed to preload background:', err))
+
+    titleScrollReady
+      .then(() => {
+        if (!cancelled) setScrollReady(true)
+      })
+      .catch(err => console.error('[TitleScreen] failed to preload scroll:', err))
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-    titleAssetsReady
-      .then(urls => {
-        if (cancelled) return
-        imageUrlsRef.current = urls
-        setImageUrls(urls)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (!cancelled) setShowTitle(true)
-          })
-        })
-      })
-      .catch(err => console.error('[TitleScreen] failed to preload assets:', err))
-    return () => {
-      cancelled = true
-      if (imageUrlsRef.current) {
-        URL.revokeObjectURL(imageUrlsRef.current.bg)
-        URL.revokeObjectURL(imageUrlsRef.current.scroll)
-        imageUrlsRef.current = null
-      }
-    }
-  }, [])
+    if (!showTitle) return
+    prefetchGameAssets()
+  }, [showTitle])
 
   useEffect(() => {
     if (!showTitle) return
@@ -235,6 +221,11 @@ export function TitleScreen({ onStart }) {
           transform: translate(-50%, -50%);
           object-fit: fill;
           pointer-events: none;
+          opacity: 0;
+          transition: opacity ${FADE_MS}ms ease;
+          &.ready {
+            opacity: 1;
+          }
         }
         .title-panel-content {
           position: relative;
@@ -306,12 +297,12 @@ export function TitleScreen({ onStart }) {
         <div className='loading-spinner' aria-hidden='true' />
       </div>
 
-      {imageUrls && (
-        <div className={`title-stage${showTitle ? ' visible' : ''}`}>
-          <img className='title-bg' src={imageUrls.bg} alt='' />
+      {showTitle && (
+        <div className='title-stage visible'>
+          <img className='title-bg' src={ASSETS.bg} alt='' />
           <div className='title-overlay' />
           <form className='title-panel' onSubmit={handleSubmit}>
-            <img className='title-scroll' src={imageUrls.scroll} alt='' />
+            <img className={`title-scroll${scrollReady ? ' ready' : ''}`} src={ASSETS.scroll} alt='' />
             <div className='title-panel-content'>
               <h1 className='title-heading'>God Wills It</h1>
               <p className='title-sub'>Enter your name to join the Arena</p>
