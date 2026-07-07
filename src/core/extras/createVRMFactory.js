@@ -1035,7 +1035,13 @@ export function createVRMFactory(glb, setupMaterial) {
 
     /** Snap a live avatar to the final on-ground dead pose before freezing as a corpse. */
     const snapCorpsePose = () => {
-      if (isCorpsePoseReady()) return
+      if (isCorpsePoseReady()) return true
+
+      const fallPose = poses.deathFall
+      const deadPose = poses.dead
+      if (!fallPose?.action || !deadPose?.action || fallPose.loading || deadPose.loading) {
+        return false
+      }
 
       mixer.timeScale = 1
       currentEmote = null
@@ -1082,6 +1088,7 @@ export function createVRMFactory(glb, setupMaterial) {
 
       mixer.update(0.05)
       skeleton.update()
+      return true
     }
 
     return {

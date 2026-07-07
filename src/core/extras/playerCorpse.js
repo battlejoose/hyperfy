@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { createNode } from './createNode'
-import { Emotes } from './playerEmotes'
 import { AVATAR_CRUSADER } from './playerAvatars'
 
 const MAX_CORPSES = 50
@@ -61,30 +60,32 @@ function trimCorpses(world) {
   }
 }
 
-function applyDeadPose(avatar) {
-  const setPose = () => {
-    if (avatar.instance?.snapCorpsePose) {
-      avatar.instance.snapCorpsePose()
-      return true
+function applyDeadPose(avatar, onReady) {
+  const trySetPose = () => {
+    const instance = avatar?.instance
+    if (!instance) {
+      requestAnimationFrame(trySetPose)
+      return
     }
-    if (avatar.instance?.setDeathState) {
-      avatar.instance.setDeathState(true)
-      avatar.instance.setEmote(Emotes.DEAD)
-      avatar.instance.mixer?.update(0.001)
-      return true
+
+    if (instance.snapCorpsePose?.()) {
+      onReady?.()
+      return
     }
-    requestAnimationFrame(setPose)
-    return false
+
+    requestAnimationFrame(trySetPose)
   }
-  setPose()
+
+  trySetPose()
 }
 
-/** Loaded/replayed corpses have no live avatar — snap to dead pose then freeze. */
+/** Loaded/replayed corpses have no live avatar — snap to dead pose once emotes are ready, then freeze. */
 function settleCorpseAvatar(world, avatar) {
-  applyDeadPose(avatar)
-  requestAnimationFrame(() => {
-    avatar?.instance?.mixer?.update(0.05)
-    requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+  applyDeadPose(avatar, () => {
+    requestAnimationFrame(() => {
+      avatar?.instance?.mixer?.update(0.05)
+      requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+    })
   })
 }
 
