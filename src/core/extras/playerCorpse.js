@@ -66,28 +66,35 @@ function trimCorpses(world) {
   }
 }
 
-/** Joiner corpses: orient the group first, then step the fall clip like a live client. */
-function settleCorpseAvatar(world, group, avatar) {
-  const trySettle = () => {
+function applyDeadPose(avatar, onReady) {
+  const trySetPose = () => {
     const instance = avatar?.instance
     if (!instance) {
-      requestAnimationFrame(trySettle)
+      requestAnimationFrame(trySetPose)
       return
     }
 
-    world.avatars?.remove(instance)
-    syncCorpseAvatarMatrix(avatar)
-
-    if (!instance.playReplayDeathFall?.()) {
-      requestAnimationFrame(trySettle)
+    if (instance.snapCorpsePose?.()) {
+      onReady?.()
       return
     }
 
-    syncCorpseAvatarMatrix(avatar)
-    requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+    requestAnimationFrame(trySetPose)
   }
 
-  trySettle()
+  trySetPose()
+}
+
+/** Loaded/replayed corpses — wait for emotes, snap dead pose under the stored transform, then freeze. */
+function settleCorpseAvatar(world, group, avatar) {
+  applyDeadPose(avatar, () => {
+    ensureTransformsFresh(world, group, avatar)
+    syncCorpseAvatarMatrix(avatar)
+    requestAnimationFrame(() => {
+      avatar?.instance?.mixer?.update(0.05)
+      requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+    })
+  })
 }
 
 function loadCorpseAvatar(world, group, sessionAvatar) {
