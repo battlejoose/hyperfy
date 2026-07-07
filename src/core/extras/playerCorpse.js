@@ -50,10 +50,16 @@ function applyDeadPose(avatar) {
 }
 
 function settleCorpseAvatar(world, avatar) {
+  if (avatar?.instance?.isCorpsePoseReady?.()) {
+    // Observer path: remote was already lying dead — don't reset the pose
+    requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+    return
+  }
+
   applyDeadPose(avatar)
   // One frame lets pose weights settle before the mixer is frozen
   requestAnimationFrame(() => {
-    avatar?.instance?.mixer?.update(0.001)
+    avatar?.instance?.mixer?.update(0.05)
     requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
   })
 }

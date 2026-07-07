@@ -1015,25 +1015,32 @@ export function createVRMFactory(glb, setupMaterial) {
       }, durationMs)
     }
 
+    /** True when the avatar is already showing a finished fall or dead pose (observer corpse steal). */
+    const isCorpsePoseReady = () => {
+      const deadPose = poses.dead
+      if (deadPose?.weight > 0.8) {
+        return true
+      }
+
+      const fallAction = poses.deathFall?.action
+      if (fallAction?.isRunning()) {
+        const clip = fallAction.getClip()
+        if (clip?.duration && fallAction.time >= clip.duration - 0.05) {
+          return true
+        }
+      }
+
+      return false
+    }
+
     /** Snap a live avatar to the final on-ground dead pose before freezing as a corpse. */
     const snapCorpsePose = () => {
+      if (isCorpsePoseReady()) return
+
       mixer.timeScale = 1
       currentEmote = null
       currentAttack = null
       isInDeathState = true
-
-      if (poses.deathFall?.action) {
-        const clip = poses.deathFall.action.getClip()
-        if (clip?.duration) {
-          poses.deathFall.action.time = clip.duration
-        }
-        poses.deathFall.target = 0
-        poses.deathFall.setWeight(0)
-      }
-      if (poses.getup) {
-        poses.getup.target = 0
-        poses.getup.setWeight(0)
-      }
 
       for (const key in poses) {
         if (poses[key].upperBodyOnly) {
@@ -1042,15 +1049,39 @@ export function createVRMFactory(glb, setupMaterial) {
         }
       }
 
+      if (poses.getup) {
+        poses.getup.target = 0
+        poses.getup.setWeight(0)
+      }
+
+      // Bring fall to its final frame before crossfading to dead
+      if (poses.deathFall?.action) {
+        const clip = poses.deathFall.action.getClip()
+        if (clip?.duration) {
+          poses.deathFall.action.time = clip.duration
+          poses.deathFall.action.paused = false
+        }
+        poses.deathFall.target = 1
+        poses.deathFall.setWeight(1)
+      }
+
       poses.dead.target = 1
-      poses.dead.weight = 1
       if (poses.dead.action) {
-        poses.dead.action.reset()
-        poses.dead.action.play()
+        if (!poses.dead.action.isRunning()) {
+          poses.dead.action.play()
+        }
         poses.dead.setWeight(1)
       }
 
-      mixer.update(0.001)
+      mixer.update(0.05)
+
+      if (poses.deathFall) {
+        poses.deathFall.target = 0
+        poses.deathFall.setWeight(0)
+      }
+
+      mixer.update(0.05)
+      skeleton.update()
     }
 
     return {
@@ -1060,6 +1091,7 @@ export function createVRMFactory(glb, setupMaterial) {
       headToHeight,
       setEmote,
       setDeathState,
+      isCorpsePoseReady,
       snapCorpsePose,
       setFirstPerson,
       setTint,
