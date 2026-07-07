@@ -18,15 +18,21 @@ function truncateAddress(address) {
 }
 
 export function PlayerQueueList({ world }) {
-  const [player, setPlayer] = useState(() => world.entities?.player)
+  const [isSpectator, setIsSpectator] = useState(() => {
+    const p = world.entities?.player
+    return !!(p && isSpectatorSessionAvatar(p.data.sessionAvatar))
+  })
   const [wallet, setWallet] = useState(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    const onPlayer = p => setPlayer(p)
-    world.on('player', onPlayer)
-    return () => world.off('player', onPlayer)
+    const syncRole = () => {
+      const p = world.entities?.player
+      setIsSpectator(!!(p && isSpectatorSessionAvatar(p.data.sessionAvatar)))
+    }
+    world.on('player', syncRole)
+    return () => world.off('player', syncRole)
   }, [world])
 
   useEffect(() => {
@@ -41,8 +47,6 @@ export function PlayerQueueList({ world }) {
     world.on('enterArenaResult', onResult)
     return () => world.off('enterArenaResult', onResult)
   }, [world])
-
-  const isSpectator = player && isSpectatorSessionAvatar(player.data.sessionAvatar)
 
   if (!isSpectator) return null
 

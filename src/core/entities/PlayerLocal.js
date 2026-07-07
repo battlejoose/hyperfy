@@ -3101,8 +3101,10 @@ export class PlayerLocal extends Entity {
   }
 
   setSessionAvatar(avatar) {
+    if (this.data.sessionAvatar === avatar) return
     this.data.sessionAvatar = avatar
     this.applyAvatar()
+    this.world.emit('player', this)
     this.world.network.send('entityModified', {
       id: this.data.id,
       sessionAvatar: avatar,
@@ -3290,6 +3292,7 @@ export class PlayerLocal extends Entity {
     if (data.hasOwnProperty('sessionAvatar')) {
       this.data.sessionAvatar = data.sessionAvatar
       avatarChanged = true
+      changed = true // arena UI and scoreboard team depend on role
     }
     if (data.hasOwnProperty('tf')) {
       this.data.testFighter = !!data.tf
