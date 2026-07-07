@@ -204,21 +204,16 @@ export function TitleScreen({ onStart }) {
         }
         .title-panel {
           position: relative;
-          width: min(92vw, 40rem);
-          min-height: 18rem;
-          padding: 14% 14% 16%;
-          box-sizing: border-box;
+          display: inline-block;
+          max-width: min(92vw, 22rem);
           border: none;
-          overflow: hidden;
           background: transparent;
         }
         .title-scroll {
           position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 118%;
-          height: 135%;
-          transform: translate(-50%, -50%);
+          inset: 0;
+          width: 100%;
+          height: 100%;
           object-fit: fill;
           pointer-events: none;
           opacity: 0;
@@ -230,6 +225,7 @@ export function TitleScreen({ onStart }) {
         .title-panel-content {
           position: relative;
           z-index: 1;
+          padding: 2rem 2.75rem 2.25rem;
         }
         .title-heading {
           font-size: clamp(1.75rem, 5vw, 2.25rem);

@@ -102,26 +102,22 @@ export function PlayerQueueList({ world }) {
         position: absolute;
         top: 5.5rem;
         right: 1rem;
-        width: min(27rem, calc(100vw - 2rem));
+        width: fit-content;
+        max-width: min(27rem, calc(100vw - 2rem));
         pointer-events: auto;
         z-index: 997;
         .arena-panel {
           position: relative;
-          width: 100%;
-          min-height: 15rem;
-          padding: 18% 26% 19%;
-          box-sizing: border-box;
+          display: inline-block;
+          max-width: min(27rem, calc(100vw - 2rem));
           border: none;
-          overflow: hidden;
           background: transparent;
         }
         .arena-scroll {
           position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 118%;
-          height: 135%;
-          transform: translate(-50%, -50%);
+          inset: 0;
+          width: 100%;
+          height: 100%;
           object-fit: fill;
           pointer-events: none;
         }
@@ -132,6 +128,7 @@ export function PlayerQueueList({ world }) {
           flex-direction: column;
           align-items: center;
           gap: 0.6rem;
+          padding: 1.75rem 2.5rem 2rem;
         }
         .arena-title {
           font-size: clamp(1.1rem, 3vw, 1.35rem);
