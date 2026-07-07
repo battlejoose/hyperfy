@@ -7,7 +7,7 @@ import { hasRank, Ranks } from '../extras/ranks'
 import { BufferedLerpVector3 } from '../extras/BufferedLerpVector3'
 import { BufferedLerpQuaternion } from '../extras/BufferedLerpQuaternion'
 import { Layers } from '../extras/Layers'
-import { Emotes, KickTiming, getAttackSwingEndTime, getAttackSwingPhaseDuration } from '../extras/playerEmotes'
+import { Emotes, KickTiming, AttackTiming, getAttackSwingEndTime, getAttackSwingPhaseDuration } from '../extras/playerEmotes'
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
@@ -59,7 +59,7 @@ export class PlayerRemote extends Entity {
     // Sword collision tracking
     this.swordColliderActive = false
     this.hitPlayersThisSwing = new Set()
-    this.attackWindupTime = 0.5
+    this.attackWindupTime = AttackTiming.windup
     this.attackDuration = 1.0
     this.combatAnimElapsed = 0
     this.combatSwingDuration = null
@@ -172,7 +172,7 @@ export class PlayerRemote extends Entity {
       console.log('[PlayerRemote] Show colliders state changed to:', show, 'player:', this.data.id)
       
       // Update visibility if meshes already exist
-      if (this.swordColliderMesh) this.swordColliderMesh.visible = show
+      if (this.swordColliderMesh) this.swordColliderMesh.visible = show && this.swordColliderActive
       if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
     })
 
@@ -622,6 +622,16 @@ export class PlayerRemote extends Entity {
     // Audio will automatically stop and clean up when finished (loop: false)
   }
 
+  applyAttackSwingSpeed(speed = 1) {
+    this.avatar?.instance?.setAttackSwingSpeed?.(speed)
+  }
+
+  updateSwordColliderDebugMesh() {
+    if (this.swordColliderMesh) {
+      this.swordColliderMesh.visible = this.showColliders && this.swordColliderActive
+    }
+  }
+
   setSwordColliderActive(active) {
     if (!this.swordShape) return
     
@@ -629,10 +639,12 @@ export class PlayerRemote extends Entity {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
       this.swordColliderActive = true
       this.hitPlayersThisSwing.clear()
+      this.updateSwordColliderDebugMesh()
       console.log('[Sword Remote] Collider activated for player:', this.data.id)
     } else if (!active && this.swordColliderActive) {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
+      this.updateSwordColliderDebugMesh()
       console.log('[Sword Remote] Collider deactivated for player:', this.data.id, '- hit', this.hitPlayersThisSwing.size, 'player(s)')
     }
   }
@@ -789,13 +801,16 @@ export class PlayerRemote extends Entity {
         this.remoteAttackCommitted = true
         this.combatAnimElapsed = 0
         this.combatSwingDuration =
-          attackDuration > 0 ? attackDuration : getAttackSwingPhaseDuration(this.attackDuration)
+          attackDuration > 0
+            ? attackDuration
+            : getAttackSwingPhaseDuration(this.attackWindupTime, this.attackDuration)
 
         if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
           this.avatar.instance.mixer.timeScale = 1
           this.attackAnimationPaused = false
         }
 
+        this.applyAttackSwingSpeed(AttackTiming.swingSpeed)
         this.setSwordColliderActive(true)
       }
 
@@ -984,6 +999,7 @@ export class PlayerRemote extends Entity {
           if (this.swordColliderMesh) {
             this.swordColliderMesh.position.copy(v6)
             this.swordColliderMesh.quaternion.copy(this.sword.quaternion)
+            this.swordColliderMesh.visible = this.showColliders && this.swordColliderActive
           }
         }
       }
@@ -1078,6 +1094,7 @@ export class PlayerRemote extends Entity {
     this.combatSwingDuration = null
     this.currentAttackEmote = null
     this.setSwordColliderActive(false)
+    this.applyAttackSwingSpeed(1)
     if (this.attackAnimationPaused && this.avatar?.instance?.mixer) {
       this.avatar.instance.mixer.timeScale = 1
       this.attackAnimationPaused = false
@@ -1107,6 +1124,7 @@ export class PlayerRemote extends Entity {
 
     if (!isChargingAttack && !this.remoteAttackCommitted && this.combatAnimElapsed >= this.attackWindupTime) {
       this.remoteAttackCommitted = true
+      this.applyAttackSwingSpeed(AttackTiming.swingSpeed)
       this.setSwordColliderActive(true)
     }
 

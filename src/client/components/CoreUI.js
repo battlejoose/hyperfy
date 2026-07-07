@@ -102,7 +102,7 @@ export function CoreUI({ world }) {
       {ready && <ActionsBlock world={world} />}
       {ready && <Sidebar world={world} ui={ui} />}
       {ready && <Chat world={world} />}
-      {/* {ready && <ColliderDebug world={world} />} */}
+      {ready && <ColliderDebug world={world} />}
       {/* {ready && <Side world={world} player={player} menu={menu} />} */}
       {avatar && <AvatarPane key={avatar.hash} world={world} info={avatar} />}
       {/* {apps && <AppsPane world={world} close={() => world.ui.toggleApps()} />} */}
@@ -1338,7 +1338,7 @@ function ColliderDebug({ world }) {
           checked={showColliders}
           onChange={e => setShowColliders(e.target.checked)}
         />
-        <span>Show Colliders</span>
+        <span>Show Colliders (red sword = hit window)</span>
       </label>
     </div>
   )
