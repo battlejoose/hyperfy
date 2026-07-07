@@ -359,7 +359,7 @@ When health reaches 0:
 5. Server broadcasts `playerCorpse` to other clients, teleports player to team spawn (Crusader/Saracen), restores health to 100 HP
 6. Live player gets a fresh avatar at spawn; dead body stays at death location (no networking)
 
-Live corpse spawn (dying client + observers) steals the existing avatar, reparents it while preserving its world transform, and freezes the mixer immediately. Joiners/replays load a fresh avatar at the recorded `p`/`q`, wait for fall/dead emotes to load, snap to the on-ground dead pose via `snapCorpsePose`, then freeze.
+Live corpse spawn (dying client + observers) steals the existing avatar, reparents it while preserving its world transform, and freezes the mixer immediately — typically the fall clip held at its final frame. Joiners/replays load a fresh avatar at the recorded `p`/yaw, step the in-place fall animation to its end under that transform (no dead crossfade), then freeze.
 
 ---
 

@@ -8,6 +8,7 @@ const corpses = []
 const _v1 = new THREE.Vector3()
 const _q1 = new THREE.Quaternion()
 const _s1 = new THREE.Vector3()
+const _e1 = new THREE.Euler()
 
 function ensureTransformsFresh(world, ...nodes) {
   for (const node of nodes) {
@@ -45,6 +46,15 @@ function reparentPreserveWorld(node, newParent) {
   node.setTransformed()
 }
 
+/** Live corpses only carry yaw on the root — pitch/roll come from the fall pose bones. */
+function applyCorpseTransform(group, position, quaternion) {
+  group.position.fromArray(position)
+  _q1.fromArray(quaternion)
+  _e1.setFromQuaternion(_q1, 'YXZ')
+  group.quaternion.setFromEuler(new THREE.Euler(0, _e1.y, 0, 'YXZ'))
+  group.setTransformed()
+}
+
 function syncCorpseAvatarMatrix(avatar) {
   avatar.instance?.move(avatar.matrixWorld)
 }
@@ -66,7 +76,7 @@ function trimCorpses(world) {
   }
 }
 
-function applyDeadPose(avatar, onReady) {
+function applyReplayCorpsePose(avatar, onReady) {
   const trySetPose = () => {
     const instance = avatar?.instance
     if (!instance) {
@@ -74,7 +84,7 @@ function applyDeadPose(avatar, onReady) {
       return
     }
 
-    if (instance.snapCorpsePose?.()) {
+    if (instance.snapReplayCorpsePose?.()) {
       onReady?.()
       return
     }
@@ -85,9 +95,9 @@ function applyDeadPose(avatar, onReady) {
   trySetPose()
 }
 
-/** Loaded/replayed corpses — wait for emotes, snap dead pose under the stored transform, then freeze. */
+/** Joiner corpses — yaw-only root, step fall clip to end (same pose live clients freeze). */
 function settleCorpseAvatar(world, group, avatar) {
-  applyDeadPose(avatar, () => {
+  applyReplayCorpsePose(avatar, () => {
     ensureTransformsFresh(world, group, avatar)
     syncCorpseAvatarMatrix(avatar)
     requestAnimationFrame(() => {
@@ -105,6 +115,7 @@ function loadCorpseAvatar(world, group, sessionAvatar) {
     .load('avatar', avatarUrl)
     .then(src => {
       const avatar = src.toNodes().get('avatar')
+      avatar.disableRateCheck()
       group.add(avatar)
       group.setDirty()
       world.stage?.clean()
@@ -132,8 +143,7 @@ export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar
   if (avatar) {
     spawnLiveCorpse(world, group, avatar)
   } else {
-    group.position.fromArray(position)
-    group.quaternion.fromArray(quaternion)
+    applyCorpseTransform(group, position, quaternion)
     group.activate({ world })
     loadCorpseAvatar(world, group, sessionAvatar)
   }

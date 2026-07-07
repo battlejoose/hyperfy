@@ -831,7 +831,7 @@ export function createVRMFactory(glb, setupMaterial) {
       fullBodyCombat: true,
       trimStart: KickTiming.trimStart,
     })
-    addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
+    addPose('deathFall', Emotes.DEATH_FALL, false, { inPlace: true })
     addPose('dead', Emotes.DEAD, false) // Full body looping animation
     addPose('getup', Emotes.GETUP, false) // Full body animation
     
@@ -1091,6 +1091,56 @@ export function createVRMFactory(glb, setupMaterial) {
       return true
     }
 
+    /** Replay corpse pose — step fall to its end and hold (matches live stolen corpses, not dead crossfade). */
+    const snapReplayCorpsePose = () => {
+      const fallPose = poses.deathFall
+      if (!fallPose?.action || fallPose.loading) return false
+
+      mixer.timeScale = 1
+      currentEmote = { url: Emotes.DEATH_FALL }
+      currentAttack = null
+      isInDeathState = true
+
+      for (const key in poses) {
+        if (poses[key].upperBodyOnly) {
+          poses[key].target = 0
+          poses[key].setWeight(0)
+        } else if (key !== 'deathFall') {
+          poses[key].target = 0
+          poses[key].setWeight(0)
+        }
+      }
+
+      if (poses.getup) {
+        poses.getup.target = 0
+        poses.getup.setWeight(0)
+      }
+      if (poses.dead) {
+        poses.dead.target = 0
+        poses.dead.setWeight(0)
+      }
+
+      const clip = fallPose.action.getClip()
+      if (!clip?.duration) return false
+
+      fallPose.action.reset()
+      fallPose.action.paused = false
+      fallPose.action.play()
+      fallPose.target = 1
+      fallPose.setWeight(1)
+
+      const duration = clip.duration
+      const steps = Math.max(30, Math.ceil(duration / 0.05))
+      for (let i = 1; i <= steps; i++) {
+        fallPose.action.time = (duration * i) / steps
+        mixer.update(0.05)
+      }
+      fallPose.action.time = duration
+      mixer.update(0.05)
+      skeleton.update()
+      return true
+    }
+
     return {
       raw: vrm,
       mixer, // Expose mixer for direct animation control
@@ -1100,6 +1150,7 @@ export function createVRMFactory(glb, setupMaterial) {
       setDeathState,
       isCorpsePoseReady,
       snapCorpsePose,
+      snapReplayCorpsePose,
       setFirstPerson,
       setTint,
       flash,
