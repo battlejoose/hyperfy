@@ -831,8 +831,8 @@ export function createVRMFactory(glb, setupMaterial) {
       fullBodyCombat: true,
       trimStart: KickTiming.trimStart,
     })
-    addPose('deathFall', Emotes.DEATH_FALL, false) // Full body animation
-    addPose('dead', Emotes.DEAD, false) // Full body looping animation
+    addPose('deathFall', Emotes.DEATH_FALL, false, { inPlace: true })
+    addPose('dead', Emotes.DEAD, false, { inPlace: true })
     addPose('getup', Emotes.GETUP, false) // Full body animation
     
     function clearLocomotion() {
@@ -1091,8 +1091,8 @@ export function createVRMFactory(glb, setupMaterial) {
       return true
     }
 
-    /** Snap a loaded/replay corpse to the same fall-end pose live clients freeze (no dead crossfade). */
-    const snapReplayCorpsePose = () => {
+    /** Play the fall animation through to its end — matches live corpse pose for joiners. */
+    const playReplayDeathFall = () => {
       const fallPose = poses.deathFall
       if (!fallPose?.action || fallPose.loading) return false
 
@@ -1121,14 +1121,22 @@ export function createVRMFactory(glb, setupMaterial) {
       }
 
       const clip = fallPose.action.getClip()
-      if (clip?.duration) {
-        fallPose.action.time = clip.duration
-        fallPose.action.paused = false
-      }
+      if (!clip?.duration) return false
+
+      fallPose.action.reset()
+      fallPose.action.time = 0
+      fallPose.action.paused = false
+      fallPose.action.play()
       fallPose.target = 1
       fallPose.setWeight(1)
 
-      mixer.update(0.05)
+      const steps = Math.max(24, Math.ceil(clip.duration / 0.05))
+      for (let i = 1; i <= steps; i++) {
+        fallPose.action.time = (clip.duration * i) / steps
+        mixer.update(0)
+      }
+      fallPose.action.time = clip.duration
+      mixer.update(0)
       skeleton.update()
       return true
     }
@@ -1142,7 +1150,7 @@ export function createVRMFactory(glb, setupMaterial) {
       setDeathState,
       isCorpsePoseReady,
       snapCorpsePose,
-      snapReplayCorpsePose,
+      playReplayDeathFall,
       setFirstPerson,
       setTint,
       flash,
