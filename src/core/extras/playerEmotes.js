@@ -41,7 +41,7 @@ export const AttackTiming = {
   cooldownAfterBlock: 1,
   cooldownAfterHit: 0.5,
   /** Seconds trimmed from the tail of attack clips before returning to locomotion */
-  recoveryTrim: 0.5,
+  recoveryTrim: 0.3,
 }
 
 /** Wall-clock swing end from attack start (includes windup). */
