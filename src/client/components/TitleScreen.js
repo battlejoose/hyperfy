@@ -310,7 +310,7 @@ export function TitleScreen({ onStart }) {
       `}
     >
       <div className={`title-loading${showTitle ? ' hidden' : ''}`}>
-        <h1 className='loading-heading'>God Wills It!</h1>
+        <h1 className='loading-heading'>Proximo</h1>
         <div className='loading-spinner' aria-hidden='true' />
       </div>
 
@@ -321,7 +321,7 @@ export function TitleScreen({ onStart }) {
           <form className='title-panel' onSubmit={handleSubmit}>
             <img className={`title-scroll${scrollReady ? ' ready' : ''}`} src={ASSETS.scroll} alt='' />
             <div className='title-panel-content'>
-              <h1 className='title-heading'>God Wills It</h1>
+              <h1 className='title-heading'>Proximo</h1>
               <p className='title-sub'>Enter your name to join the Arena</p>
 
               <label className='field-label' htmlFor='username'>

@@ -108,7 +108,7 @@ await world.init({
 fastify.register(cors)
 fastify.register(compress)
 fastify.get('/', async (req, reply) => {
-  const title = world.settings.title || 'World'
+  const title = world.settings.title || 'Proximo'
   const desc = world.settings.desc || ''
   const image = world.resolveURL(world.settings.image?.url) || ''
   const url = process.env.ASSETS_BASE_URL
