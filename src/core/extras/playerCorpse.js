@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { createNode } from './createNode'
 import { Emotes } from './playerEmotes'
 import { AVATAR_CRUSADER } from './playerAvatars'
@@ -5,22 +6,51 @@ import { AVATAR_CRUSADER } from './playerAvatars'
 const MAX_CORPSES = 50
 const corpses = []
 
-function reparentWithoutDeactivate(node, newParent) {
+const _v1 = new THREE.Vector3()
+const _q1 = new THREE.Quaternion()
+const _s1 = new THREE.Vector3()
+
+function ensureTransformsFresh(world, node) {
+  if (!node) return
+  let n = node
+  while (n) {
+    if (n.isDirty) n.setDirty()
+    n = n.parent
+  }
+  world.stage?.clean()
+}
+
+/** Reparent while keeping the node's world transform — group absorbs world pose, child goes local identity. */
+function reparentPreserveWorld(node, newParent) {
+  node.matrixWorld.decompose(_v1, _q1, _s1)
+
   if (node.parent) {
     const idx = node.parent.children.indexOf(node)
     if (idx !== -1) node.parent.children.splice(idx, 1)
     node.parent = null
   }
+
+  newParent.position.copy(_v1)
+  newParent.quaternion.copy(_q1)
+  newParent.scale.copy(_s1)
+  newParent.setTransformed()
+
   node.parent = newParent
   newParent.children.push(node)
+
+  node.position.set(0, 0, 0)
+  node.quaternion.set(0, 0, 0, 1)
+  node.scale.set(1, 1, 1)
   node.setTransformed()
 }
 
-function freezeCorpseAvatar(world, avatar) {
+function freezeCorpseAvatar(world, avatar, { skipMixerUpdate = false } = {}) {
   if (!avatar?.instance) return
   avatar.visible = true
   const { instance } = avatar
-  instance.mixer.update(0)
+  if (!skipMixerUpdate) {
+    instance.mixer.update(0)
+  }
   instance.mixer.timeScale = 0
   world.avatars?.remove(instance)
 }
@@ -49,15 +79,9 @@ function applyDeadPose(avatar) {
   setPose()
 }
 
+/** Loaded/replayed corpses have no live avatar — snap to dead pose then freeze. */
 function settleCorpseAvatar(world, avatar) {
-  if (avatar?.instance?.isCorpsePoseReady?.()) {
-    // Observer path: remote was already lying dead — don't reset the pose
-    requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
-    return
-  }
-
   applyDeadPose(avatar)
-  // One frame lets pose weights settle before the mixer is frozen
   requestAnimationFrame(() => {
     avatar?.instance?.mixer?.update(0.05)
     requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
@@ -80,20 +104,27 @@ function loadCorpseAvatar(world, group, sessionAvatar) {
     .catch(err => console.error('[Corpse] failed to load avatar:', err))
 }
 
+/** Steal a live avatar in-place — preserve world transform and current pose exactly. */
+function spawnLiveCorpse(world, group, avatar) {
+  ensureTransformsFresh(world, avatar)
+  group.activate({ world })
+  reparentPreserveWorld(avatar, group)
+  group.setDirty()
+  ensureTransformsFresh(world, group)
+  freezeCorpseAvatar(world, avatar, { skipMixerUpdate: true })
+}
+
 export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar }) {
   if (!world.stage) return
 
   const group = createNode('group')
-  group.position.fromArray(position)
-  group.quaternion.fromArray(quaternion)
-  group.activate({ world })
 
   if (avatar) {
-    reparentWithoutDeactivate(avatar, group)
-    group.setDirty()
-    world.stage.clean()
-    settleCorpseAvatar(world, avatar)
+    spawnLiveCorpse(world, group, avatar)
   } else {
+    group.position.fromArray(position)
+    group.quaternion.fromArray(quaternion)
+    group.activate({ world })
     loadCorpseAvatar(world, group, sessionAvatar)
   }
 
