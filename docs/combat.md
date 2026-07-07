@@ -318,7 +318,7 @@ Layered, client-side feedback on top of the simulation (visual/physics polish on
 
 | Event | Hitstop | Camera kick + zoom | Shake | Extra |
 |-------|---------|--------------------|-------|-------|
-| Hit landed (attacker) | 70 ms both fighters | directional per attack, punch-IN 0.14–0.19 m | 0.5–0.62 | victim red flash, knockback push, sparks |
+| Hit landed (attacker) | 70 ms both fighters | directional per attack, punch-IN 0.14–0.19 m | 0.5–0.62 | victim red flash, knockback push, blood spray |
 | Kill shot (attacker) | +120 ms both | punch-IN 0.35 m, roll | 1.0 | stacked on hit-landed |
 | Attack blocked (attacker) | 50 ms self | backward recoil, punch-OUT 0.12 m | 0.45 | — |
 | Block absorbed (defender) | none | backward, punch-OUT 0.08 m | 0.4 | — |
@@ -331,7 +331,7 @@ Layered, client-side feedback on top of the simulation (visual/physics polish on
 - **Hit flash** — victim's avatar materials flash red-hot for 90 ms (emissive override). Materials are lazily cloned per avatar instance in `createVRMFactory` so the flash (and test-fighter tint) only affects that one player.
 - **Knockback** — attacker sends `playerPush` (2.2 m/s away + small pop up) routed through the server to the victim, so hits physically shove.
 - **Damage vignette** — red radial screen flash (`DamageVignette` in `CoreUI.js`) on the victim via `damageFlash` world event; stronger when health ≤ 25.
-- **Directional sparks** — 14 hot white/orange chips fly along the swing path per attack tag on every landed hit (in addition to blood).
+- **Blood spray** — 150 omnidirectional red chips + 42 directional chips along the swing path per attack tag (`bloodEffects.js`); ground splatter decals unchanged.
 - **Spectator view** — remote-vs-remote hits also flash the victim and hitstop both fighters on every client (`PlayerRemote.onSwordHit`).
 
 ---

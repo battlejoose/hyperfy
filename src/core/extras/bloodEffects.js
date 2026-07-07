@@ -78,13 +78,16 @@ export function replayBloodSplatters(world, bloodHits) {
   }
 }
 
-export function spawnBloodEffect(world, activeParticles, hitPosition) {
+export function spawnBloodEffect(world, activeParticles, hitPosition, worldDir = null) {
   spawnBloodParticles(world, activeParticles, hitPosition)
+  if (worldDir) {
+    spawnDirectionalBloodParticles(world, activeParticles, hitPosition, worldDir)
+  }
   spawnBloodSplatters(world, hitPosition)
 }
 
 export function spawnBloodParticles(world, activeParticles, position) {
-  const particleCount = 50
+  const particleCount = 150
   const geometry = new THREE.BoxGeometry(0.03, 0.03, 0.03)
 
   for (let i = 0; i < particleCount; i++) {
@@ -113,6 +116,42 @@ export function spawnBloodParticles(world, activeParticles, position) {
       lifetime: 0.6,
       elapsed: 0,
       initialEmissive: 2,
+      gravity: 9.8,
+    })
+  }
+}
+
+/** Directional blood burst along the swing path (replaces impact sparks). */
+export function spawnDirectionalBloodParticles(world, activeParticles, position, worldDir) {
+  const particleCount = 42
+  const geometry = new THREE.BoxGeometry(0.03, 0.03, 0.03)
+
+  for (let i = 0; i < particleCount; i++) {
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xaa0000,
+      emissive: 0xcc0000,
+      emissiveIntensity: 2.5,
+      opacity: 0.95,
+      transparent: true,
+    })
+
+    const particle = new THREE.Mesh(geometry, material)
+    particle.position.copy(position)
+    world.stage.scene.add(particle)
+
+    const velocity = new THREE.Vector3(
+      worldDir.x * (4 + Math.random() * 4) + (Math.random() - 0.5) * 2.5,
+      worldDir.y * (4 + Math.random() * 4) + Math.random() * 2,
+      worldDir.z * (4 + Math.random() * 4) + (Math.random() - 0.5) * 2.5
+    )
+
+    activeParticles.push({
+      mesh: particle,
+      material,
+      velocity,
+      lifetime: 0.45 + Math.random() * 0.2,
+      elapsed: 0,
+      initialEmissive: 2.5,
       gravity: 9.8,
     })
   }

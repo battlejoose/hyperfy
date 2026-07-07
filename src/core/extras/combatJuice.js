@@ -2,7 +2,7 @@ import * as THREE from './three'
 
 /**
  * Combat "juice" — layered impact feedback (hitstop, camera kick/shake/zoom
- * punch, directional sparks) that sells hits without changing the simulation.
+ * punch) that sells hits without changing the simulation.
  *
  * Layer stack per game-feel research:
  * - Hitstop: 90–200ms near-freeze of attacker+victim at contact (visual only)
@@ -19,7 +19,7 @@ const CAM_FORWARD = new THREE.Vector3(0, 0, -1)
 
 // Per-attack profiles. kick is in camera-local space (x=right, y=up, z=back),
 // meters. roll is radians. zoom is a punch in meters (negative = punch IN).
-// sparkDir is in attacker-local space (-z forward).
+// sparkDir is attacker-local blood spray direction along the swing path (-z forward).
 export const AttackJuiceProfiles = {
   left: {
     kick: new THREE.Vector3(0.08, 0, 0.01), // swing travels left→right
@@ -187,42 +187,4 @@ export function applyHitstop(entity, durationMs = 120, scale = 0.04) {
 /** Flash an entity's avatar materials (receiver hit confirm). */
 export function flashAvatar(entity, color = 0xff3020, durationMs = 90) {
   entity?.avatar?.instance?.flash?.(color, durationMs)
-}
-
-/**
- * Directional impact sparks — hot white/orange chips that fly along the swing
- * path. Pushes particle data compatible with PlayerLocal's particle updater.
- */
-export function spawnImpactSparks(world, activeParticles, position, worldDir) {
-  const count = 14
-  const geometry = new THREE.BoxGeometry(0.03, 0.03, 0.03)
-  for (let i = 0; i < count; i++) {
-    const hot = Math.random() > 0.4
-    const material = new THREE.MeshStandardMaterial({
-      color: hot ? 0xfff6e0 : 0xffa030,
-      emissive: hot ? 0xfff6e0 : 0xff8020,
-      emissiveIntensity: 8,
-      opacity: 1,
-      transparent: true,
-    })
-    const particle = new THREE.Mesh(geometry, material)
-    particle.position.copy(position)
-    world.stage.scene.add(particle)
-
-    const velocity = new THREE.Vector3(
-      worldDir.x * (4 + Math.random() * 4) + (Math.random() - 0.5) * 2.5,
-      worldDir.y * (4 + Math.random() * 4) + Math.random() * 2,
-      worldDir.z * (4 + Math.random() * 4) + (Math.random() - 0.5) * 2.5
-    )
-
-    activeParticles.push({
-      mesh: particle,
-      material,
-      velocity,
-      lifetime: 0.35 + Math.random() * 0.2,
-      elapsed: 0,
-      initialEmissive: 8,
-      gravity: 9.8,
-    })
-  }
 }

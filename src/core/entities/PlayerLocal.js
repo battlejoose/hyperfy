@@ -31,7 +31,6 @@ import {
   JuiceEvents,
   applyHitstop,
   flashAvatar,
-  spawnImpactSparks,
 } from '../extras/combatJuice'
 
 const UP = new THREE.Vector3(0, 1, 0)
@@ -623,8 +622,7 @@ export class PlayerLocal extends Entity {
   }
 
   // Impact juice when our attack lands: hitstop both fighters, victim flash,
-  // directional camera kick + shake + zoom punch, sparks along the swing path,
-  // and a physical knockback impulse on the victim.
+  // directional camera kick + shake + zoom punch, and knockback on the victim.
   applyAttackImpactJuice(target, hitPos) {
     const profile = AttackJuiceProfiles[this.currentAttackTag] || AttackJuiceProfiles.right
     applyHitstop(this, JuiceEvents.hitLanded.hitstopMs)
@@ -634,10 +632,6 @@ export class PlayerLocal extends Entity {
     }
     this.camFX.addKick(profile.kick, profile.roll, profile.zoom)
     this.camFX.addShake(profile.shake)
-    if (hitPos) {
-      v1.copy(profile.sparkDir).normalize().applyQuaternion(this.base.quaternion)
-      spawnImpactSparks(this.world, this.activeParticles, hitPos, v1)
-    }
     // knockback: shove the victim away from us (routed via server playerPush)
     if (target?.base) {
       v2.copy(target.base.position).sub(this.base.position)
@@ -867,9 +861,11 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisSwing.add(playerId)
 
     const hitPos = new THREE.Vector3()
+    const profile = AttackJuiceProfiles[this.currentAttackTag] || AttackJuiceProfiles.right
     if (this.sword) {
       this.sword.getWorldPosition(hitPos)
-      spawnBloodHitEffect(this.world, this.activeParticles, hitPos)
+      v1.copy(profile.sparkDir).normalize().applyQuaternion(this.base.quaternion)
+      spawnBloodHitEffect(this.world, this.activeParticles, hitPos, v1)
       this.playHitAudio(hitPos)
     } else if (target?.base) {
       target.base.getWorldPosition(hitPos)
