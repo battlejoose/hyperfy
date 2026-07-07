@@ -33,15 +33,29 @@ function trimCorpses(world) {
 
 function applyDeadPose(avatar) {
   const setPose = () => {
+    if (avatar.instance?.snapCorpsePose) {
+      avatar.instance.snapCorpsePose()
+      return true
+    }
     if (avatar.instance?.setDeathState) {
       avatar.instance.setDeathState(true)
       avatar.instance.setEmote(Emotes.DEAD)
+      avatar.instance.mixer?.update(0.001)
       return true
     }
     requestAnimationFrame(setPose)
     return false
   }
   setPose()
+}
+
+function settleCorpseAvatar(world, avatar) {
+  applyDeadPose(avatar)
+  // One frame lets pose weights settle before the mixer is frozen
+  requestAnimationFrame(() => {
+    avatar?.instance?.mixer?.update(0.001)
+    requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+  })
 }
 
 function loadCorpseAvatar(world, group, sessionAvatar) {
@@ -55,8 +69,7 @@ function loadCorpseAvatar(world, group, sessionAvatar) {
       group.add(avatar)
       group.setDirty()
       world.stage?.clean()
-      applyDeadPose(avatar)
-      requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
+      settleCorpseAvatar(world, avatar)
     })
     .catch(err => console.error('[Corpse] failed to load avatar:', err))
 }
@@ -73,7 +86,7 @@ export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar
     reparentWithoutDeactivate(avatar, group)
     group.setDirty()
     world.stage.clean()
-    freezeCorpseAvatar(world, avatar)
+    settleCorpseAvatar(world, avatar)
   } else {
     loadCorpseAvatar(world, group, sessionAvatar)
   }

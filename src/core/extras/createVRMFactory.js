@@ -1015,6 +1015,44 @@ export function createVRMFactory(glb, setupMaterial) {
       }, durationMs)
     }
 
+    /** Snap a live avatar to the final on-ground dead pose before freezing as a corpse. */
+    const snapCorpsePose = () => {
+      mixer.timeScale = 1
+      currentEmote = null
+      currentAttack = null
+      isInDeathState = true
+
+      if (poses.deathFall?.action) {
+        const clip = poses.deathFall.action.getClip()
+        if (clip?.duration) {
+          poses.deathFall.action.time = clip.duration
+        }
+        poses.deathFall.target = 0
+        poses.deathFall.setWeight(0)
+      }
+      if (poses.getup) {
+        poses.getup.target = 0
+        poses.getup.setWeight(0)
+      }
+
+      for (const key in poses) {
+        if (poses[key].upperBodyOnly) {
+          poses[key].target = 0
+          poses[key].setWeight(0)
+        }
+      }
+
+      poses.dead.target = 1
+      poses.dead.weight = 1
+      if (poses.dead.action) {
+        poses.dead.action.reset()
+        poses.dead.action.play()
+        poses.dead.setWeight(1)
+      }
+
+      mixer.update(0.001)
+    }
+
     return {
       raw: vrm,
       mixer, // Expose mixer for direct animation control
@@ -1022,6 +1060,7 @@ export function createVRMFactory(glb, setupMaterial) {
       headToHeight,
       setEmote,
       setDeathState,
+      snapCorpsePose,
       setFirstPerson,
       setTint,
       flash,
