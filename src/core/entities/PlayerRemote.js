@@ -13,6 +13,7 @@ import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playe
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
 import { isSpectatorSessionAvatar, applyTestFighterTint } from '../extras/playerAvatars'
 import { JuiceEvents, applyHitstop, flashAvatar } from '../extras/combatJuice'
+import { playAttackBackswingGrunt, playAttackSwingGrunt } from '../extras/attackGruntAudio'
 
 let capsuleGeometry
 {
@@ -783,6 +784,7 @@ export class PlayerRemote extends Entity {
       this.combatSwingDuration = null
       this.currentAttackEmote = this.data.effect.emote
       this.lastAttackDuration = attackDuration
+      playAttackBackswingGrunt(this.world, this)
     } else if (isAttacking && this.currentlyAttacking) {
       if (this.lastAttackDuration > 10 && attackDuration <= 10) {
         this.remoteChargingAttack = false
@@ -797,6 +799,7 @@ export class PlayerRemote extends Entity {
         }
 
         this.setSwordColliderActive(true)
+        playAttackSwingGrunt(this.world, this)
       }
 
       this.lastAttackDuration = attackDuration
@@ -1108,6 +1111,7 @@ export class PlayerRemote extends Entity {
     if (!isChargingAttack && !this.remoteAttackCommitted && this.combatAnimElapsed >= this.attackWindupTime) {
       this.remoteAttackCommitted = true
       this.setSwordColliderActive(true)
+      playAttackSwingGrunt(this.world, this)
     }
 
     const swingLimit =

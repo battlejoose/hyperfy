@@ -308,8 +308,9 @@ Emissive:  4.0 intensity (bright flash)
 ### Audio
 
 ```
-Hit sound:   asset://audiohit.mp3   — volume 0.5, spatial, 20m max
-Block sound: asset://audioblock.mp3 — same settings
+Hit sound:     asset://audiohit.mp3     — volume 0.5, spatial, 20m max
+Block sound:   asset://audioblock.mp3   — same settings
+Attack grunts: asset://attackgrunt.mp3  — 2s clip; first 1s on backswing, second 1s on swing release (chest height, spatial)
 ```
 
 ### Impact Juice (`src/core/extras/combatJuice.js`)

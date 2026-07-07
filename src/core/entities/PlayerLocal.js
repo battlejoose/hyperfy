@@ -19,6 +19,7 @@ import {
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { SWORD_SRC } from '../extras/gameAssets'
 import { spawnCorpse } from '../extras/playerCorpse'
+import { playAttackBackswingGrunt, playAttackSwingGrunt } from '../extras/attackGruntAudio'
 import { initFootsteps, updateFootsteps } from '../extras/playerFootsteps'
 import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
@@ -981,6 +982,7 @@ export class PlayerLocal extends Entity {
       this.isInWindup = false
       this.isCommitted = true
       this.setSwordColliderActive(true)
+      playAttackSwingGrunt(this.world, this)
     }
 
     const swingLimit =
@@ -1127,6 +1129,8 @@ export class PlayerLocal extends Entity {
         cancellable: false,
       })
     }
+
+    playAttackBackswingGrunt(this.world, this)
   }
   
   pauseAttackAnimation() {
@@ -1191,6 +1195,7 @@ export class PlayerLocal extends Entity {
     })
 
     this.setSwordColliderActive(true)
+    playAttackSwingGrunt(this.world, this)
   }
 
   cancelAttack() {
