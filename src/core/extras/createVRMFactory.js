@@ -1091,6 +1091,48 @@ export function createVRMFactory(glb, setupMaterial) {
       return true
     }
 
+    /** Snap a loaded/replay corpse to the same fall-end pose live clients freeze (no dead crossfade). */
+    const snapReplayCorpsePose = () => {
+      const fallPose = poses.deathFall
+      if (!fallPose?.action || fallPose.loading) return false
+
+      mixer.timeScale = 1
+      currentEmote = null
+      currentAttack = null
+      isInDeathState = true
+
+      for (const key in poses) {
+        if (poses[key].upperBodyOnly) {
+          poses[key].target = 0
+          poses[key].setWeight(0)
+        } else if (key !== 'deathFall') {
+          poses[key].target = 0
+          poses[key].setWeight(0)
+        }
+      }
+
+      if (poses.getup) {
+        poses.getup.target = 0
+        poses.getup.setWeight(0)
+      }
+      if (poses.dead) {
+        poses.dead.target = 0
+        poses.dead.setWeight(0)
+      }
+
+      const clip = fallPose.action.getClip()
+      if (clip?.duration) {
+        fallPose.action.time = clip.duration
+        fallPose.action.paused = false
+      }
+      fallPose.target = 1
+      fallPose.setWeight(1)
+
+      mixer.update(0.05)
+      skeleton.update()
+      return true
+    }
+
     return {
       raw: vrm,
       mixer, // Expose mixer for direct animation control
@@ -1100,6 +1142,7 @@ export function createVRMFactory(glb, setupMaterial) {
       setDeathState,
       isCorpsePoseReady,
       snapCorpsePose,
+      snapReplayCorpsePose,
       setFirstPerson,
       setTint,
       flash,

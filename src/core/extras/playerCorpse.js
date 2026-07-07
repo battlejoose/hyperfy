@@ -8,13 +8,16 @@ const corpses = []
 const _v1 = new THREE.Vector3()
 const _q1 = new THREE.Quaternion()
 const _s1 = new THREE.Vector3()
+const _e1 = new THREE.Euler()
 
-function ensureTransformsFresh(world, node) {
-  if (!node) return
-  let n = node
-  while (n) {
-    if (n.isDirty) n.setDirty()
-    n = n.parent
+function ensureTransformsFresh(world, ...nodes) {
+  for (const node of nodes) {
+    if (!node) continue
+    let n = node
+    while (n) {
+      if (n.isDirty) n.setDirty()
+      n = n.parent
+    }
   }
   world.stage?.clean()
 }
@@ -43,6 +46,17 @@ function reparentPreserveWorld(node, newParent) {
   node.setTransformed()
 }
 
+function applyCorpseOrientation(group, quaternion) {
+  _q1.fromArray(quaternion)
+  _e1.setFromQuaternion(_q1, 'YXZ')
+  group.quaternion.setFromEuler(new THREE.Euler(0, _e1.y, 0, 'YXZ'))
+  group.setTransformed()
+}
+
+function syncCorpseAvatarMatrix(avatar) {
+  avatar.instance?.move(avatar.matrixWorld)
+}
+
 function freezeCorpseAvatar(world, avatar, { skipMixerUpdate = false } = {}) {
   if (!avatar?.instance) return
   avatar.visible = true
@@ -60,7 +74,7 @@ function trimCorpses(world) {
   }
 }
 
-function applyDeadPose(avatar, onReady) {
+function applyReplayCorpsePose(avatar, onReady) {
   const trySetPose = () => {
     const instance = avatar?.instance
     if (!instance) {
@@ -68,7 +82,7 @@ function applyDeadPose(avatar, onReady) {
       return
     }
 
-    if (instance.snapCorpsePose?.()) {
+    if (instance.snapReplayCorpsePose?.() || instance.snapCorpsePose?.()) {
       onReady?.()
       return
     }
@@ -79,9 +93,12 @@ function applyDeadPose(avatar, onReady) {
   trySetPose()
 }
 
-/** Loaded/replayed corpses have no live avatar — snap to dead pose once emotes are ready, then freeze. */
-function settleCorpseAvatar(world, avatar) {
-  applyDeadPose(avatar, () => {
+/** Loaded/replayed corpses snap at identity rotation, then receive world yaw to match live corpses. */
+function settleCorpseAvatar(world, group, avatar, quaternion) {
+  applyReplayCorpsePose(avatar, () => {
+    applyCorpseOrientation(group, quaternion)
+    ensureTransformsFresh(world, group, avatar)
+    syncCorpseAvatarMatrix(avatar)
     requestAnimationFrame(() => {
       avatar?.instance?.mixer?.update(0.05)
       requestAnimationFrame(() => freezeCorpseAvatar(world, avatar))
@@ -89,7 +106,7 @@ function settleCorpseAvatar(world, avatar) {
   })
 }
 
-function loadCorpseAvatar(world, group, sessionAvatar) {
+function loadCorpseAvatar(world, group, sessionAvatar, quaternion) {
   if (!world.loader) return
 
   const avatarUrl = sessionAvatar || AVATAR_CRUSADER
@@ -100,7 +117,7 @@ function loadCorpseAvatar(world, group, sessionAvatar) {
       group.add(avatar)
       group.setDirty()
       world.stage?.clean()
-      settleCorpseAvatar(world, avatar)
+      settleCorpseAvatar(world, group, avatar, quaternion)
     })
     .catch(err => console.error('[Corpse] failed to load avatar:', err))
 }
@@ -112,11 +129,12 @@ function spawnLiveCorpse(world, group, avatar) {
   reparentPreserveWorld(avatar, group)
   group.setDirty()
   ensureTransformsFresh(world, group)
+  syncCorpseAvatarMatrix(avatar)
   freezeCorpseAvatar(world, avatar, { skipMixerUpdate: true })
 }
 
 export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar }) {
-  if (!world.stage) return
+  if (!world.stage) return null
 
   const group = createNode('group')
 
@@ -124,13 +142,14 @@ export function spawnCorpse(world, { position, quaternion, sessionAvatar, avatar
     spawnLiveCorpse(world, group, avatar)
   } else {
     group.position.fromArray(position)
-    group.quaternion.fromArray(quaternion)
+    group.quaternion.set(0, 0, 0, 1)
     group.activate({ world })
-    loadCorpseAvatar(world, group, sessionAvatar)
+    loadCorpseAvatar(world, group, sessionAvatar, quaternion)
   }
 
   corpses.push(group)
   trimCorpses(world)
+  return group
 }
 
 export function replayCorpses(world, corpseList) {

@@ -3239,14 +3239,27 @@ export class PlayerLocal extends Entity {
       this.sword = null
     }
 
-    spawnCorpse(this.world, {
+    const corpseGroup = spawnCorpse(this.world, {
       position: p,
       quaternion: q,
       sessionAvatar: this.data.sessionAvatar,
       avatar: corpseAvatar,
     })
 
-    this.world.network.send('playerRespawn', { p, q })
+    if (corpseGroup) {
+      let n = corpseGroup
+      while (n) {
+        if (n.isDirty) n.setDirty()
+        n = n.parent
+      }
+      this.world.stage?.clean()
+      this.world.network.send('playerRespawn', {
+        p: corpseGroup.position.toArray(),
+        q: corpseGroup.quaternion.toArray(),
+      })
+    } else {
+      this.world.network.send('playerRespawn', { p, q })
+    }
   }
 
   modify(data) {
