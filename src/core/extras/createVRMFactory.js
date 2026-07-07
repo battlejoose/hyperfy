@@ -331,12 +331,6 @@ export function createVRMFactory(glb, setupMaterial) {
       stopCombatPose(prevKey, { immediate })
     }
     
-    const setAttackSwingSpeed = (speed = 1) => {
-      if (!currentAttack) return
-      const action = poses[currentAttack]?.action
-      if (action) action.timeScale = speed
-    }
-
     const setDeathState = (isDead) => {
       isInDeathState = isDead
       if (isDead) {
@@ -429,7 +423,6 @@ export function createVRMFactory(glb, setupMaterial) {
             // Reset and restart the attack animation with high priority
             poses[attackKey].action.reset()
             poses[attackKey].action.time = 0
-            poses[attackKey].action.timeScale = 1 // windup plays at normal speed; swing speed set on commit
             poses[attackKey].action.enabled = true
             poses[attackKey].action.setEffectiveWeight(5.0) // Much higher weight to override locomotion
             poses[attackKey].action.play()
@@ -1097,7 +1090,6 @@ export function createVRMFactory(glb, setupMaterial) {
       height,
       headToHeight,
       setEmote,
-      setAttackSwingSpeed,
       setDeathState,
       isCorpsePoseReady,
       snapCorpsePose,

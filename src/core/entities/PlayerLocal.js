@@ -106,7 +106,7 @@ export class PlayerLocal extends Entity {
     this.hitPlayersThisSwing = new Set()
     
     // Attack timing
-    this.attackWindupTime = AttackTiming.windup
+    this.attackWindupTime = 0.5 // 500ms windup before collider activates
     this.attackEarlyReleaseHoldTime = 0.3 // mandatory backswing hold after early release
     this.attackDuration = 1.0 // Total attack duration
     this.currentAttackEmote = null
@@ -287,7 +287,7 @@ export class PlayerLocal extends Entity {
       console.log('[PlayerLocal] Show colliders state changed to:', show)
       
       // Update visibility if meshes already exist
-      if (this.swordColliderMesh) this.swordColliderMesh.visible = show && this.swordColliderActive
+      if (this.swordColliderMesh) this.swordColliderMesh.visible = show
       if (this.capsuleColliderMesh) this.capsuleColliderMesh.visible = show
     })
 
@@ -898,16 +898,6 @@ export class PlayerLocal extends Entity {
     return this.avatar?.instance?.mixer?.timeScale === 0
   }
 
-  applyAttackSwingSpeed(speed = 1) {
-    this.avatar?.instance?.setAttackSwingSpeed?.(speed)
-  }
-
-  updateSwordColliderDebugMesh() {
-    if (this.swordColliderMesh) {
-      this.swordColliderMesh.visible = this.showColliders && this.swordColliderActive
-    }
-  }
-
   clearAttackTimeouts() {
     if (this.attackWindupTimeout) clearTimeout(this.attackWindupTimeout)
     if (this.attackEndTimeout) clearTimeout(this.attackEndTimeout)
@@ -921,7 +911,6 @@ export class PlayerLocal extends Entity {
 
   resetAttackState() {
     this.setSwordColliderActive(false)
-    this.applyAttackSwingSpeed(1)
     this.currentAttackEmote = null
     this.currentAttackTag = null
     this.isInWindup = false
@@ -991,7 +980,6 @@ export class PlayerLocal extends Entity {
     if (!this.isChargingAttack && this.isInWindup && !this.isCommitted && this.combatAnimElapsed >= this.attackWindupTime) {
       this.isInWindup = false
       this.isCommitted = true
-      this.applyAttackSwingSpeed(AttackTiming.swingSpeed)
       this.setSwordColliderActive(true)
     }
 
@@ -1091,7 +1079,6 @@ export class PlayerLocal extends Entity {
       this.clearAttackTimeouts()
       if (this.attackAnimationPaused) this.resumeAttackAnimation()
       this.setSwordColliderActive(false)
-      this.applyAttackSwingSpeed(1)
       this.pendingChargedRelease = false
       this.earlyReleaseHoldActive = false
     }
@@ -1120,7 +1107,6 @@ export class PlayerLocal extends Entity {
       
       // Ensure sword collider is OFF during charge
       this.setSwordColliderActive(false)
-      this.applyAttackSwingSpeed(1)
       
       // Play the full attack animation with very long duration (so it doesn't expire while holding)
       this.setEffect({
@@ -1191,14 +1177,12 @@ export class PlayerLocal extends Entity {
     this.isInWindup = false
     this.isCommitted = true
     this.combatAnimElapsed = 0
-    this.combatSwingDuration = getAttackSwingPhaseDuration(this.attackWindupTime, this.attackDuration)
+    this.combatSwingDuration = getAttackSwingPhaseDuration(this.attackDuration)
 
     if (this.attackAnimationPaused) {
       this.attackAnimationPaused = false
       this.resumeAttackAnimation()
     }
-
-    this.applyAttackSwingSpeed(AttackTiming.swingSpeed)
 
     this.setEffect({
       emote: emote,
@@ -1233,7 +1217,6 @@ export class PlayerLocal extends Entity {
     }
 
     this.setSwordColliderActive(false)
-    this.applyAttackSwingSpeed(1)
     this.isInWindup = false
     this.isCommitted = false
     this.isChargingAttack = false
@@ -1598,7 +1581,6 @@ export class PlayerLocal extends Entity {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, true)
       this.swordColliderActive = true
       this.swordColliderReady = false // Not ready yet - prevents phantom hits
-      this.updateSwordColliderDebugMesh()
       
       // Wait 1 physics frame (16ms) before accepting hits
       // This prevents PhysX from reporting stale collisions from before the collider was disabled
@@ -1614,7 +1596,6 @@ export class PlayerLocal extends Entity {
       this.swordShape.setFlag(PHYSX.PxShapeFlagEnum.eTRIGGER_SHAPE, false)
       this.swordColliderActive = false
       this.swordColliderReady = false
-      this.updateSwordColliderDebugMesh()
     }
   }
 
@@ -2960,7 +2941,6 @@ export class PlayerLocal extends Entity {
           if (this.swordColliderMesh) {
             this.swordColliderMesh.position.copy(v6)
             this.swordColliderMesh.quaternion.copy(this.sword.quaternion)
-            this.swordColliderMesh.visible = this.showColliders && this.swordColliderActive
           }
         }
       }
