@@ -13,6 +13,7 @@ const ASSETS = {
   bg: '/assets/gladimage.png',
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
+  proximoSpeech: '/assets/proximospeech.mp3',
   enterArena: '/assets/war.mp3',
 }
 
@@ -41,6 +42,24 @@ function stopAudio(audio) {
   if (!audio) return
   audio.pause()
   audio.src = ''
+}
+
+let proximoSpeechAudio = null
+
+function startProximoSpeech() {
+  if (proximoSpeechAudio && !proximoSpeechAudio.ended) return
+
+  const speech = new Audio(ASSETS.proximoSpeech)
+  speech.volume = 0.95
+  proximoSpeechAudio = speech
+  speech.addEventListener(
+    'ended',
+    () => {
+      if (proximoSpeechAudio === speech) proximoSpeechAudio = null
+    },
+    { once: true }
+  )
+  speech.play().catch(() => {})
 }
 
 function playEnterArenaSound() {
@@ -96,9 +115,11 @@ export function TitleScreen({ onStart }) {
     }
 
     startMusic()
+    startProximoSpeech()
 
     const onFirstInteraction = () => {
       startMusic()
+      startProximoSpeech()
       window.removeEventListener('pointerdown', onFirstInteraction)
       window.removeEventListener('keydown', onFirstInteraction)
     }
