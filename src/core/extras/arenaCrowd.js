@@ -19,11 +19,13 @@ const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 // Each ring behind is 0.5m further out and 0.45m up. `src` picks the crowd model;
 // the four models are shifted a quarter slot apart (0.05) so they interleave on the
 // same rings without overlapping. Staggers vary per ring so rings don't align radially.
+// Members within a ring sit 0.05 (of the arc) apart, so adjacent rings are offset
+// by half that (0.025) — every member faces a gap in the neighboring rings.
 const CROWD_RINGS = [
   { radius: 13.7, yOffset: 3, stagger: 0 },
-  { radius: 14.2, yOffset: 3.45, stagger: 0.05 },
-  { radius: 14.7, yOffset: 3.9, stagger: 0.02 },
-  { radius: 15.2, yOffset: 4.35, stagger: 0.07 },
+  { radius: 14.2, yOffset: 3.45, stagger: 0.025 },
+  { radius: 14.7, yOffset: 3.9, stagger: 0.05 },
+  { radius: 15.2, yOffset: 4.35, stagger: 0.075 },
 ]
 const CROWD_ROWS = CROWD_RINGS.flatMap(ring =>
   ARENA_CROWD_SOURCES.map((_, src) => ({
@@ -39,8 +41,9 @@ const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Keep crowd members at least this far (horizontally) from the general and the door. */
 const MIN_CLEAR_DISTANCE = 5
-/** Random angular jitter per member, as a fraction of their slot (keeps neighbors clear). */
-const SPACING_JITTER = 0.15
+/** Random angular jitter per member, as a fraction of their slot. Kept small enough
+ * that members can never drift into the half-spacing offset of neighboring rings. */
+const SPACING_JITTER = 0.08
 /** Random radial jitter per member (meters). */
 const RADIUS_JITTER = 0.15
 
