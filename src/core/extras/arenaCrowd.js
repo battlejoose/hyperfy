@@ -16,34 +16,24 @@ const AMBIENT_CLIPS = ['Sitting_Clap', 'Sit_Cheer_with_Left_Hand', 'Stand_Cheer_
 const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 
 // Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
-// Each ring behind is 0.5m further out and 0.45m up. `src` picks the crowd model;
-// the four models are shifted a quarter slot apart (0.05) so they interleave on the
-// same rings without overlapping. Staggers vary per ring so rings don't align radially.
-// Members within a ring sit 0.05 (of the arc) apart, so adjacent rings are offset
-// by half that (0.025) — every member faces a gap in the neighboring rings.
+// Each ring behind is 0.5m further out and 0.45m up. Every ring seats 5 of each model
+// (20 seats), but which model occupies which seat is shuffled per ring so no pattern
+// repeats. Adjacent rings are offset by half a seat so members face gaps, not each other.
+const MEMBERS_PER_MODEL = 5
 const CROWD_RINGS = [
   { radius: 13.7, yOffset: 3, stagger: 0 },
   { radius: 14.2, yOffset: 3.45, stagger: 0.025 },
   { radius: 14.7, yOffset: 3.9, stagger: 0.05 },
   { radius: 15.2, yOffset: 4.35, stagger: 0.075 },
 ]
-const CROWD_ROWS = CROWD_RINGS.flatMap(ring =>
-  ARENA_CROWD_SOURCES.map((_, src) => ({
-    src,
-    count: 5,
-    radius: ring.radius,
-    yOffset: ring.yOffset,
-    stagger: ring.stagger + src * 0.05,
-  }))
-)
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Keep crowd members at least this far (horizontally) from the general and the door. */
 const MIN_CLEAR_DISTANCE = 5
-/** Random angular jitter per member, as a fraction of their slot. Kept small enough
- * that members can never drift into the half-spacing offset of neighboring rings. */
-const SPACING_JITTER = 0.08
+/** Random angular jitter per member, as a fraction of the whole arc. Kept small enough
+ * that members can never drift into the half-seat offset of neighboring rings. */
+const SPACING_JITTER = 0.008
 /** Random radial jitter per member (meters). */
 const RADIUS_JITTER = 0.15
 
@@ -81,11 +71,20 @@ function getForbiddenHalfAngle(point, pointAngle, radius) {
   return 0
 }
 
-function getRowAngles(row, generalPos, rng) {
+// Fisher–Yates shuffle with the seeded rng, keeps layout deterministic.
+function shuffle(list, rng) {
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[list[i], list[j]] = [list[j], list[i]]
+  }
+  return list
+}
+
+function getRingAngles(ring, seatCount, generalPos, rng) {
   const angles = []
   if (!generalPos) {
-    for (let i = 0; i < row.count; i++) {
-      angles.push((i / row.count) * Math.PI * 2)
+    for (let i = 0; i < seatCount; i++) {
+      angles.push((i / seatCount) * Math.PI * 2)
     }
     return angles
   }
@@ -94,23 +93,23 @@ function getRowAngles(row, generalPos, rng) {
   const doorAngle = generalAngle + Math.PI
   // The arena door sits directly opposite the general on the crowd ring.
   _door.set(
-    _center.x + Math.cos(doorAngle) * row.radius,
-    _center.y + row.yOffset,
-    _center.z + Math.sin(doorAngle) * row.radius
+    _center.x + Math.cos(doorAngle) * ring.radius,
+    _center.y + ring.yOffset,
+    _center.z + Math.sin(doorAngle) * ring.radius
   )
-  const generalHalf = getForbiddenHalfAngle(generalPos, generalAngle, row.radius)
-  const doorHalf = getForbiddenHalfAngle(_door, doorAngle, row.radius)
+  const generalHalf = getForbiddenHalfAngle(generalPos, generalAngle, ring.radius)
+  const doorHalf = getForbiddenHalfAngle(_door, doorAngle, ring.radius)
 
   // Two clear arcs: general side → door side, and door side → general side.
   const arcA = { start: generalAngle + generalHalf, length: Math.PI - generalHalf - doorHalf }
   const arcB = { start: doorAngle + doorHalf, length: Math.PI - doorHalf - generalHalf }
   const total = arcA.length + arcB.length
 
-  for (let i = 0; i < row.count; i++) {
-    // stagger shifts the row along the clear arcs (wrapping) so rows interleave;
-    // jitter offsets each member within its slot so spacing looks natural
-    const jitter = ((rng() - 0.5) * SPACING_JITTER) / row.count
-    const t = ((((i + 0.5) / row.count + row.stagger + jitter) % 1) + 1) % 1 * total
+  for (let i = 0; i < seatCount; i++) {
+    // stagger shifts the ring along the clear arcs (wrapping) so rings interleave;
+    // jitter offsets each member within its seat so spacing looks natural
+    const jitter = (rng() - 0.5) * SPACING_JITTER
+    const t = ((((i + 0.5) / seatCount + ring.stagger + jitter) % 1) + 1) % 1 * total
     if (t < arcA.length) {
       angles.push(arcA.start + t)
     } else {
@@ -127,17 +126,27 @@ function getCrowdPlacements(arenaRoot) {
   const generalPos = getBarrizerMidpointWorld(arenaRoot)?.clone()
 
   const rng = createSeededRandom(1337)
+  const seatCount = ARENA_CROWD_SOURCES.length * MEMBERS_PER_MODEL
+
   const placements = []
-  for (const row of CROWD_ROWS) {
-    for (const angle of getRowAngles(row, generalPos, rng)) {
-      const radius = row.radius + (rng() - 0.5) * 2 * RADIUS_JITTER
+  for (const ring of CROWD_RINGS) {
+    // 5 of each model per ring, but seat order is shuffled so no model pattern repeats
+    const seatModels = []
+    for (let src = 0; src < ARENA_CROWD_SOURCES.length; src++) {
+      for (let n = 0; n < MEMBERS_PER_MODEL; n++) seatModels.push(src)
+    }
+    shuffle(seatModels, rng)
+
+    const angles = getRingAngles(ring, seatCount, generalPos, rng)
+    for (let i = 0; i < angles.length; i++) {
+      const radius = ring.radius + (rng() - 0.5) * 2 * RADIUS_JITTER
       _pos.set(
-        _center.x + Math.cos(angle) * radius,
-        _center.y + row.yOffset,
-        _center.z + Math.sin(angle) * radius
+        _center.x + Math.cos(angles[i]) * radius,
+        _center.y + ring.yOffset,
+        _center.z + Math.sin(angles[i]) * radius
       )
       placements.push({
-        src: row.src,
+        src: seatModels[i],
         position: _pos.clone(),
         rotationY: Math.atan2(_center.x - _pos.x, _center.z - _pos.z),
       })
