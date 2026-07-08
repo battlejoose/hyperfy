@@ -8,10 +8,12 @@ export const ARENA_CROWD_SRC = 'asset://crowd0.glb'
 const SIT_CLAP_CLIP = 'Sitting_Clap'
 const CHEER_CLIP = 'Cheer_with_Both_Hands'
 
-const CROWD_COUNT = 5
-// Spectators spawn at radius 16 / +6m — crowd sits 2.3m closer in and 3m lower.
-const CROWD_RADIUS = 13.7
-const CROWD_Y_OFFSET = 3
+// Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
+// Back row is 0.5m further out and 0.5m up, staggered so it doesn't sit directly behind.
+const CROWD_ROWS = [
+  { count: 5, radius: 13.7, yOffset: 3, stagger: 0 },
+  { count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.09 },
+]
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
@@ -29,65 +31,73 @@ function horizontalDistance(ax, az, b) {
 }
 
 // Half-width (radians) of the arc around `point` where crowd members
-// would land within MIN_CLEAR_DISTANCE of it.
-function getForbiddenHalfAngle(point, pointAngle) {
+// on a ring of `radius` would land within MIN_CLEAR_DISTANCE of it.
+function getForbiddenHalfAngle(point, pointAngle, radius) {
   const step = Math.PI / 180
   for (let half = 0; half < Math.PI; half += step) {
-    const x = _center.x + Math.cos(pointAngle + half) * CROWD_RADIUS
-    const z = _center.z + Math.sin(pointAngle + half) * CROWD_RADIUS
+    const x = _center.x + Math.cos(pointAngle + half) * radius
+    const z = _center.z + Math.sin(pointAngle + half) * radius
     if (horizontalDistance(x, z, point) >= MIN_CLEAR_DISTANCE) return half
   }
   return 0
+}
+
+function getRowAngles(row, generalPos) {
+  const angles = []
+  if (!generalPos) {
+    for (let i = 0; i < row.count; i++) {
+      angles.push((i / row.count) * Math.PI * 2)
+    }
+    return angles
+  }
+
+  const generalAngle = Math.atan2(generalPos.z - _center.z, generalPos.x - _center.x)
+  const doorAngle = generalAngle + Math.PI
+  // The arena door sits directly opposite the general on the crowd ring.
+  _door.set(
+    _center.x + Math.cos(doorAngle) * row.radius,
+    _center.y + row.yOffset,
+    _center.z + Math.sin(doorAngle) * row.radius
+  )
+  const generalHalf = getForbiddenHalfAngle(generalPos, generalAngle, row.radius)
+  const doorHalf = getForbiddenHalfAngle(_door, doorAngle, row.radius)
+
+  // Two clear arcs: general side → door side, and door side → general side.
+  const arcA = { start: generalAngle + generalHalf, length: Math.PI - generalHalf - doorHalf }
+  const arcB = { start: doorAngle + doorHalf, length: Math.PI - doorHalf - generalHalf }
+  const total = arcA.length + arcB.length
+
+  for (let i = 0; i < row.count; i++) {
+    // stagger shifts the row along the clear arcs (wrapping) so rows interleave
+    const t = ((((i + 0.5) / row.count + row.stagger) % 1) + 1) % 1 * total
+    if (t < arcA.length) {
+      angles.push(arcA.start + t)
+    } else {
+      angles.push(arcB.start + (t - arcA.length))
+    }
+  }
+  return angles
 }
 
 function getCrowdPlacements(arenaRoot) {
   arenaRoot.updateTransform()
   _center.setFromMatrixPosition(arenaRoot.matrixWorld)
 
-  const angles = []
   const generalPos = getBarrizerMidpointWorld(arenaRoot)?.clone()
-  if (generalPos) {
-    const generalAngle = Math.atan2(generalPos.z - _center.z, generalPos.x - _center.x)
-    const doorAngle = generalAngle + Math.PI
-    // The arena door sits directly opposite the general on the crowd ring.
-    _door.set(
-      _center.x + Math.cos(doorAngle) * CROWD_RADIUS,
-      _center.y + CROWD_Y_OFFSET,
-      _center.z + Math.sin(doorAngle) * CROWD_RADIUS
-    )
-    const generalHalf = getForbiddenHalfAngle(generalPos, generalAngle)
-    const doorHalf = getForbiddenHalfAngle(_door, doorAngle)
-
-    // Two clear arcs: general side → door side, and door side → general side.
-    const arcA = { start: generalAngle + generalHalf, length: Math.PI - generalHalf - doorHalf }
-    const arcB = { start: doorAngle + doorHalf, length: Math.PI - doorHalf - generalHalf }
-    const total = arcA.length + arcB.length
-
-    for (let i = 0; i < CROWD_COUNT; i++) {
-      let t = ((i + 0.5) / CROWD_COUNT) * total
-      if (t < arcA.length) {
-        angles.push(arcA.start + t)
-      } else {
-        angles.push(arcB.start + (t - arcA.length))
-      }
-    }
-  } else {
-    for (let i = 0; i < CROWD_COUNT; i++) {
-      angles.push((i / CROWD_COUNT) * Math.PI * 2)
-    }
-  }
 
   const placements = []
-  for (const angle of angles) {
-    _pos.set(
-      _center.x + Math.cos(angle) * CROWD_RADIUS,
-      _center.y + CROWD_Y_OFFSET,
-      _center.z + Math.sin(angle) * CROWD_RADIUS
-    )
-    placements.push({
-      position: _pos.clone(),
-      rotationY: Math.atan2(_center.x - _pos.x, _center.z - _pos.z),
-    })
+  for (const row of CROWD_ROWS) {
+    for (const angle of getRowAngles(row, generalPos)) {
+      _pos.set(
+        _center.x + Math.cos(angle) * row.radius,
+        _center.y + row.yOffset,
+        _center.z + Math.sin(angle) * row.radius
+      )
+      placements.push({
+        position: _pos.clone(),
+        rotationY: Math.atan2(_center.x - _pos.x, _center.z - _pos.z),
+      })
+    }
   }
   return placements
 }
