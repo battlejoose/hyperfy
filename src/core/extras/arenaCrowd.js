@@ -11,18 +11,18 @@ const AMBIENT_CLIPS = ['Sitting_Clap', 'Sit_Cheer_with_Left_Hand', 'Stand_Cheer_
 const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 
 // Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
-// Each ring behind is 0.5m further out and 0.5m up. `src` picks the crowd model;
+// Each ring behind is 0.5m further out and 0.4m up. `src` picks the crowd model;
 // crowd1 rows are shifted half a slot (0.1) so the two models interleave on the
 // same rings without overlapping. Staggers vary per ring so rings don't align radially.
 const CROWD_ROWS = [
   { src: 0, count: 5, radius: 13.7, yOffset: 3, stagger: 0 },
   { src: 1, count: 5, radius: 13.7, yOffset: 3, stagger: 0.1 },
-  { src: 0, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.05 },
-  { src: 1, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.15 },
-  { src: 0, count: 5, radius: 14.7, yOffset: 4, stagger: 0.02 },
-  { src: 1, count: 5, radius: 14.7, yOffset: 4, stagger: 0.12 },
-  { src: 0, count: 5, radius: 15.2, yOffset: 4.5, stagger: 0.07 },
-  { src: 1, count: 5, radius: 15.2, yOffset: 4.5, stagger: 0.17 },
+  { src: 0, count: 5, radius: 14.2, yOffset: 3.4, stagger: 0.05 },
+  { src: 1, count: 5, radius: 14.2, yOffset: 3.4, stagger: 0.15 },
+  { src: 0, count: 5, radius: 14.7, yOffset: 3.8, stagger: 0.02 },
+  { src: 1, count: 5, radius: 14.7, yOffset: 3.8, stagger: 0.12 },
+  { src: 0, count: 5, radius: 15.2, yOffset: 4.2, stagger: 0.07 },
+  { src: 1, count: 5, radius: 15.2, yOffset: 4.2, stagger: 0.17 },
 ]
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
