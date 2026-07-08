@@ -5,8 +5,10 @@ import { getBarrizerMidpointWorld } from './arenaGeneral.js'
 
 export const ARENA_CROWD_SRC = 'asset://crowd0.glb'
 
-const SIT_CLAP_CLIP = 'Sitting_Clap'
-const CHEER_CLIP = 'Cheer_with_Both_Hands'
+// Ambient clips each member cycles through randomly while idle.
+const AMBIENT_CLIPS = ['Sitting_Clap', 'Sit_Cheer_with_Left_Hand', 'Stand_Cheer_and_Sit_Down']
+// Death-cheer clips — each member randomly picks one when someone dies.
+const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 
 // Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
 // Back row is 0.5m further out and 0.5m up, staggered so it doesn't sit directly behind.
@@ -129,9 +131,18 @@ export async function addArenaCrowd(world, arenaRoot) {
     return
   }
 
-  const sitClip = gltf.animations.find(a => a.name === SIT_CLAP_CLIP)
-  const cheerClip = gltf.animations.find(a => a.name === CHEER_CLIP)
-  if (!sitClip) console.warn('[Arena] crowd has no sitting clap animation')
+  const ambientClips = AMBIENT_CLIPS.map(name => gltf.animations.find(a => a.name === name)).filter(Boolean)
+  const cheerClips = DEATH_CHEER_CLIPS.map(name => gltf.animations.find(a => a.name === name)).filter(Boolean)
+  if (!ambientClips.length) console.warn('[Arena] crowd has no ambient animations')
+
+  const pickRandom = (list, exclude) => {
+    if (list.length <= 1) return list[0]
+    let item
+    do {
+      item = list[Math.floor(Math.random() * list.length)]
+    } while (item === exclude)
+    return item
+  }
 
   const members = []
   const placements = getCrowdPlacements(arenaRoot)
@@ -160,31 +171,62 @@ export async function addArenaCrowd(world, arenaRoot) {
     const mixer = new THREE.AnimationMixer(npc)
     world._arenaFireMixers.push(mixer)
 
-    let sit = null
-    let cheer = null
-    if (sitClip) {
-      sit = mixer.clipAction(sitClip)
-      sit.setLoop(THREE.LoopRepeat)
-      sit.play()
-      // stagger clap phase so members aren't perfectly in sync
-      sit.time = (i * 0.37) % sitClip.duration
-    }
-    if (cheerClip) {
-      cheer = mixer.clipAction(cheerClip)
-      cheer.setLoop(THREE.LoopRepeat)
+    const member = {
+      mixer,
+      // actions are created once per clip and reused
+      ambient: ambientClips.map(clip => {
+        const action = mixer.clipAction(clip)
+        action.setLoop(THREE.LoopOnce)
+        action.clampWhenFinished = true
+        return action
+      }),
+      cheer: cheerClips.map(clip => {
+        const action = mixer.clipAction(clip)
+        action.setLoop(THREE.LoopRepeat)
+        return action
+      }),
+      current: null,
+      cheering: false,
     }
 
-    members.push({ sit, cheer })
+    const playAmbient = (fade = FADE_SECONDS) => {
+      if (!member.ambient.length) return
+      const next = pickRandom(member.ambient, member.current)
+      next.reset().fadeIn(fade).play()
+      member.current?.fadeOut(fade)
+      member.current = next
+    }
+
+    // when an ambient clip finishes, move to another random one
+    mixer.addEventListener('finished', e => {
+      if (member.cheering) return
+      if (!member.ambient.includes(e.action)) return
+      playAmbient()
+    })
+
+    // start each member on a random clip at a random point so nothing is in sync
+    if (member.ambient.length) {
+      const first = member.ambient[Math.floor(Math.random() * member.ambient.length)]
+      first.play()
+      first.time = Math.random() * first.getClip().duration * 0.8
+      member.current = first
+    }
+
+    member.playAmbient = playAmbient
+    members.push(member)
   }
 
   let cheerTimer = null
   const startCheer = () => {
-    if (!cheerClip) return
+    if (!cheerClips.length) return
     if (!cheerTimer) {
       for (const m of members) {
-        if (!m.cheer) continue
-        m.cheer.reset().fadeIn(FADE_SECONDS).play()
-        m.sit?.fadeOut(FADE_SECONDS)
+        if (!m.cheer.length) continue
+        m.cheering = true
+        const cheer = m.cheer[Math.floor(Math.random() * m.cheer.length)]
+        cheer.reset().fadeIn(FADE_SECONDS).play()
+        m.current?.fadeOut(FADE_SECONDS)
+        m.current = cheer
       }
     } else {
       clearTimeout(cheerTimer)
@@ -192,9 +234,8 @@ export async function addArenaCrowd(world, arenaRoot) {
     cheerTimer = setTimeout(() => {
       cheerTimer = null
       for (const m of members) {
-        if (!m.sit) continue
-        m.sit.reset().fadeIn(FADE_SECONDS).play()
-        m.cheer?.fadeOut(FADE_SECONDS)
+        m.cheering = false
+        m.playAmbient?.()
       }
     }, CHEER_DURATION_MS)
   }
