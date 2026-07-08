@@ -11,7 +11,7 @@ const GENERAL_SCALE = 1.4
 const _mid = new THREE.Vector3()
 const _center = new THREE.Vector3()
 
-function getBarrizerMidpointWorld(arenaRoot) {
+export function getBarrizerMidpointWorld(arenaRoot) {
   const a = arenaRoot.get(BARRIZER_IDS[0])
   const b = arenaRoot.get(BARRIZER_IDS[1])
   if (!a || !b) return null

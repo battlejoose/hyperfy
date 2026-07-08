@@ -1,6 +1,7 @@
 import * as THREE from './three'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { getBarrizerMidpointWorld } from './arenaGeneral.js'
 
 export const ARENA_CROWD_SRC = 'asset://crowd0.glb'
 
@@ -14,17 +15,48 @@ const CROWD_Y_OFFSET = 3
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
+/** Keep crowd members at least this far (horizontally) from the general. */
+const MIN_GENERAL_DISTANCE = 5
 
 const _center = new THREE.Vector3()
 const _pos = new THREE.Vector3()
+
+function horizontalDistance(ax, az, b) {
+  const dx = ax - b.x
+  const dz = az - b.z
+  return Math.sqrt(dx * dx + dz * dz)
+}
+
+// Half-width (radians) of the arc around the general where crowd members
+// would land within MIN_GENERAL_DISTANCE of him.
+function getForbiddenHalfAngle(generalPos, generalAngle) {
+  const step = Math.PI / 180
+  for (let half = 0; half < Math.PI; half += step) {
+    const x = _center.x + Math.cos(generalAngle + half) * CROWD_RADIUS
+    const z = _center.z + Math.sin(generalAngle + half) * CROWD_RADIUS
+    if (horizontalDistance(x, z, generalPos) >= MIN_GENERAL_DISTANCE) return half
+  }
+  return 0
+}
 
 function getCrowdPlacements(arenaRoot) {
   arenaRoot.updateTransform()
   _center.setFromMatrixPosition(arenaRoot.matrixWorld)
 
+  // Spread the crowd across the arc that stays clear of the general.
+  let startAngle = 0
+  let arc = Math.PI * 2
+  const generalPos = getBarrizerMidpointWorld(arenaRoot)?.clone()
+  if (generalPos) {
+    const generalAngle = Math.atan2(generalPos.z - _center.z, generalPos.x - _center.x)
+    const half = getForbiddenHalfAngle(generalPos, generalAngle)
+    startAngle = generalAngle + half
+    arc = Math.PI * 2 - half * 2
+  }
+
   const placements = []
   for (let i = 0; i < CROWD_COUNT; i++) {
-    const angle = (i / CROWD_COUNT) * Math.PI * 2
+    const angle = startAngle + ((i + 0.5) / CROWD_COUNT) * arc
     _pos.set(
       _center.x + Math.cos(angle) * CROWD_RADIUS,
       _center.y + CROWD_Y_OFFSET,
