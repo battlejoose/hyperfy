@@ -14,7 +14,6 @@ const ASSETS = {
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
   proximoSpeech: '/assets/proximospeech.mp3',
-  enterArena: '/assets/war.mp3',
 }
 
 const imagePreloadCache = new Map()
@@ -45,27 +44,26 @@ function stopAudio(audio) {
 }
 
 let proximoSpeechAudio = null
+let proximoSpeechFinished = false
 
 function startProximoSpeech() {
+  if (proximoSpeechFinished) return
   if (proximoSpeechAudio && !proximoSpeechAudio.ended) return
 
-  const speech = new Audio(ASSETS.proximoSpeech)
-  speech.volume = 0.95
-  proximoSpeechAudio = speech
-  speech.addEventListener(
-    'ended',
-    () => {
-      if (proximoSpeechAudio === speech) proximoSpeechAudio = null
-    },
-    { once: true }
-  )
-  speech.play().catch(() => {})
-}
+  if (!proximoSpeechAudio) {
+    const speech = new Audio(ASSETS.proximoSpeech)
+    speech.volume = 0.95
+    proximoSpeechAudio = speech
+    speech.addEventListener(
+      'ended',
+      () => {
+        proximoSpeechFinished = true
+      },
+      { once: true }
+    )
+  }
 
-function playEnterArenaSound() {
-  const sfx = new Audio(ASSETS.enterArena)
-  sfx.volume = 0.8
-  sfx.play().catch(() => {})
+  proximoSpeechAudio.play().catch(() => {})
 }
 
 export function TitleScreen({ onStart }) {
@@ -142,7 +140,6 @@ export function TitleScreen({ onStart }) {
 
     stopAudio(titleMusicRef.current)
     titleMusicRef.current = null
-    playEnterArenaSound()
 
     onStart({
       name: trimmedName.slice(0, MAX_NAME_LENGTH),
