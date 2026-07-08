@@ -11,20 +11,40 @@ const AMBIENT_CLIPS = ['Sitting_Clap', 'Sit_Cheer_with_Left_Hand', 'Stand_Cheer_
 const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 
 // Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
-// Back row is 0.5m further out and 0.5m up, staggered so it doesn't sit directly behind.
-// `src` picks the crowd model; crowd1 rows are shifted half a slot (0.1) so the two
-// models interleave on the same rings without overlapping.
+// Each ring behind is 0.5m further out and 0.5m up. `src` picks the crowd model;
+// crowd1 rows are shifted half a slot (0.1) so the two models interleave on the
+// same rings without overlapping. Staggers vary per ring so rings don't align radially.
 const CROWD_ROWS = [
   { src: 0, count: 5, radius: 13.7, yOffset: 3, stagger: 0 },
-  { src: 0, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.09 },
   { src: 1, count: 5, radius: 13.7, yOffset: 3, stagger: 0.1 },
-  { src: 1, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.19 },
+  { src: 0, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.05 },
+  { src: 1, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.15 },
+  { src: 0, count: 5, radius: 14.7, yOffset: 4, stagger: 0.02 },
+  { src: 1, count: 5, radius: 14.7, yOffset: 4, stagger: 0.12 },
+  { src: 0, count: 5, radius: 15.2, yOffset: 4.5, stagger: 0.07 },
+  { src: 1, count: 5, radius: 15.2, yOffset: 4.5, stagger: 0.17 },
 ]
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Keep crowd members at least this far (horizontally) from the general and the door. */
 const MIN_CLEAR_DISTANCE = 5
+/** Random angular jitter per member, as a fraction of their slot (keeps neighbors clear). */
+const SPACING_JITTER = 0.3
+/** Random radial jitter per member (meters). */
+const RADIUS_JITTER = 0.15
+
+// Seeded PRNG (mulberry32) — placements look irregular but are identical every load.
+function createSeededRandom(seed) {
+  let a = seed >>> 0
+  return () => {
+    a += 0x6d2b79f5
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
 
 const _center = new THREE.Vector3()
 const _pos = new THREE.Vector3()
@@ -48,7 +68,7 @@ function getForbiddenHalfAngle(point, pointAngle, radius) {
   return 0
 }
 
-function getRowAngles(row, generalPos) {
+function getRowAngles(row, generalPos, rng) {
   const angles = []
   if (!generalPos) {
     for (let i = 0; i < row.count; i++) {
@@ -74,8 +94,10 @@ function getRowAngles(row, generalPos) {
   const total = arcA.length + arcB.length
 
   for (let i = 0; i < row.count; i++) {
-    // stagger shifts the row along the clear arcs (wrapping) so rows interleave
-    const t = ((((i + 0.5) / row.count + row.stagger) % 1) + 1) % 1 * total
+    // stagger shifts the row along the clear arcs (wrapping) so rows interleave;
+    // jitter offsets each member within its slot so spacing looks natural
+    const jitter = ((rng() - 0.5) * SPACING_JITTER) / row.count
+    const t = ((((i + 0.5) / row.count + row.stagger + jitter) % 1) + 1) % 1 * total
     if (t < arcA.length) {
       angles.push(arcA.start + t)
     } else {
@@ -91,13 +113,15 @@ function getCrowdPlacements(arenaRoot) {
 
   const generalPos = getBarrizerMidpointWorld(arenaRoot)?.clone()
 
+  const rng = createSeededRandom(1337)
   const placements = []
   for (const row of CROWD_ROWS) {
-    for (const angle of getRowAngles(row, generalPos)) {
+    for (const angle of getRowAngles(row, generalPos, rng)) {
+      const radius = row.radius + (rng() - 0.5) * 2 * RADIUS_JITTER
       _pos.set(
-        _center.x + Math.cos(angle) * row.radius,
+        _center.x + Math.cos(angle) * radius,
         _center.y + row.yOffset,
-        _center.z + Math.sin(angle) * row.radius
+        _center.z + Math.sin(angle) * radius
       )
       placements.push({
         src: row.src,
