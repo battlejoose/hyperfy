@@ -3,7 +3,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getBarrizerMidpointWorld } from './arenaGeneral.js'
 
-export const ARENA_CROWD_SRC = 'asset://crowd0.glb'
+export const ARENA_CROWD_SOURCES = ['asset://crowd0.glb', 'asset://crowd1.glb']
 
 // Ambient clips each member cycles through randomly while idle.
 const AMBIENT_CLIPS = ['Sitting_Clap', 'Sit_Cheer_with_Left_Hand', 'Stand_Cheer_and_Sit_Down']
@@ -12,9 +12,13 @@ const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 
 // Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
 // Back row is 0.5m further out and 0.5m up, staggered so it doesn't sit directly behind.
+// `src` picks the crowd model; crowd1 rows are shifted half a slot (0.1) so the two
+// models interleave on the same rings without overlapping.
 const CROWD_ROWS = [
-  { count: 5, radius: 13.7, yOffset: 3, stagger: 0 },
-  { count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.09 },
+  { src: 0, count: 5, radius: 13.7, yOffset: 3, stagger: 0 },
+  { src: 0, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.09 },
+  { src: 1, count: 5, radius: 13.7, yOffset: 3, stagger: 0.1 },
+  { src: 1, count: 5, radius: 14.2, yOffset: 3.5, stagger: 0.19 },
 ]
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
@@ -96,6 +100,7 @@ function getCrowdPlacements(arenaRoot) {
         _center.z + Math.sin(angle) * row.radius
       )
       placements.push({
+        src: row.src,
         position: _pos.clone(),
         rotationY: Math.atan2(_center.x - _pos.x, _center.z - _pos.z),
       })
@@ -104,13 +109,11 @@ function getCrowdPlacements(arenaRoot) {
   return placements
 }
 
-export async function addArenaCrowd(world, arenaRoot) {
-  if (world.network?.isServer) return
-
-  const url = world.resolveURL(ARENA_CROWD_SRC)
+async function loadCrowdSource(world, src) {
+  const url = world.resolveURL(src)
   if (url.startsWith('asset://')) {
-    console.error('[Arena] crowd url not resolved')
-    return
+    console.error('[Arena] crowd url not resolved:', src)
+    return null
   }
 
   let buffer
@@ -119,21 +122,29 @@ export async function addArenaCrowd(world, arenaRoot) {
     if (!resp.ok) throw new Error(`status ${resp.status}`)
     buffer = await resp.arrayBuffer()
   } catch (err) {
-    console.error('[Arena] failed to load crowd:', err)
-    return
+    console.error('[Arena] failed to load crowd:', src, err)
+    return null
   }
 
   let gltf
   try {
     gltf = await new GLTFLoader().parseAsync(buffer)
   } catch (err) {
-    console.error('[Arena] failed to parse crowd:', err)
-    return
+    console.error('[Arena] failed to parse crowd:', src, err)
+    return null
   }
 
   const ambientClips = AMBIENT_CLIPS.map(name => gltf.animations.find(a => a.name === name)).filter(Boolean)
   const cheerClips = DEATH_CHEER_CLIPS.map(name => gltf.animations.find(a => a.name === name)).filter(Boolean)
-  if (!ambientClips.length) console.warn('[Arena] crowd has no ambient animations')
+  if (!ambientClips.length) console.warn('[Arena] crowd has no ambient animations:', src)
+  return { gltf, ambientClips, cheerClips }
+}
+
+export async function addArenaCrowd(world, arenaRoot) {
+  if (world.network?.isServer) return
+
+  const sources = await Promise.all(ARENA_CROWD_SOURCES.map(src => loadCrowdSource(world, src)))
+  if (!sources.some(Boolean)) return
 
   const pickRandom = (list, exclude) => {
     if (list.length <= 1) return list[0]
@@ -151,7 +162,10 @@ export async function addArenaCrowd(world, arenaRoot) {
   world._arenaFireMixers = world._arenaFireMixers || []
 
   for (let i = 0; i < placements.length; i++) {
-    const { position, rotationY } = placements[i]
+    const { src, position, rotationY } = placements[i]
+    const source = sources[src]
+    if (!source) continue
+    const { gltf, ambientClips, cheerClips } = source
     const npc = SkeletonUtils.clone(gltf.scene)
     npc.position.copy(position)
     npc.rotation.y = rotationY
@@ -218,7 +232,7 @@ export async function addArenaCrowd(world, arenaRoot) {
 
   let cheerTimer = null
   const startCheer = () => {
-    if (!cheerClips.length) return
+    if (!members.length) return
     if (!cheerTimer) {
       for (const m of members) {
         if (!m.cheer.length) continue
