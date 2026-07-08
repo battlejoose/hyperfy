@@ -3,7 +3,12 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getBarrizerMidpointWorld } from './arenaGeneral.js'
 
-export const ARENA_CROWD_SOURCES = ['asset://crowd0.glb', 'asset://crowd1.glb']
+export const ARENA_CROWD_SOURCES = [
+  'asset://crowd0.glb',
+  'asset://crowd1.glb',
+  'asset://crowd2.glb',
+  'asset://crowd3.glb',
+]
 
 // Ambient clips each member cycles through randomly while idle.
 const AMBIENT_CLIPS = ['Sitting_Clap', 'Sit_Cheer_with_Left_Hand', 'Stand_Cheer_and_Sit_Down']
@@ -12,25 +17,30 @@ const DEATH_CHEER_CLIPS = ['Cheer_with_Both_Hands', 'Cheer_with_Both_Hands_1']
 
 // Spectators spawn at radius 16 / +6m — front crowd row sits 2.3m closer in and 3m lower.
 // Each ring behind is 0.5m further out and 0.45m up. `src` picks the crowd model;
-// crowd1 rows are shifted half a slot (0.1) so the two models interleave on the
+// the four models are shifted a quarter slot apart (0.05) so they interleave on the
 // same rings without overlapping. Staggers vary per ring so rings don't align radially.
-const CROWD_ROWS = [
-  { src: 0, count: 5, radius: 13.7, yOffset: 3, stagger: 0 },
-  { src: 1, count: 5, radius: 13.7, yOffset: 3, stagger: 0.1 },
-  { src: 0, count: 5, radius: 14.2, yOffset: 3.45, stagger: 0.05 },
-  { src: 1, count: 5, radius: 14.2, yOffset: 3.45, stagger: 0.15 },
-  { src: 0, count: 5, radius: 14.7, yOffset: 3.9, stagger: 0.02 },
-  { src: 1, count: 5, radius: 14.7, yOffset: 3.9, stagger: 0.12 },
-  { src: 0, count: 5, radius: 15.2, yOffset: 4.35, stagger: 0.07 },
-  { src: 1, count: 5, radius: 15.2, yOffset: 4.35, stagger: 0.17 },
+const CROWD_RINGS = [
+  { radius: 13.7, yOffset: 3, stagger: 0 },
+  { radius: 14.2, yOffset: 3.45, stagger: 0.05 },
+  { radius: 14.7, yOffset: 3.9, stagger: 0.02 },
+  { radius: 15.2, yOffset: 4.35, stagger: 0.07 },
 ]
+const CROWD_ROWS = CROWD_RINGS.flatMap(ring =>
+  ARENA_CROWD_SOURCES.map((_, src) => ({
+    src,
+    count: 5,
+    radius: ring.radius,
+    yOffset: ring.yOffset,
+    stagger: ring.stagger + src * 0.05,
+  }))
+)
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Keep crowd members at least this far (horizontally) from the general and the door. */
 const MIN_CLEAR_DISTANCE = 5
 /** Random angular jitter per member, as a fraction of their slot (keeps neighbors clear). */
-const SPACING_JITTER = 0.3
+const SPACING_JITTER = 0.15
 /** Random radial jitter per member (meters). */
 const RADIUS_JITTER = 0.15
 
