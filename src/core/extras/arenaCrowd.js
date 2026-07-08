@@ -9,8 +9,8 @@ const SIT_CLAP_CLIP = 'Sitting_Clap'
 const CHEER_CLIP = 'Cheer_with_Both_Hands'
 
 const CROWD_COUNT = 5
-// Spectators spawn at radius 16 / +6m — crowd sits 2m closer in and 3m lower.
-const CROWD_RADIUS = 14
+// Spectators spawn at radius 16 / +6m — crowd sits 2.3m closer in and 3m lower.
+const CROWD_RADIUS = 13.7
 const CROWD_Y_OFFSET = 3
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
