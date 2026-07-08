@@ -1,6 +1,7 @@
 import * as THREE from './three'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { createNode } from './createNode'
 import { getBarrizerMidpointWorld } from './arenaGeneral.js'
 
 export const ARENA_CROWD_SOURCES = [
@@ -29,6 +30,12 @@ const CROWD_RINGS = [
 const CROWD_SCALE = 1
 const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
+/** Ambient crowd noise, loops the whole time in the arena. */
+const CROWD_YELL_SRC = 'asset://crowdyell.mp3'
+const CROWD_YELL_VOLUME = 0.5
+/** One-shot crowd roar when everyone stands up after a death. */
+const CROWD_CHEER_SRC = 'asset://crowdcheer.mp3'
+const CROWD_CHEER_VOLUME = 1
 /** Keep crowd members at least this far (horizontally) from the general and the door. */
 const MIN_CLEAR_DISTANCE = 5
 /** Random angular jitter per member, as a fraction of the whole arc. Kept small enough
@@ -276,10 +283,42 @@ export async function addArenaCrowd(world, arenaRoot) {
     members.push(member)
   }
 
+  // ambient crowd noise, loops for as long as the arena is loaded
+  let yellAudio = null
+  if (world.audio) {
+    yellAudio = createNode('audio', {
+      src: CROWD_YELL_SRC,
+      volume: CROWD_YELL_VOLUME,
+      loop: true,
+      group: 'sfx',
+      spatial: false,
+    })
+    yellAudio.activate({ world })
+    yellAudio.play()
+  }
+
+  const playCheerSound = () => {
+    if (!world.audio) return
+    const audio = createNode('audio', {
+      src: CROWD_CHEER_SRC,
+      volume: CROWD_CHEER_VOLUME,
+      loop: false,
+      group: 'sfx',
+      spatial: false,
+    })
+    audio.activate({ world })
+    audio.play()
+    setTimeout(() => {
+      if (audio.isPlaying) audio.stop()
+      if (audio.active) audio.deactivate()
+    }, CHEER_DURATION_MS + 5000)
+  }
+
   let cheerTimer = null
   const startCheer = () => {
     if (!members.length) return
     if (!cheerTimer) {
+      playCheerSound()
       for (const m of members) {
         if (!m.cheer.length) continue
         m.cheering = true
@@ -305,6 +344,11 @@ export async function addArenaCrowd(world, arenaRoot) {
     world.off('arenaDeath', startCheer)
     if (cheerTimer) clearTimeout(cheerTimer)
     cheerTimer = null
+    if (yellAudio) {
+      if (yellAudio.isPlaying) yellAudio.stop()
+      if (yellAudio.active) yellAudio.deactivate()
+      yellAudio = null
+    }
   }
 }
 
