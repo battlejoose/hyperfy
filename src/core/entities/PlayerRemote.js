@@ -1305,6 +1305,7 @@ export class PlayerRemote extends Entity {
   onDeath() {
     console.log('[Death] Remote player', this.data.id, 'died - starting death sequence')
     this.isDead = true
+    this.world.emit('arenaDeath', { playerId: this.data.id })
     
     // Cancel any active attacks/blocks/kicks
     this.resetRemoteAttackState()

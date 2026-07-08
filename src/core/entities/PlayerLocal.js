@@ -3126,6 +3126,7 @@ export class PlayerLocal extends Entity {
   onDeath() {
     console.log('[Death] Player died - starting death sequence')
     this.isDead = true
+    this.world.emit('arenaDeath', { playerId: this.data.id })
     this.respawnSent = false
     this.flying = false
     this.pushForce = null
