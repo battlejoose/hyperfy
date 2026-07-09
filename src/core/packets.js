@@ -34,6 +34,7 @@ const names = [
   'matchState',
   'enterArena',
   'enterArenaResult',
+  'leaveArena',
   'joinBattleRoyale',
   'joinBattleRoyaleResult',
   'setSolanaWallet',

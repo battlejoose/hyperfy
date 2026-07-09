@@ -30,6 +30,7 @@ export function PlayerQueueList({ world }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState(null)
   const [match, setMatch] = useState(() => world.network?.matchState)
+  const [pointerLocked, setPointerLocked] = useState(() => !!world.controls?.pointer?.locked)
 
   useEffect(() => {
     const syncRole = () => {
@@ -50,6 +51,12 @@ export function PlayerQueueList({ world }) {
   }, [world])
 
   useEffect(() => {
+    const onPointerLock = locked => setPointerLocked(!!locked)
+    world.on('pointer-lock', onPointerLock)
+    return () => world.off('pointer-lock', onPointerLock)
+  }, [world])
+
+  useEffect(() => {
     const onResult = data => {
       setPending(false)
       if (!data?.ok) {
@@ -66,10 +73,14 @@ export function PlayerQueueList({ world }) {
     }
   }, [world])
 
-  if (!isSpectator) return null
-
   const phase = match?.phase ?? 'queue'
   const isBattle = phase === 'battle'
+
+  // during a battle royale the panel is not accessible at all
+  if (isBattle) return null
+  // free-play fighters only see the panel after pressing escape (pointer unlocked)
+  if (!isSpectator && pointerLocked) return null
+
   const queuedIds = match?.queuedIds ?? []
   const isQueued = queuedIds.includes(world.network?.id)
   const potLamports = match?.potLamports ?? 0
@@ -79,6 +90,12 @@ export function PlayerQueueList({ world }) {
     setError(null)
     setPending(true)
     world.network.send('enterArena', {})
+  }
+
+  const becomeSpectator = () => {
+    setError(null)
+    setPending(true)
+    world.network.send('leaveArena', {})
   }
 
   const joinBattleRoyale = async () => {
@@ -234,30 +251,32 @@ export function PlayerQueueList({ world }) {
         <img className='arena-scroll' src={SCROLL_SRC} alt='' />
         <div className='arena-panel-content'>
           <h2 className='arena-title'>The Arena</h2>
-          {isBattle ? (
-            <p className='arena-subtitle'>
-              A battle royale is underway — {match?.aliveCount ?? 0} fighters remain. The arena reopens when it ends.
-            </p>
-          ) : (
+          {isSpectator ? (
             <p className='arena-subtitle'>
               Fight freely in the arena, or pay {BR_ENTRY_FEE_SOL} SOL to enter the battle royale. Winner takes the
               pot.
             </p>
+          ) : (
+            <p className='arena-subtitle'>
+              You are fighting in the arena. Return to the stands, or pay {BR_ENTRY_FEE_SOL} SOL to enter the battle
+              royale.
+            </p>
           )}
           <div className='arena-actions'>
-            <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending || isBattle}>
-              Enter the Arena
-            </button>
+            {isSpectator ? (
+              <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending}>
+                Enter the Arena
+              </button>
+            ) : (
+              <button type='button' className='arena-enter-test' onClick={becomeSpectator} disabled={pending}>
+                Become Spectator
+              </button>
+            )}
             {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
             {isQueued ? (
               <div className='arena-queued'>You are in the battle royale queue!</div>
             ) : (
-              <button
-                type='button'
-                className='arena-enter'
-                onClick={joinBattleRoyale}
-                disabled={pending || isBattle}
-              >
+              <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
                 {pending ? 'Processing…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
               </button>
             )}

@@ -702,6 +702,25 @@ export class ServerNetwork extends System {
     this.enterArenaAsFighter(socket)
   }
 
+  // free-play fighters can return to the stands (not during a battle royale)
+  onLeaveArena = async (socket) => {
+    if (!socket.player) return
+    if (isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
+
+    if (this.battleRoyale?.phase === 'battle') {
+      this.sendTo(socket.id, 'enterArenaResult', {
+        ok: false,
+        error: 'You cannot leave during a battle royale.',
+      })
+      return
+    }
+
+    this.setPlayerSessionAvatar(socket.player, AVATAR_SARACEN)
+    this.teleportPlayerToSpawn(socket.player)
+    this.broadcastScoreboard()
+    this.sendTo(socket.id, 'enterArenaResult', { ok: true })
+  }
+
   // paid battle royale queue signup
   onJoinBattleRoyale = async (socket, data) => {
     if (!socket.player) return
