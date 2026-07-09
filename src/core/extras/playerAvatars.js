@@ -18,16 +18,6 @@ export function isSpectatorSessionAvatar(sessionAvatar) {
   return sessionAvatar === AVATAR_SARACEN
 }
 
-export const TEST_FIGHTER_TINT = 0x4488ff
-
-export function isTestFighter(data) {
-  return !!data?.testFighter
-}
-
-export function applyTestFighterTint(avatar, testFighter) {
-  avatar?.instance?.setTint?.(!!testFighter)
-}
-
 const UP = new THREE.Vector3(0, 1, 0)
 const spawnQuat = new THREE.Quaternion()
 const offset = new THREE.Vector3()

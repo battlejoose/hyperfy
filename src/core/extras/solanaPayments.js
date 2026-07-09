@@ -8,7 +8,7 @@ import {
 } from '@solana/web3.js'
 import { derivePath } from 'ed25519-hd-key'
 import { mnemonicToSeedSync, validateMnemonic } from 'bip39'
-import { ENTRY_FEE_LAMPORTS, KILL_REWARD_LAMPORTS } from './solanaConfig.js'
+import { BR_ENTRY_FEE_LAMPORTS } from './solanaConfig.js'
 
 const DEFAULT_DERIVATION_PATH = "m/44'/501'/0'/0'"
 
@@ -92,32 +92,34 @@ export async function verifyEntryPayment({ signature, walletPubkey, playerId }) 
   const treasuryDelta = tx.meta.postBalances[treasuryIndex] - tx.meta.preBalances[treasuryIndex]
   const senderDelta = tx.meta.preBalances[senderIndex] - tx.meta.postBalances[senderIndex]
 
-  if (treasuryDelta !== ENTRY_FEE_LAMPORTS) {
+  if (treasuryDelta !== BR_ENTRY_FEE_LAMPORTS) {
     throw new Error('Incorrect entry fee amount')
   }
-  if (senderDelta < ENTRY_FEE_LAMPORTS) {
+  if (senderDelta < BR_ENTRY_FEE_LAMPORTS) {
     throw new Error('Sender did not pay entry fee')
   }
 
   await db('solana_txs').insert({
     signature,
     player_id: playerId,
-    type: 'entry',
+    type: 'br_entry',
     created_at: new Date().toISOString(),
   })
 
   return true
 }
 
-export async function sendKillReward(walletPubkey, playerId) {
+/** Send lamports from the treasury to a wallet (e.g. the battle royale winner's pot). */
+export async function sendPayout(walletPubkey, lamports, playerId, type = 'br_win') {
   if (!connection || !treasuryKeypair) return null
+  if (!lamports || lamports <= 0) return null
 
   try {
     const toPubkey = new PublicKey(walletPubkey)
     const balance = await connection.getBalance(treasuryKeypair.publicKey)
-    const minRequired = KILL_REWARD_LAMPORTS + 5000
+    const minRequired = lamports + 5000
     if (balance < minRequired) {
-      console.error('[solana] Treasury balance too low for kill reward:', balance)
+      console.error('[solana] Treasury balance too low for payout:', balance, 'needed:', minRequired)
       return null
     }
 
@@ -125,7 +127,7 @@ export async function sendKillReward(walletPubkey, playerId) {
       SystemProgram.transfer({
         fromPubkey: treasuryKeypair.publicKey,
         toPubkey,
-        lamports: KILL_REWARD_LAMPORTS,
+        lamports,
       })
     )
 
@@ -134,13 +136,13 @@ export async function sendKillReward(walletPubkey, playerId) {
     await db('solana_txs').insert({
       signature,
       player_id: playerId,
-      type: 'kill_reward',
+      type,
       created_at: new Date().toISOString(),
     })
 
     return signature
   } catch (err) {
-    console.error('[solana] Kill reward failed:', err)
+    console.error('[solana] Payout failed:', err)
     return null
   }
 }

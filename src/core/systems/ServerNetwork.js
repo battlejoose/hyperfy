@@ -16,9 +16,14 @@ import {
   createArenaRemnants,
   serializeArenaRemnants,
 } from '../extras/arenaRemnants'
-import { verifyEntryPayment, sendKillReward } from '../extras/solanaPayments.js'
+import { verifyEntryPayment, sendPayout } from '../extras/solanaPayments.js'
 import { PublicKey } from '@solana/web3.js'
-import { KILL_REWARD_LAMPORTS } from '../extras/solanaConfig.js'
+import {
+  BR_ENTRY_FEE_LAMPORTS,
+  BR_HOUSE_FEE_PERCENT,
+  BR_QUEUE_DURATION_SECONDS,
+  LAMPORTS_PER_SOL,
+} from '../extras/solanaConfig.js'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -83,7 +88,7 @@ export class ServerNetwork extends System {
     this.queue = []
     this.scoreboard = new Map()
     this.teamKills = { crusader: 0, saracen: 0 }
-    this.match = null
+    this.battleRoyale = null
     this.arenaRemnants = createArenaRemnants()
   }
 
@@ -135,16 +140,158 @@ export class ServerNetwork extends System {
   }
 
   initArena() {
-    this.match = { phase: 'ongoing' }
+    // Battle royale cycle: a repeating queue period (free-play in the arena, paid
+    // queue signups), then a winner-take-all battle for everyone who queued.
+    this.battleRoyale = {
+      phase: 'queue', // 'queue' | 'battle'
+      endsAt: 0, // server time (seconds) when the queue period ends
+      queued: new Map(), // playerId -> { wallet }
+      alive: new Set(), // playerIds still standing during a battle
+      potLamports: 0,
+    }
+    this.brTimerId = null
+    this.startQueuePhase()
+  }
+
+  startQueuePhase() {
+    const br = this.battleRoyale
+    br.phase = 'queue'
+    br.endsAt = this.getTime() + BR_QUEUE_DURATION_SECONDS
+    clearTimeout(this.brTimerId)
+    this.brTimerId = setTimeout(() => this.beginBattleRoyale(), BR_QUEUE_DURATION_SECONDS * 1000)
     this.broadcastMatchState()
   }
 
   getMatchStatePayload() {
-    return { phase: this.match?.phase ?? 'ongoing' }
+    const br = this.battleRoyale
+    if (!br) return { phase: 'queue', endsAt: 0, queuedIds: [], potLamports: 0 }
+    return {
+      phase: br.phase,
+      endsAt: br.endsAt,
+      queuedIds: [...br.queued.keys()],
+      aliveCount: br.alive.size,
+      potLamports: br.queued.size * BR_ENTRY_FEE_LAMPORTS,
+    }
   }
 
   broadcastMatchState() {
     this.send('matchState', this.getMatchStatePayload())
+  }
+
+  announce(body) {
+    this.send('chatAdded', {
+      id: uuid(),
+      from: null,
+      fromId: null,
+      body,
+      createdAt: moment().toISOString(),
+    })
+  }
+
+  beginBattleRoyale() {
+    const br = this.battleRoyale
+
+    // need at least 2 fighters — otherwise keep the queue open another period
+    if (br.queued.size < 2) {
+      if (br.queued.size === 1) {
+        this.announce('Battle royale needs at least 2 fighters — queue stays open another round.')
+      }
+      this.startQueuePhase()
+      return
+    }
+
+    br.phase = 'battle'
+    br.endsAt = 0
+    br.potLamports = br.queued.size * BR_ENTRY_FEE_LAMPORTS
+    br.alive = new Set()
+
+    // queued players still connected enter the battle; everyone else in the
+    // arena is returned to the stands
+    this.sockets.forEach(socket => {
+      const player = socket.player
+      if (!player) return
+      if (br.queued.has(player.data.id)) {
+        br.alive.add(player.data.id)
+        this.setPlayerSessionAvatar(player, AVATAR_CRUSADER)
+        this.teleportPlayerToSpawn(player)
+      } else if (!isSpectatorSessionAvatar(player.data.sessionAvatar)) {
+        this.setPlayerSessionAvatar(player, AVATAR_SARACEN)
+        this.teleportPlayerToSpawn(player)
+      }
+    })
+
+    this.broadcastScoreboard()
+    this.broadcastMatchState()
+    this.announce(
+      `Battle royale has begun! ${br.alive.size} fighters, winner takes ${this.getWinnerPayoutSol()} SOL.`
+    )
+
+    // everyone who queued may have disconnected before the battle started
+    this.checkBattleRoyaleWinner()
+  }
+
+  getWinnerPayoutLamports() {
+    const br = this.battleRoyale
+    return Math.floor((br.potLamports * (100 - BR_HOUSE_FEE_PERCENT)) / 100)
+  }
+
+  getWinnerPayoutSol() {
+    return this.getWinnerPayoutLamports() / LAMPORTS_PER_SOL
+  }
+
+  handleBattleRoyaleElimination(playerId) {
+    const br = this.battleRoyale
+    if (br?.phase !== 'battle') return
+    if (!br.alive.delete(playerId)) return
+    this.broadcastMatchState()
+    this.checkBattleRoyaleWinner()
+  }
+
+  checkBattleRoyaleWinner() {
+    const br = this.battleRoyale
+    if (br.phase !== 'battle' || br.alive.size > 1) return
+
+    const winnerId = br.alive.size === 1 ? [...br.alive][0] : null
+    this.endBattleRoyale(winnerId)
+  }
+
+  endBattleRoyale(winnerId) {
+    const br = this.battleRoyale
+    const payoutLamports = this.getWinnerPayoutLamports()
+    const payoutSol = payoutLamports / LAMPORTS_PER_SOL
+
+    if (winnerId) {
+      const wallet = br.queued.get(winnerId)?.wallet
+      const winnerPlayer = this.world.entities.get(winnerId)
+      const winnerName = winnerPlayer?.data?.name || 'A gladiator'
+      this.announce(`${winnerName} wins the battle royale and takes ${payoutSol} SOL!`)
+      if (wallet) {
+        sendPayout(wallet, payoutLamports, winnerId, 'br_win')
+          .then(signature => {
+            if (!signature) {
+              console.error('[solana] Battle royale payout did not complete for', winnerId)
+              return
+            }
+            this.sendTo(winnerId, 'chatAdded', {
+              id: uuid(),
+              from: null,
+              fromId: null,
+              body: `You won ${payoutSol} SOL!`,
+              createdAt: moment().toISOString(),
+            })
+          })
+          .catch(err => console.error('[solana] Battle royale payout failed:', err))
+      } else {
+        console.error('[solana] Battle royale winner has no wallet on file:', winnerId)
+      }
+    } else {
+      this.announce('The battle royale ended with no one left standing. The pot goes to the arena.')
+    }
+
+    br.queued.clear()
+    br.alive.clear()
+    br.potLamports = 0
+    this.startQueuePhase()
   }
 
   setPlayerSessionAvatar(player, sessionAvatar) {
@@ -262,48 +409,14 @@ export class ServerNetwork extends System {
     if (attackerId === targetId) return
     const killer = this.scoreboard.get(attackerId)
     const victim = this.scoreboard.get(targetId)
-    const killerPlayer = this.world.entities.get(attackerId)
-    const victimPlayer = this.world.entities.get(targetId)
     if (killer) {
       killer.kills += 1
       const team = killer.team ?? 'crusader'
       this.teamKills[team] = (this.teamKills[team] ?? 0) + 1
+      this.saveTeamKills().catch(err => console.error('failed to save teamKills:', err))
     }
     if (victim) victim.deaths += 1
     this.broadcastScoreboard()
-
-    this.processKillReward(attackerId, killer, killerPlayer, victimPlayer).catch(err => {
-      console.error('[solana] Kill reward processing failed:', err)
-    })
-  }
-
-  processKillReward = async (attackerId, killer, killerPlayer, victimPlayer) => {
-    if (killer) {
-      try {
-        await this.saveTeamKills()
-      } catch (err) {
-        console.error('failed to save teamKills:', err)
-      }
-    }
-
-    const killerIsGladiator =
-      killerPlayer && !isSpectatorSessionAvatar(killerPlayer.data.sessionAvatar)
-    const victimIsGladiator =
-      victimPlayer && !isSpectatorSessionAvatar(victimPlayer.data.sessionAvatar)
-    const killerWallet = killer?.wallet
-    const killerIsTestFighter = !!killerPlayer?.data?.testFighter
-    if (!killerIsGladiator || !victimIsGladiator || !killerWallet || killerIsTestFighter) return
-
-    const signature = await sendKillReward(killerWallet, attackerId)
-    if (signature) {
-      this.sendTo(attackerId, 'chatAdded', {
-        id: uuid(),
-        from: null,
-        fromId: null,
-        body: `You earned ${KILL_REWARD_LAMPORTS / 1_000_000_000} SOL for the kill.`,
-        createdAt: moment().toISOString(),
-      })
-    }
   }
 
   saveTeamKills = async () => {
@@ -523,7 +636,7 @@ export class ServerNetwork extends System {
         authToken,
         hasAdminCode: !!process.env.ADMIN_CODE,
         scoreboard: this.getScoreboardPayload(),
-        matchState: this.match ? this.getMatchStatePayload() : null,
+        matchState: this.getMatchStatePayload(),
         arenaRemnants: serializeArenaRemnants(this.arenaRemnants),
       })
 
@@ -565,35 +678,53 @@ export class ServerNetwork extends System {
     }
   }
 
-  enterArenaAsFighter(socket, { testFighter = false } = {}) {
+  enterArenaAsFighter(socket) {
     const player = socket.player
-    player.data.testFighter = testFighter
-    player.modify({ testFighter })
     this.setPlayerSessionAvatar(player, AVATAR_CRUSADER)
     this.teleportPlayerToSpawn(player)
-    this.send('entityModified', {
-      id: player.data.id,
-      tf: testFighter,
-    })
-    const entry = this.scoreboard.get(player.data.id)
-    if (entry) entry.testFighter = testFighter
     this.broadcastScoreboard()
-    this.sendTo(socket.id, 'enterArenaResult', { ok: true, test: testFighter })
+    this.sendTo(socket.id, 'enterArenaResult', { ok: true })
   }
 
-  onEnterArena = async (socket, data) => {
+  // free-play entry — anyone can fight in the arena during the queue period
+  onEnterArena = async (socket) => {
     if (!socket.player) return
     if (!isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
 
-    if (data?.test) {
-      this.enterArenaAsFighter(socket, { testFighter: true })
+    if (this.battleRoyale?.phase === 'battle') {
+      this.sendTo(socket.id, 'enterArenaResult', {
+        ok: false,
+        error: 'A battle royale is in progress — wait for the next round.',
+      })
+      return
+    }
+
+    this.enterArenaAsFighter(socket)
+  }
+
+  // paid battle royale queue signup
+  onJoinBattleRoyale = async (socket, data) => {
+    if (!socket.player) return
+    const playerId = socket.player.data.id
+    const br = this.battleRoyale
+
+    if (br?.phase !== 'queue') {
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', {
+        ok: false,
+        error: 'A battle royale is in progress — the queue opens when it ends.',
+      })
+      return
+    }
+
+    if (br.queued.has(playerId)) {
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true, alreadyQueued: true })
       return
     }
 
     const signature = data?.signature
     const wallet = data?.wallet
     if (!signature || !wallet) {
-      this.sendTo(socket.id, 'enterArenaResult', { ok: false, error: 'Payment required' })
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: false, error: 'Payment required' })
       return
     }
 
@@ -601,18 +732,20 @@ export class ServerNetwork extends System {
       await verifyEntryPayment({
         signature,
         walletPubkey: wallet,
-        playerId: socket.player.data.id,
+        playerId,
       })
     } catch (err) {
-      console.error('[solana] Entry payment verification failed:', err)
-      this.sendTo(socket.id, 'enterArenaResult', {
+      console.error('[solana] Battle royale entry verification failed:', err)
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', {
         ok: false,
         error: err.message || 'Payment verification failed',
       })
       return
     }
 
-    this.enterArenaAsFighter(socket, { testFighter: false })
+    br.queued.set(playerId, { wallet })
+    this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true })
+    this.broadcastMatchState()
   }
 
   onPlayerHit = async (socket, data) => {
@@ -697,6 +830,7 @@ export class ServerNetwork extends System {
 
     if (damage > 0 && currentHealth > 0 && newHealth <= 0) {
       this.recordKill(attackerId, targetId)
+      this.handleBattleRoyaleElimination(targetId)
     }
   }
 
@@ -714,14 +848,6 @@ export class ServerNetwork extends System {
     }
 
     addArenaCorpse(this.arenaRemnants, corpse)
-
-    if (player.data.testFighter) {
-      player.data.testFighter = false
-      player.modify({ testFighter: false })
-      this.send('entityModified', { id: player.data.id, tf: false })
-      const entry = this.scoreboard.get(player.data.id)
-      if (entry) entry.testFighter = false
-    }
 
     this.send(
       'playerCorpse',
@@ -1046,6 +1172,7 @@ export class ServerNetwork extends System {
     const playerId = socket.player?.data?.id
     if (playerId) {
       this.removeScoreboardPlayer(playerId)
+      this.handleBattleRoyaleElimination(playerId)
     }
     this.world.livekit.clearModifiers(socket.id)
     socket.player?.destroy(true)

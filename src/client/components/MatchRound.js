@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import { css } from '@firebolt-dev/css'
-import { getScoreboardPlayers } from '../../core/extras/scoreboardUtils'
-import { ScoreboardPanel } from './ScoreboardPanel'
 
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60)
@@ -9,31 +7,9 @@ function formatTime(seconds) {
   return `${mins}:${String(secs).padStart(2, '0')}`
 }
 
-function getWinnerText(winner) {
-  if (!winner) return 'Draw!'
-  if (typeof winner === 'string') {
-    if (winner === 'draw') return 'Draw!'
-    return `${winner} Wins!`
-  }
-  if (winner.reason === 'draw' || !winner.name) return 'Draw!'
-  return `${winner.name} Wins!`
-}
-
-function getWinnerColor(winner) {
-  if (!winner || winner === 'draw') return 'rgba(255, 255, 255, 0.95)'
-  if (typeof winner === 'string') {
-    if (winner === 'crusader') return '#ef4444'
-    if (winner === 'saracen') return '#eab308'
-    return 'rgba(255, 255, 255, 0.95)'
-  }
-  if (winner.reason === 'draw' || !winner.name) return 'rgba(255, 255, 255, 0.95)'
-  return '#fbbf24'
-}
-
 export function MatchRound({ world }) {
   const [match, setMatch] = useState(() => world.network?.matchState)
   const [remaining, setRemaining] = useState(0)
-  const [rows, setRows] = useState(() => getScoreboardPlayers(world.network?.scoreboard))
 
   useEffect(() => {
     const onMatchState = data => setMatch(data)
@@ -45,26 +21,13 @@ export function MatchRound({ world }) {
   }, [world])
 
   useEffect(() => {
-    const onScoreboard = data => setRows(getScoreboardPlayers(data))
-    world.on('scoreboard', onScoreboard)
-    if (world.network?.scoreboard) {
-      onScoreboard(world.network.scoreboard)
-    }
-    return () => world.off('scoreboard', onScoreboard)
-  }, [world])
-
-  useEffect(() => {
     if (!match) return
     const update = () => {
-      let endsAt = null
-      if (match.phase === 'playing') endsAt = match.roundEndsAt
-      else if (match.phase === 'countdown') endsAt = match.countdownEndsAt
-      else if (match.phase === 'results') endsAt = match.resultsEndsAt
-      if (endsAt == null) {
+      if (match.phase !== 'queue' || !match.endsAt) {
         setRemaining(0)
         return
       }
-      setRemaining(Math.max(0, Math.ceil(endsAt - world.network.getTime())))
+      setRemaining(Math.max(0, Math.ceil(match.endsAt - world.network.getTime())))
     }
     update()
     const id = setInterval(update, 200)
@@ -73,7 +36,7 @@ export function MatchRound({ world }) {
 
   if (!match) return null
 
-  if (match.phase === 'countdown') {
+  if (match.phase === 'queue') {
     return (
       <div
         css={css`
@@ -105,13 +68,13 @@ export function MatchRound({ world }) {
           }
         `}
       >
-        <div className='match-countdown-label'>Arena Opens In</div>
+        <div className='match-countdown-label'>Battle Royale In</div>
         <div className='match-countdown-time'>{formatTime(remaining)}</div>
       </div>
     )
   }
 
-  if (match.phase === 'playing') {
+  if (match.phase === 'battle') {
     return (
       <div
         css={css`
@@ -121,47 +84,28 @@ export function MatchRound({ world }) {
           transform: translateX(-50%);
           pointer-events: none;
           z-index: 998;
-          font-size: 2.75rem;
-          font-weight: 700;
-          font-variant-numeric: tabular-nums;
-          line-height: 1;
-          color: rgba(255, 255, 255, 0.95);
-          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
-        `}
-      >
-        {formatTime(remaining)}
-      </div>
-    )
-  }
-
-  if (match.phase === 'results') {
-    return (
-      <div
-        css={css`
-          position: absolute;
-          inset: 0;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
-          pointer-events: none;
-          z-index: 1001;
-          gap: 1.5rem;
-          .match-winner {
-            font-size: 3.5rem;
+          gap: 0.35rem;
+          .match-battle-label {
+            font-size: 1.35rem;
             font-weight: 800;
+            letter-spacing: 0.1em;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
-            text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
-            text-align: center;
-            line-height: 1.1;
+            color: #fbbf24;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+          }
+          .match-battle-alive {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.85);
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
           }
         `}
       >
-        <div className='match-winner' style={{ color: getWinnerColor(match.winner) }}>
-          {getWinnerText(match.winner)}
-        </div>
-        <ScoreboardPanel rows={rows} title='Scoreboard' />
+        <div className='match-battle-label'>Battle Royale</div>
+        <div className='match-battle-alive'>{match.aliveCount ?? 0} fighters remain</div>
       </div>
     )
   }

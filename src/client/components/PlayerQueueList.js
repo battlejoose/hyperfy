@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 import { isSpectatorSessionAvatar } from '../../core/extras/playerAvatars'
-import { ENTRY_FEE_LAMPORTS } from '../../core/extras/solanaConfig.js'
+import { BR_ENTRY_FEE_LAMPORTS, BR_HOUSE_FEE_PERCENT, LAMPORTS_PER_SOL } from '../../core/extras/solanaConfig.js'
 import {
   connectPhantom,
   getTreasuryPubkey,
@@ -10,11 +10,15 @@ import {
 } from '../extras/solanaWallet.js'
 
 const SCROLL_SRC = '/assets/scroll.png'
-const ENTRY_FEE_SOL = ENTRY_FEE_LAMPORTS / 1_000_000_000
+const BR_ENTRY_FEE_SOL = BR_ENTRY_FEE_LAMPORTS / LAMPORTS_PER_SOL
 
 function truncateAddress(address) {
   if (!address || address.length < 10) return address
   return `${address.slice(0, 4)}…${address.slice(-4)}`
+}
+
+function formatSol(lamports) {
+  return (lamports / LAMPORTS_PER_SOL).toFixed(4).replace(/\.?0+$/, '')
 }
 
 export function PlayerQueueList({ world }) {
@@ -25,6 +29,7 @@ export function PlayerQueueList({ world }) {
   const [wallet, setWallet] = useState(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState(null)
+  const [match, setMatch] = useState(() => world.network?.matchState)
 
   useEffect(() => {
     const syncRole = () => {
@@ -36,19 +41,39 @@ export function PlayerQueueList({ world }) {
   }, [world])
 
   useEffect(() => {
+    const onMatchState = data => setMatch(data)
+    world.on('matchState', onMatchState)
+    if (world.network?.matchState) {
+      onMatchState(world.network.matchState)
+    }
+    return () => world.off('matchState', onMatchState)
+  }, [world])
+
+  useEffect(() => {
     const onResult = data => {
       setPending(false)
       if (!data?.ok) {
-        setError(data?.error || 'Failed to enter the arena')
+        setError(data?.error || 'Something went wrong')
         return
       }
       setError(null)
     }
     world.on('enterArenaResult', onResult)
-    return () => world.off('enterArenaResult', onResult)
+    world.on('joinBattleRoyaleResult', onResult)
+    return () => {
+      world.off('enterArenaResult', onResult)
+      world.off('joinBattleRoyaleResult', onResult)
+    }
   }, [world])
 
   if (!isSpectator) return null
+
+  const phase = match?.phase ?? 'queue'
+  const isBattle = phase === 'battle'
+  const queuedIds = match?.queuedIds ?? []
+  const isQueued = queuedIds.includes(world.network?.id)
+  const potLamports = match?.potLamports ?? 0
+  const winnerLamports = Math.floor((potLamports * (100 - BR_HOUSE_FEE_PERCENT)) / 100)
 
   const connectWallet = async () => {
     setError(null)
@@ -61,13 +86,13 @@ export function PlayerQueueList({ world }) {
     }
   }
 
-  const enterArenaTest = () => {
+  const enterArena = () => {
     setError(null)
     setPending(true)
-    world.network.send('enterArena', { test: true })
+    world.network.send('enterArena', {})
   }
 
-  const enterArena = async () => {
+  const joinBattleRoyale = async () => {
     setError(null)
     const treasury = getTreasuryPubkey()
     if (!treasury) {
@@ -88,8 +113,8 @@ export function PlayerQueueList({ world }) {
         world.network.send('setSolanaWallet', { wallet: activeWallet })
       }
 
-      const signature = await payEntryFee(treasury)
-      world.network.send('enterArena', { signature, wallet: activeWallet })
+      const signature = await payEntryFee(treasury, BR_ENTRY_FEE_LAMPORTS)
+      world.network.send('joinBattleRoyale', { signature, wallet: activeWallet })
     } catch (err) {
       setPending(false)
       setError(err.message || 'Payment failed')
@@ -210,17 +235,38 @@ export function PlayerQueueList({ world }) {
           text-align: center;
           max-width: 13rem;
         }
+        .arena-queued {
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: #1e5c2f;
+          text-align: center;
+        }
+        .arena-pot {
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: #5c4033;
+          text-align: center;
+        }
       `}
     >
       <div className='arena-panel'>
         <img className='arena-scroll' src={SCROLL_SRC} alt='' />
         <div className='arena-panel-content'>
           <h2 className='arena-title'>The Arena</h2>
-          <p className='arena-subtitle'>
-            Enter the arena to fight as a gladiator. Entry fee: {ENTRY_FEE_SOL} SOL. If you fall, return here as a
-            spectator.
-          </p>
+          {isBattle ? (
+            <p className='arena-subtitle'>
+              A battle royale is underway — {match?.aliveCount ?? 0} fighters remain. The arena reopens when it ends.
+            </p>
+          ) : (
+            <p className='arena-subtitle'>
+              Fight freely in the arena, or pay {BR_ENTRY_FEE_SOL} SOL to enter the battle royale. Winner takes the
+              pot.
+            </p>
+          )}
           <div className='arena-actions'>
+            <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending || isBattle}>
+              Enter the Arena
+            </button>
             {!wallet ? (
               <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
                 Connect Wallet
@@ -230,12 +276,21 @@ export function PlayerQueueList({ world }) {
                 {truncateAddress(wallet)}
               </button>
             )}
-            <button type='button' className='arena-enter' onClick={enterArena} disabled={pending}>
-              {pending ? 'Processing…' : `Enter the Arena (${ENTRY_FEE_SOL} SOL)`}
-            </button>
-            <button type='button' className='arena-enter-test' onClick={enterArenaTest} disabled={pending}>
-              Join Fight (Test — No Pay)
-            </button>
+            {isQueued ? (
+              <div className='arena-queued'>You are in the battle royale queue!</div>
+            ) : (
+              <button
+                type='button'
+                className='arena-enter'
+                onClick={joinBattleRoyale}
+                disabled={pending || isBattle}
+              >
+                {pending ? 'Processing…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
+              </button>
+            )}
+            <div className='arena-pot'>
+              {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
+            </div>
           </div>
           {error ? <div className='arena-error'>{error}</div> : null}
         </div>

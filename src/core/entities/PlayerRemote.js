@@ -11,7 +11,7 @@ import { Emotes, KickTiming, getAttackSwingEndTime, getAttackSwingPhaseDuration 
 import { spawnBloodEffect as spawnBloodHitEffect } from '../extras/bloodEffects'
 import { initFootsteps, updateFootsteps, LocomotionModes } from '../extras/playerFootsteps'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
-import { isSpectatorSessionAvatar, applyTestFighterTint } from '../extras/playerAvatars'
+import { isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import { JuiceEvents, applyHitstop, flashAvatar } from '../extras/combatJuice'
 import { playAttackBackswingGrunt, playAttackSwingGrunt } from '../extras/attackGruntAudio'
 
@@ -193,7 +193,6 @@ export class PlayerRemote extends Entity {
         this.nametag.active = true
       }
       this.avatarUrl = avatarUrl
-      applyTestFighterTint(this.avatar, this.data.testFighter)
       if (this.isSpectator()) {
         this.removeCombatGear()
       } else {
@@ -1273,14 +1272,6 @@ export class PlayerRemote extends Entity {
     if (data.hasOwnProperty('sessionAvatar')) {
       this.data.sessionAvatar = data.sessionAvatar
       avatarChanged = true
-    }
-    if (data.hasOwnProperty('tf')) {
-      this.data.testFighter = !!data.tf
-      applyTestFighterTint(this.avatar, this.data.testFighter)
-    }
-    if (data.hasOwnProperty('testFighter')) {
-      this.data.testFighter = !!data.testFighter
-      applyTestFighterTint(this.avatar, this.data.testFighter)
     }
     if (data.hasOwnProperty('rank')) {
       this.data.rank = data.rank

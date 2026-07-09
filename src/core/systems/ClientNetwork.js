@@ -1,7 +1,7 @@
 import moment from 'moment'
-import { clearBloodEffects, replayBloodSplatters } from '../extras/bloodEffects'
+import { replayBloodSplatters } from '../extras/bloodEffects'
 import { prepareClientGameAssets } from '../extras/gameAssets'
-import { clearCorpses, replayCorpses, spawnCorpse } from '../extras/playerCorpse'
+import { replayCorpses, spawnCorpse } from '../extras/playerCorpse'
 import { readPacket, writePacket } from '../packets'
 import { storage } from '../storage'
 import { uuid } from '../utils'
@@ -35,16 +35,8 @@ export class ClientNetwork extends System {
   }
 
   setMatchState(data) {
-    const prevPhase = this.matchState?.phase
     this.matchState = data
     this.world.emit('matchState', data)
-    if (
-      (prevPhase === 'results' && (data.phase === 'lobby' || data.phase === 'countdown')) ||
-      (prevPhase === 'countdown' && data.phase === 'playing')
-    ) {
-      clearCorpses()
-      clearBloodEffects(this.world)
-    }
   }
 
   init({ wsUrl, name, avatar }) {
@@ -242,6 +234,10 @@ export class ClientNetwork extends System {
 
   onEnterArenaResult = data => {
     this.world.emit('enterArenaResult', data)
+  }
+
+  onJoinBattleRoyaleResult = data => {
+    this.world.emit('joinBattleRoyaleResult', data)
   }
 
   onEntityEvent = event => {

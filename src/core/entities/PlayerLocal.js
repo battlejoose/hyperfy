@@ -25,7 +25,7 @@ import { ControlPriorities } from '../extras/ControlPriorities'
 import { isBoolean, isNumber } from 'lodash-es'
 import { hasRank, Ranks } from '../extras/ranks'
 import { ALLOW_PLAYER_FLY } from '../extras/matchConfig'
-import { isSpectatorSessionAvatar, applyTestFighterTint } from '../extras/playerAvatars'
+import { isSpectatorSessionAvatar } from '../extras/playerAvatars'
 import {
   AttackJuiceProfiles,
   CombatCameraFX,
@@ -368,7 +368,6 @@ export class PlayerLocal extends Entity {
         }
         this.avatarUrl = avatarUrl
         this.camHeight = this.avatar.height * 0.9
-        applyTestFighterTint(this.avatar, this.data.testFighter)
         if (this.isSpectator()) {
           this.removeCombatGear()
           return
@@ -3308,14 +3307,6 @@ export class PlayerLocal extends Entity {
       this.data.sessionAvatar = data.sessionAvatar
       avatarChanged = true
       changed = true // arena UI and scoreboard team depend on role
-    }
-    if (data.hasOwnProperty('tf')) {
-      this.data.testFighter = !!data.tf
-      applyTestFighterTint(this.avatar, this.data.testFighter)
-    }
-    if (data.hasOwnProperty('testFighter')) {
-      this.data.testFighter = !!data.testFighter
-      applyTestFighterTint(this.avatar, this.data.testFighter)
     }
     if (data.hasOwnProperty('ef')) {
       const isCombatEffect =

@@ -5,7 +5,7 @@ import {
   SystemProgram,
   Transaction,
 } from '@solana/web3.js'
-import { ENTRY_FEE_LAMPORTS } from '../../core/extras/solanaConfig.js'
+import { BR_ENTRY_FEE_LAMPORTS } from '../../core/extras/solanaConfig.js'
 
 function getRpcUrl() {
   return globalThis.env?.PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet')
@@ -29,7 +29,7 @@ export async function connectPhantom() {
   return resp.publicKey.toBase58()
 }
 
-export async function payEntryFee(treasuryPubkey, lamports = ENTRY_FEE_LAMPORTS) {
+export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPORTS) {
   const phantom = getPhantom()
   if (!phantom?.publicKey) {
     throw new Error('Connect your wallet first')
