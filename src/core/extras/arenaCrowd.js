@@ -32,7 +32,7 @@ const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Ambient crowd noise, loops the whole time in the arena. */
 const CROWD_YELL_SRC = 'asset://crowdyell.mp3'
-const CROWD_YELL_VOLUME = 0.2
+const CROWD_YELL_VOLUME = 0.1
 /** Only the middle of the yell track loops — the ends fade and don't blend. */
 const CROWD_YELL_LOOP_SECONDS = 30
 /** One-shot crowd roar when everyone stands up after a death. */
