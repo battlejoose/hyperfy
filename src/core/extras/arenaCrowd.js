@@ -32,7 +32,9 @@ const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Ambient crowd noise, loops the whole time in the arena. */
 const CROWD_YELL_SRC = 'asset://crowdyell.mp3'
-const CROWD_YELL_VOLUME = 0.5
+const CROWD_YELL_VOLUME = 0.2
+/** Only the middle of the yell track loops — the ends fade and don't blend. */
+const CROWD_YELL_LOOP_SECONDS = 30
 /** One-shot crowd roar when everyone stands up after a death. */
 const CROWD_CHEER_SRC = 'asset://crowdcheer.mp3'
 const CROWD_CHEER_VOLUME = 1
@@ -283,18 +285,38 @@ export async function addArenaCrowd(world, arenaRoot) {
     members.push(member)
   }
 
-  // ambient crowd noise, loops for as long as the arena is loaded
-  let yellAudio = null
+  // ambient crowd noise — loops only the middle of the track (the ends fade out
+  // and don't blend), so it plays through a raw buffer source with loop points
+  let yellSource = null
+  let yellGain = null
   if (world.audio) {
-    yellAudio = createNode('audio', {
-      src: CROWD_YELL_SRC,
-      volume: CROWD_YELL_VOLUME,
-      loop: true,
-      group: 'sfx',
-      spatial: false,
-    })
-    yellAudio.activate({ world })
-    yellAudio.play()
+    try {
+      const audio = world.audio
+      let buffer = world.loader.get('audio', CROWD_YELL_SRC)
+      if (!buffer) buffer = await world.loader.load('audio', CROWD_YELL_SRC)
+
+      const mid = buffer.duration / 2
+      const half = Math.min(CROWD_YELL_LOOP_SECONDS, buffer.duration) / 2
+      yellSource = audio.ctx.createBufferSource()
+      yellSource.buffer = buffer
+      yellSource.loop = true
+      yellSource.loopStart = mid - half
+      yellSource.loopEnd = mid + half
+
+      yellGain = audio.ctx.createGain()
+      yellGain.gain.value = CROWD_YELL_VOLUME
+      yellSource.connect(yellGain)
+      yellGain.connect(audio.groupGains.sfx)
+
+      const source = yellSource
+      audio.ready(() => {
+        if (yellSource === source) source.start(0, source.loopStart)
+      })
+    } catch (err) {
+      console.error('[Arena] failed to start crowd yell:', err)
+      yellSource = null
+      yellGain = null
+    }
   }
 
   const playCheerSound = () => {
@@ -344,10 +366,15 @@ export async function addArenaCrowd(world, arenaRoot) {
     world.off('arenaDeath', startCheer)
     if (cheerTimer) clearTimeout(cheerTimer)
     cheerTimer = null
-    if (yellAudio) {
-      if (yellAudio.isPlaying) yellAudio.stop()
-      if (yellAudio.active) yellAudio.deactivate()
-      yellAudio = null
+    if (yellSource) {
+      try {
+        yellSource.stop()
+      } catch (err) {
+        // already stopped
+      }
+      yellGain?.disconnect()
+      yellSource = null
+      yellGain = null
     }
   }
 }
