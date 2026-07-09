@@ -75,17 +75,6 @@ export function PlayerQueueList({ world }) {
   const potLamports = match?.potLamports ?? 0
   const winnerLamports = Math.floor((potLamports * (100 - BR_HOUSE_FEE_PERCENT)) / 100)
 
-  const connectWallet = async () => {
-    setError(null)
-    try {
-      const pubkey = await connectPhantom()
-      setWallet(pubkey)
-      world.network.send('setSolanaWallet', { wallet: pubkey })
-    } catch (err) {
-      setError(err.message || 'Failed to connect wallet')
-    }
-  }
-
   const enterArena = () => {
     setError(null)
     setPending(true)
@@ -178,7 +167,6 @@ export function PlayerQueueList({ world }) {
           gap: 0.5rem;
           width: 100%;
         }
-        .arena-wallet,
         .arena-enter,
         .arena-enter-test {
           width: fit-content;
@@ -193,18 +181,11 @@ export function PlayerQueueList({ world }) {
           white-space: nowrap;
           transition: opacity 0.2s, filter 0.2s, background 0.2s;
         }
-        .arena-wallet {
-          color: #3d2817;
-          background: rgba(255, 248, 235, 0.65);
-          border: 1px solid rgba(61, 40, 23, 0.35);
-          &:hover:not(:disabled) {
-            background: rgba(255, 248, 235, 0.85);
-            border-color: rgba(61, 40, 23, 0.65);
-          }
-          &:disabled {
-            opacity: 0.35;
-            cursor: not-allowed;
-          }
+        .arena-wallet-label {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #5c4033;
+          text-align: center;
         }
         .arena-enter {
           color: #fff8f0;
@@ -267,15 +248,7 @@ export function PlayerQueueList({ world }) {
             <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending || isBattle}>
               Enter the Arena
             </button>
-            {!wallet ? (
-              <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
-                Connect Wallet
-              </button>
-            ) : (
-              <button type='button' className='arena-wallet' onClick={connectWallet} disabled={pending}>
-                {truncateAddress(wallet)}
-              </button>
-            )}
+            {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
             {isQueued ? (
               <div className='arena-queued'>You are in the battle royale queue!</div>
             ) : (

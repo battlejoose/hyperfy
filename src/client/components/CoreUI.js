@@ -19,6 +19,7 @@ import { ChevronDoubleUpIcon, HandIcon } from './Icons'
 import { Sidebar } from './Sidebar'
 import { Scoreboard } from './Scoreboard'
 import { PlayerQueueList } from './PlayerQueueList'
+import { MatchRound } from './MatchRound'
 
 export function CoreUI({ world }) {
   const ref = useRef()
@@ -97,6 +98,7 @@ export function CoreUI({ world }) {
       {ready && <DamageVignette world={world} />}
       {!ui.reticleSuppressors && <Reticle world={world} />}
       {<Toast world={world} />}
+      {ready && <MatchRound world={world} />}
       {ready && <PlayerQueueList world={world} />}
       {ready && <Scoreboard world={world} />}
       {ready && <ActionsBlock world={world} />}
