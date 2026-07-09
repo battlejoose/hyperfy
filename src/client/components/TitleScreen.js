@@ -13,7 +13,7 @@ const ASSETS = {
   bg: '/assets/gladimage.png',
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
-  proximoClip: '/assets/proximoclip.mp4',
+  proximoClip: '/assets/proximoclip.webm',
 }
 
 const imagePreloadCache = new Map()
