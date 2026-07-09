@@ -13,7 +13,7 @@ const ASSETS = {
   bg: '/assets/gladimage.png',
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
-  proximoSpeech: '/assets/proximospeech.mp3',
+  proximoClip: '/assets/proximoclip.mp4',
 }
 
 const imagePreloadCache = new Map()
@@ -43,27 +43,44 @@ function stopAudio(audio) {
   audio.src = ''
 }
 
-let proximoSpeechAudio = null
-let proximoSpeechFinished = false
+// The Proximo talking-head video lives outside React on document.body so it
+// survives the title screen unmounting and keeps playing into the arena.
+let proximoClipVideo = null
+let proximoClipFinished = false
 
-function startProximoSpeech() {
-  if (proximoSpeechFinished) return
-  if (proximoSpeechAudio && !proximoSpeechAudio.ended) return
+function startProximoClip() {
+  if (proximoClipFinished) return
 
-  if (!proximoSpeechAudio) {
-    const speech = new Audio(ASSETS.proximoSpeech)
-    speech.volume = 0.95
-    proximoSpeechAudio = speech
-    speech.addEventListener(
+  if (!proximoClipVideo) {
+    const video = document.createElement('video')
+    video.src = ASSETS.proximoClip
+    video.playsInline = true
+    video.preload = 'auto'
+    video.style.cssText = [
+      'position: fixed',
+      'left: 1rem',
+      'bottom: 1rem',
+      'width: min(30vw, 20rem)',
+      'z-index: 10001',
+      'pointer-events: none',
+      'background: transparent',
+    ].join(';')
+    video.addEventListener(
       'ended',
       () => {
-        proximoSpeechFinished = true
+        proximoClipFinished = true
+        video.remove()
+        if (proximoClipVideo === video) proximoClipVideo = null
       },
       { once: true }
     )
+    document.body.appendChild(video)
+    proximoClipVideo = video
   }
 
-  proximoSpeechAudio.play().catch(() => {})
+  if (proximoClipVideo.paused) {
+    proximoClipVideo.play().catch(() => {})
+  }
 }
 
 export function TitleScreen({ onStart }) {
@@ -75,6 +92,24 @@ export function TitleScreen({ onStart }) {
 
   const trimmedName = name.trim()
   const canStart = trimmedName.length > 0
+
+  useEffect(() => {
+    startProximoClip()
+
+    // autoplay with sound may be blocked until the user interacts
+    const onFirstInteraction = () => {
+      startProximoClip()
+      window.removeEventListener('pointerdown', onFirstInteraction)
+      window.removeEventListener('keydown', onFirstInteraction)
+    }
+    window.addEventListener('pointerdown', onFirstInteraction)
+    window.addEventListener('keydown', onFirstInteraction)
+
+    return () => {
+      window.removeEventListener('pointerdown', onFirstInteraction)
+      window.removeEventListener('keydown', onFirstInteraction)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -113,11 +148,11 @@ export function TitleScreen({ onStart }) {
     }
 
     startMusic()
-    startProximoSpeech()
+    startProximoClip()
 
     const onFirstInteraction = () => {
       startMusic()
-      startProximoSpeech()
+      startProximoClip()
       window.removeEventListener('pointerdown', onFirstInteraction)
       window.removeEventListener('keydown', onFirstInteraction)
     }
