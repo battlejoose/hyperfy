@@ -14,7 +14,11 @@ const ASSETS = {
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
   proximoClip: '/assets/proximoclip.webm',
+  clapping: '/assets/clapping.mp3',
 }
+
+/** When the Proximo clip reaches this time (seconds), the clapping sound plays. */
+const CLAPPING_AT_SECONDS = 35
 
 const imagePreloadCache = new Map()
 
@@ -74,6 +78,14 @@ function startProximoClip() {
       },
       { once: true }
     )
+
+    let clappingPlayed = false
+    video.addEventListener('timeupdate', () => {
+      if (clappingPlayed || video.currentTime < CLAPPING_AT_SECONDS) return
+      clappingPlayed = true
+      const clapping = new Audio(ASSETS.clapping)
+      clapping.play().catch(() => {})
+    })
     document.body.appendChild(video)
     proximoClipVideo = video
   }
