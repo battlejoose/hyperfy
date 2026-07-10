@@ -8,67 +8,20 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from '@solana/web3.js'
-import {
-  createDefaultAuthorizationCache,
-  createDefaultChainSelector,
-  createDefaultWalletNotFoundHandler,
-  registerMwa,
-} from '@solana-mobile/wallet-standard-mobile'
+import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
 import { BR_ENTRY_FEE_LAMPORTS } from '../../core/extras/solanaConfig.js'
 
 const SOLANA_CHAIN = 'solana:mainnet'
 const LAST_WALLET_KEY = 'hyperfy:lastSolanaWallet'
+const MWA_AUTH_TOKEN_KEY = 'hyperfy:mwaAuthToken'
+
+const MWA_APP_IDENTITY = {
+  name: 'Hyperfy Arena',
+  uri: typeof window !== 'undefined' ? window.location.origin : undefined,
+}
 
 function getRpcUrl() {
   return globalThis.env?.PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta')
-}
-
-/**
- * Wraps the default authorization cache to strip `wallet_uri_base` from every
- * authorization result. When present, the adapter launches the wallet via its
- * universal link (e.g. https://phantom.app/...) for follow-up requests, and
- * Android Chrome opens the app without delivering the association params —
- * the wallet shows no approval sheet. Deleting the field forces the generic
- * solana-wallet:// scheme, which routes correctly for every request.
- * The delete must be synchronous and in-place: the adapter passes the same
- * object to its in-memory session state right after calling set().
- */
-function createPatchedAuthorizationCache() {
-  const cache = createDefaultAuthorizationCache()
-  return {
-    clear: () => cache.clear(),
-    async get() {
-      const authorization = await cache.get()
-      if (authorization) delete authorization.wallet_uri_base
-      return authorization
-    },
-    set(authorization) {
-      if (authorization) delete authorization.wallet_uri_base
-      return cache.set(authorization)
-    },
-  }
-}
-
-// register Mobile Wallet Adapter as a standard wallet so Android users can
-// connect their native wallet apps (Phantom, Solflare, Seed Vault, ...)
-let mwaRegistered = false
-function ensureMwa() {
-  if (mwaRegistered || typeof window === 'undefined') return
-  mwaRegistered = true
-  try {
-    registerMwa({
-      appIdentity: {
-        name: 'Hyperfy Arena',
-        uri: window.location.origin,
-      },
-      authorizationCache: createPatchedAuthorizationCache(),
-      chains: [SOLANA_CHAIN],
-      chainSelector: createDefaultChainSelector(),
-      onWalletNotFound: createDefaultWalletNotFoundHandler(),
-    })
-  } catch (err) {
-    console.warn('[solana] Mobile Wallet Adapter registration failed:', err)
-  }
 }
 
 function isSolanaStandardWallet(wallet) {
@@ -81,7 +34,6 @@ function isSolanaStandardWallet(wallet) {
 
 /** All detected Solana wallets: [{ name, icon, wallet }] */
 export function getSolanaWallets() {
-  ensureMwa()
   return getWallets()
     .get()
     .filter(isSolanaStandardWallet)
@@ -90,7 +42,6 @@ export function getSolanaWallets() {
 
 /** Subscribe to wallets being registered/unregistered. Returns unsubscribe. */
 export function onSolanaWalletsChange(callback) {
-  ensureMwa()
   const { on } = getWallets()
   const offRegister = on('register', callback)
   const offUnregister = on('unregister', callback)
@@ -104,13 +55,32 @@ export function isAnyWalletAvailable() {
   return getSolanaWallets().length > 0
 }
 
+/** Wallets injected directly into the page (browser extension or wallet in-app browser). */
+export function getInjectedSolanaWallets() {
+  return getSolanaWallets().filter(w => !w.name?.includes('Mobile Wallet Adapter'))
+}
+
+export function isMobileUserAgent() {
+  return /android|iphone|ipad|ipod/i.test(navigator.userAgent)
+}
+
+/** Mobile Wallet Adapter is Android-only and needs a secure context. */
+export function isMwaSupported() {
+  return typeof window !== 'undefined' && window.isSecureContext && /android/i.test(navigator.userAgent)
+}
+
 /**
- * Mobile Wallet Adapter launches an app-switch to the wallet for every
- * operation, and Android Chrome blocks that unless it comes from a fresh user
- * gesture — so connect and pay must be separate taps for these wallets.
+ * Deep links that reopen this page inside a wallet app's built-in dapp
+ * browser, where the wallet injects its provider just like a desktop
+ * extension. Fallback payment path on phones (works on iOS too).
  */
-export function walletNeedsSeparateGesture(walletName) {
-  return !!walletName?.includes('Mobile Wallet Adapter')
+export function getWalletBrowserLinks() {
+  const url = encodeURIComponent(window.location.href)
+  const ref = encodeURIComponent(window.location.origin)
+  return [
+    { name: 'Phantom', url: `https://phantom.app/ul/browse/${url}?ref=${ref}` },
+    { name: 'Solflare', url: `https://solflare.com/ul/v1/browse/${url}?ref=${ref}` },
+  ]
 }
 
 // currently connected wallet + account
@@ -153,12 +123,18 @@ export async function connectWallet(walletName) {
  * this site. Returns the pubkey or null — never prompts or throws.
  */
 export async function connectWalletEager() {
-  ensureMwa()
   let lastName = null
   try {
     lastName = localStorage.getItem(LAST_WALLET_KEY)
   } catch {}
   if (!lastName) return null
+  // stale entry from the retired wallet-standard MWA integration
+  if (lastName.includes('Mobile Wallet Adapter')) {
+    try {
+      localStorage.removeItem(LAST_WALLET_KEY)
+    } catch {}
+    return null
+  }
   const entry = getSolanaWallets().find(w => w.name === lastName)
   if (!entry) return null
   try {
@@ -244,6 +220,95 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
   }
 
   return signature
+}
+
+/**
+ * Pay the battle royale entry fee through the Mobile Wallet Adapter protocol
+ * (Android). Authorize and sign-and-send both run inside ONE transact session,
+ * i.e. a single app-switch to the wallet — splitting them into separate
+ * sessions is what caused Phantom to open without showing the transaction.
+ * Returns { signature, walletPubkey } (both base58).
+ */
+export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPORTS) {
+  const connection = new Connection(getRpcUrl(), 'confirmed')
+  const toPubkey = new PublicKey(treasuryPubkey)
+
+  let cachedAuthToken = null
+  try {
+    cachedAuthToken = localStorage.getItem(MWA_AUTH_TOKEN_KEY)
+  } catch {}
+
+  const result = await transact(async wallet => {
+    // authorize (reuses the cached token to skip the approval screen when valid)
+    let auth
+    try {
+      auth = await wallet.authorize({
+        chain: SOLANA_CHAIN,
+        identity: MWA_APP_IDENTITY,
+        auth_token: cachedAuthToken || undefined,
+      })
+    } catch (err) {
+      if (!cachedAuthToken) throw err
+      // stale/revoked token — fall back to a fresh authorization
+      auth = await wallet.authorize({
+        chain: SOLANA_CHAIN,
+        identity: MWA_APP_IDENTITY,
+      })
+    }
+    try {
+      localStorage.setItem(MWA_AUTH_TOKEN_KEY, auth.auth_token)
+    } catch {}
+
+    // MWA returns addresses as base64-encoded public key bytes
+    const addressBytes = Uint8Array.from(atob(auth.accounts[0].address), c => c.charCodeAt(0))
+    const fromPubkey = new PublicKey(addressBytes)
+
+    const {
+      context: { slot: minContextSlot },
+      value: { blockhash, lastValidBlockHeight },
+    } = await connection.getLatestBlockhashAndContext('confirmed')
+
+    const message = new TransactionMessage({
+      payerKey: fromPubkey,
+      recentBlockhash: blockhash,
+      instructions: [
+        SystemProgram.transfer({
+          fromPubkey,
+          toPubkey,
+          lamports,
+        }),
+      ],
+    }).compileToV0Message()
+    const transaction = new VersionedTransaction(message)
+
+    const signatures = await wallet.signAndSendTransactions({
+      transactions: [transaction],
+      minContextSlot,
+    })
+
+    return {
+      signature: signatures[0],
+      walletPubkey: fromPubkey.toBase58(),
+      blockhash,
+      lastValidBlockHeight,
+    }
+  })
+
+  try {
+    await connection.confirmTransaction(
+      {
+        signature: result.signature,
+        blockhash: result.blockhash,
+        lastValidBlockHeight: result.lastValidBlockHeight,
+      },
+      'confirmed'
+    )
+  } catch (err) {
+    // we already have the signature — the server verifies on-chain with retries
+    console.warn('[solana] confirmTransaction failed, continuing with signature:', err)
+  }
+
+  return { signature: result.signature, walletPubkey: result.walletPubkey }
 }
 
 /** True when the wallet error means the user declined, rather than a wallet failure. */

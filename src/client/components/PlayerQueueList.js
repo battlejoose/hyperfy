@@ -5,12 +5,15 @@ import { BR_ENTRY_FEE_LAMPORTS, BR_HOUSE_FEE_PERCENT, LAMPORTS_PER_SOL } from '.
 import {
   connectWallet,
   connectWalletEager,
-  getSolanaWallets,
+  getInjectedSolanaWallets,
   getTreasuryPubkey,
+  getWalletBrowserLinks,
+  isMobileUserAgent,
+  isMwaSupported,
   isUserRejection,
   onSolanaWalletsChange,
   payEntryFee,
-  walletNeedsSeparateGesture,
+  payEntryFeeMwa,
 } from '../extras/solanaWallet.js'
 
 const SCROLL_SRC = '/assets/scroll.png'
@@ -76,10 +79,16 @@ export function PlayerQueueList({ world }) {
     }
   }, [world])
 
-  // while the picker is open, keep the list fresh as wallets register
+  // while the picker is open, upgrade to direct wallet options as wallets
+  // register (e.g. delayed provider injection inside a wallet's in-app browser)
   useEffect(() => {
     if (!walletChoices) return
-    return onSolanaWalletsChange(() => setWalletChoices(getSolanaWallets()))
+    return onSolanaWalletsChange(() => {
+      const injected = getInjectedSolanaWallets()
+      if (injected.length) {
+        setWalletChoices(injected.map(({ name, icon }) => ({ type: 'wallet', name, icon })))
+      }
+    })
   }, [!!walletChoices])
 
   useEffect(() => {
@@ -158,17 +167,33 @@ export function PlayerQueueList({ world }) {
       const pubkey = await connectWallet(walletName)
       setWallet(pubkey)
       world.network.send('setSolanaWallet', { wallet: pubkey })
-      if (walletNeedsSeparateGesture(walletName)) {
-        // Mobile Wallet Adapter: Android Chrome blocks a second app-switch in
-        // the same gesture, so stop here — the next tap sends the payment
-        setPending(false)
-        setNotice('Wallet connected! Tap Join Battle Royale again to pay and enter.')
-        return
-      }
       await payAndJoin(pubkey)
     } catch (err) {
       setPending(false)
       setError(err.message || 'Wallet connection failed')
+    }
+  }
+
+  // Android: authorize + pay in a single Mobile Wallet Adapter session
+  // (one app-switch to the wallet, both approvals in one visit)
+  const payWithMwa = async () => {
+    setPending(true)
+    try {
+      const { signature, walletPubkey } = await payEntryFeeMwa(getTreasuryPubkey(), BR_ENTRY_FEE_LAMPORTS)
+      setWallet(walletPubkey)
+      world.network.send('setSolanaWallet', { wallet: walletPubkey })
+      world.network.send('joinBattleRoyale', { signature, wallet: walletPubkey })
+    } catch (err) {
+      setPending(false)
+      if (isUserRejection(err)) {
+        setError('Payment cancelled')
+        return
+      }
+      console.warn('[solana] MWA payment failed:', err)
+      // offer the wallet in-app browser as a fallback path
+      setError(err.message || 'Wallet payment failed')
+      setNotice('Having trouble? Open the game inside your wallet app instead.')
+      setWalletChoices(getWalletBrowserLinks().map(({ name, url }) => ({ type: 'link', name, url })))
     }
   }
 
@@ -183,17 +208,33 @@ export function PlayerQueueList({ world }) {
       await payAndJoin(wallet)
       return
     }
-    const available = getSolanaWallets()
-    if (!available.length) {
-      setError('No Solana wallet found. Install Phantom, Solflare, or another Solana wallet and reload.')
+
+    // wallets injected into the page (extension or wallet in-app browser)
+    // are the reliable path — connect and pay directly
+    const injected = getInjectedSolanaWallets()
+    if (injected.length === 1) {
+      await connectAndPay(injected[0].name)
       return
     }
-    if (available.length === 1) {
-      await connectAndPay(available[0].name)
+    if (injected.length > 1) {
+      setWalletChoices(injected.map(({ name, icon }) => ({ type: 'wallet', name, icon })))
       return
     }
-    // multiple wallets detected — let the user pick
-    setWalletChoices(available)
+
+    // Android: Mobile Wallet Adapter connects to the native wallet app
+    if (isMwaSupported()) {
+      await payWithMwa()
+      return
+    }
+
+    // other phones (iOS): reopen the game inside the wallet app's browser
+    if (isMobileUserAgent()) {
+      setNotice('Choose your wallet app — the game will reopen inside it so you can pay securely.')
+      setWalletChoices(getWalletBrowserLinks().map(({ name, url }) => ({ type: 'link', name, url })))
+      return
+    }
+
+    setError('No Solana wallet found. Install Phantom, Solflare, or another Solana wallet and reload.')
   }
 
 
@@ -405,12 +446,30 @@ export function PlayerQueueList({ world }) {
             ) : walletChoices ? (
               <div className='arena-wallet-list'>
                 <div className='arena-wallet-list-title'>Choose a wallet</div>
-                {walletChoices.map(({ name, icon }) => (
-                  <button key={name} type='button' className='arena-wallet-option' onClick={() => connectAndPay(name)}>
-                    {icon ? <img src={icon} alt='' /> : null}
-                    <span>{name}</span>
-                  </button>
-                ))}
+                {walletChoices.map(({ type, name, icon, url }) =>
+                  type === 'link' ? (
+                    <button
+                      key={name}
+                      type='button'
+                      className='arena-wallet-option'
+                      onClick={() => {
+                        window.location.href = url
+                      }}
+                    >
+                      <span>Open in {name}</span>
+                    </button>
+                  ) : (
+                    <button
+                      key={name}
+                      type='button'
+                      className='arena-wallet-option'
+                      onClick={() => connectAndPay(name)}
+                    >
+                      {icon ? <img src={icon} alt='' /> : null}
+                      <span>{name}</span>
+                    </button>
+                  )
+                )}
                 <button type='button' className='arena-wallet-cancel' onClick={() => setWalletChoices(null)}>
                   Cancel
                 </button>
