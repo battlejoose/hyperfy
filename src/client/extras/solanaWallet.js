@@ -77,6 +77,15 @@ export function isAnyWalletAvailable() {
   return getSolanaWallets().length > 0
 }
 
+/**
+ * Mobile Wallet Adapter launches an app-switch to the wallet for every
+ * operation, and Android Chrome blocks that unless it comes from a fresh user
+ * gesture — so connect and pay must be separate taps for these wallets.
+ */
+export function walletNeedsSeparateGesture(walletName) {
+  return !!walletName?.includes('Mobile Wallet Adapter')
+}
+
 // currently connected wallet + account
 let connected = null // { wallet, account, pubkey }
 
@@ -155,7 +164,10 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
   const fromPubkey = new PublicKey(account.address)
   const toPubkey = new PublicKey(treasuryPubkey)
 
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+  const {
+    context: { slot: minContextSlot },
+    value: { blockhash, lastValidBlockHeight },
+  } = await connection.getLatestBlockhashAndContext('confirmed')
   const transaction = new Transaction({
     feePayer: fromPubkey,
     blockhash,
@@ -176,7 +188,9 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
       account,
       chain: SOLANA_CHAIN,
       transaction: serialized,
-      options: { commitment: 'confirmed' },
+      // minContextSlot is required by Phantom via Mobile Wallet Adapter —
+      // without it the request errors before the approval screen appears
+      options: { commitment: 'confirmed', minContextSlot },
     })
     signature = bs58.encode(result.signature)
   } else {

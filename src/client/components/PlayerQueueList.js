@@ -10,6 +10,7 @@ import {
   isUserRejection,
   onSolanaWalletsChange,
   payEntryFee,
+  walletNeedsSeparateGesture,
 } from '../extras/solanaWallet.js'
 
 const SCROLL_SRC = '/assets/scroll.png'
@@ -35,6 +36,7 @@ export function PlayerQueueList({ world }) {
   const [match, setMatch] = useState(() => world.network?.matchState)
   const [pointerLocked, setPointerLocked] = useState(() => !!world.controls?.pointer?.locked)
   const [walletChoices, setWalletChoices] = useState(null) // wallet picker open when non-null
+  const [notice, setNotice] = useState(null)
 
   useEffect(() => {
     const syncRole = () => {
@@ -156,6 +158,13 @@ export function PlayerQueueList({ world }) {
       const pubkey = await connectWallet(walletName)
       setWallet(pubkey)
       world.network.send('setSolanaWallet', { wallet: pubkey })
+      if (walletNeedsSeparateGesture(walletName)) {
+        // Mobile Wallet Adapter: Android Chrome blocks a second app-switch in
+        // the same gesture, so stop here — the next tap sends the payment
+        setPending(false)
+        setNotice('Wallet connected! Tap Join Battle Royale again to pay and enter.')
+        return
+      }
       await payAndJoin(pubkey)
     } catch (err) {
       setPending(false)
@@ -165,6 +174,7 @@ export function PlayerQueueList({ world }) {
 
   const joinBattleRoyale = async () => {
     setError(null)
+    setNotice(null)
     if (!getTreasuryPubkey()) {
       setError('Arena payments are not configured')
       return
@@ -354,6 +364,14 @@ export function PlayerQueueList({ world }) {
           color: #5c4033;
           text-align: center;
         }
+        .arena-notice {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #1e5c2f;
+          line-height: 1.35;
+          text-align: center;
+          max-width: 13rem;
+        }
       `}
     >
       <div className='arena-panel'>
@@ -406,6 +424,7 @@ export function PlayerQueueList({ world }) {
               {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
             </div>
           </div>
+          {notice ? <div className='arena-notice'>{notice}</div> : null}
           {error ? <div className='arena-error'>{error}</div> : null}
         </div>
       </div>
