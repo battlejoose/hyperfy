@@ -5,7 +5,8 @@ import {
   Connection,
   PublicKey,
   SystemProgram,
-  Transaction,
+  TransactionMessage,
+  VersionedTransaction,
 } from '@solana/web3.js'
 import {
   createDefaultAuthorizationCache,
@@ -19,7 +20,7 @@ const SOLANA_CHAIN = 'solana:mainnet'
 const LAST_WALLET_KEY = 'hyperfy:lastSolanaWallet'
 
 function getRpcUrl() {
-  return globalThis.env?.PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet')
+  return globalThis.env?.PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta')
 }
 
 // register Mobile Wallet Adapter as a standard wallet so Android users can
@@ -168,18 +169,22 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
     context: { slot: minContextSlot },
     value: { blockhash, lastValidBlockHeight },
   } = await connection.getLatestBlockhashAndContext('confirmed')
-  const transaction = new Transaction({
-    feePayer: fromPubkey,
-    blockhash,
-    lastValidBlockHeight,
-  }).add(
-    SystemProgram.transfer({
-      fromPubkey,
-      toPubkey,
-      lamports,
-    })
-  )
-  const serialized = transaction.serialize({ requireAllSignatures: false, verifySignatures: false })
+
+  // versioned (v0) transaction — mobile wallets parse these far more
+  // reliably than legacy transactions with placeholder signatures
+  const message = new TransactionMessage({
+    payerKey: fromPubkey,
+    recentBlockhash: blockhash,
+    instructions: [
+      SystemProgram.transfer({
+        fromPubkey,
+        toPubkey,
+        lamports,
+      }),
+    ],
+  }).compileToV0Message()
+  const transaction = new VersionedTransaction(message)
+  const serialized = new Uint8Array(transaction.serialize())
 
   let signature
   const sendFeature = wallet.features['solana:signAndSendTransaction']
