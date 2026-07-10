@@ -23,6 +23,32 @@ function getRpcUrl() {
   return globalThis.env?.PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta')
 }
 
+/**
+ * Wraps the default authorization cache to strip `wallet_uri_base` from every
+ * authorization result. When present, the adapter launches the wallet via its
+ * universal link (e.g. https://phantom.app/...) for follow-up requests, and
+ * Android Chrome opens the app without delivering the association params —
+ * the wallet shows no approval sheet. Deleting the field forces the generic
+ * solana-wallet:// scheme, which routes correctly for every request.
+ * The delete must be synchronous and in-place: the adapter passes the same
+ * object to its in-memory session state right after calling set().
+ */
+function createPatchedAuthorizationCache() {
+  const cache = createDefaultAuthorizationCache()
+  return {
+    clear: () => cache.clear(),
+    async get() {
+      const authorization = await cache.get()
+      if (authorization) delete authorization.wallet_uri_base
+      return authorization
+    },
+    set(authorization) {
+      if (authorization) delete authorization.wallet_uri_base
+      return cache.set(authorization)
+    },
+  }
+}
+
 // register Mobile Wallet Adapter as a standard wallet so Android users can
 // connect their native wallet apps (Phantom, Solflare, Seed Vault, ...)
 let mwaRegistered = false
@@ -35,7 +61,7 @@ function ensureMwa() {
         name: 'Hyperfy Arena',
         uri: window.location.origin,
       },
-      authorizationCache: createDefaultAuthorizationCache(),
+      authorizationCache: createPatchedAuthorizationCache(),
       chains: [SOLANA_CHAIN],
       chainSelector: createDefaultChainSelector(),
       onWalletNotFound: createDefaultWalletNotFoundHandler(),
