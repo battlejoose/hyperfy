@@ -3,11 +3,12 @@ import { css } from '@firebolt-dev/css'
 import { isSpectatorSessionAvatar } from '../../core/extras/playerAvatars'
 import { BR_ENTRY_FEE_LAMPORTS, BR_HOUSE_FEE_PERCENT, LAMPORTS_PER_SOL } from '../../core/extras/solanaConfig.js'
 import {
-  connectPhantom,
-  connectPhantomEager,
+  connectWallet,
+  connectWalletEager,
+  getSolanaWallets,
   getTreasuryPubkey,
-  isPhantomInstalled,
   isUserRejection,
+  onSolanaWalletsChange,
   payEntryFee,
 } from '../extras/solanaWallet.js'
 
@@ -33,6 +34,7 @@ export function PlayerQueueList({ world }) {
   const [error, setError] = useState(null)
   const [match, setMatch] = useState(() => world.network?.matchState)
   const [pointerLocked, setPointerLocked] = useState(() => !!world.controls?.pointer?.locked)
+  const [walletChoices, setWalletChoices] = useState(null) // wallet picker open when non-null
 
   useEffect(() => {
     const syncRole = () => {
@@ -58,11 +60,11 @@ export function PlayerQueueList({ world }) {
     return () => world.off('pointer-lock', onPointerLock)
   }, [world])
 
-  // silently reconnect a previously-trusted wallet so the server can
+  // silently reconnect the wallet the user picked last time so the server can
   // auto-restore any unclaimed entry payment after a crash or rejoin
   useEffect(() => {
     let cancelled = false
-    connectPhantomEager().then(pubkey => {
+    connectWalletEager().then(pubkey => {
       if (cancelled || !pubkey) return
       setWallet(pubkey)
       world.network.send('setSolanaWallet', { wallet: pubkey })
@@ -71,6 +73,12 @@ export function PlayerQueueList({ world }) {
       cancelled = true
     }
   }, [world])
+
+  // while the picker is open, keep the list fresh as wallets register
+  useEffect(() => {
+    if (!walletChoices) return
+    return onSolanaWalletsChange(() => setWalletChoices(getSolanaWallets()))
+  }, [!!walletChoices])
 
   useEffect(() => {
     const onResult = data => {
@@ -116,33 +124,16 @@ export function PlayerQueueList({ world }) {
     world.network.send('leaveArena', {})
   }
 
-  const joinBattleRoyale = async () => {
-    setError(null)
-    const treasury = getTreasuryPubkey()
-    if (!treasury) {
-      setError('Arena payments are not configured')
-      return
-    }
-    if (!isPhantomInstalled()) {
-      setError('Phantom wallet not found')
-      return
-    }
-
+  // pay the entry fee with an already-connected wallet and join the queue
+  const payAndJoin = async activeWallet => {
     setPending(true)
     try {
-      let activeWallet = wallet
-      if (!activeWallet) {
-        activeWallet = await connectPhantom()
-        setWallet(activeWallet)
-        world.network.send('setSolanaWallet', { wallet: activeWallet })
-      }
-
       let signature = null
       try {
-        signature = await payEntryFee(treasury, BR_ENTRY_FEE_LAMPORTS)
+        signature = await payEntryFee(getTreasuryPubkey(), BR_ENTRY_FEE_LAMPORTS)
       } catch (err) {
         if (isUserRejection(err)) throw err
-        // the wallet extension can die after broadcasting the transaction —
+        // the wallet can die after broadcasting the transaction —
         // ask the server to find the payment on-chain instead of losing it
         console.warn('[solana] payEntryFee failed, attempting on-chain recovery:', err)
       }
@@ -155,6 +146,44 @@ export function PlayerQueueList({ world }) {
       setPending(false)
       setError(err.message || 'Payment failed')
     }
+  }
+
+  const connectAndPay = async walletName => {
+    setError(null)
+    setWalletChoices(null)
+    setPending(true)
+    try {
+      const pubkey = await connectWallet(walletName)
+      setWallet(pubkey)
+      world.network.send('setSolanaWallet', { wallet: pubkey })
+      await payAndJoin(pubkey)
+    } catch (err) {
+      setPending(false)
+      setError(err.message || 'Wallet connection failed')
+    }
+  }
+
+  const joinBattleRoyale = async () => {
+    setError(null)
+    if (!getTreasuryPubkey()) {
+      setError('Arena payments are not configured')
+      return
+    }
+    if (wallet) {
+      await payAndJoin(wallet)
+      return
+    }
+    const available = getSolanaWallets()
+    if (!available.length) {
+      setError('No Solana wallet found. Install Phantom, Solflare, or another Solana wallet and reload.')
+      return
+    }
+    if (available.length === 1) {
+      await connectAndPay(available[0].name)
+      return
+    }
+    // multiple wallets detected — let the user pick
+    setWalletChoices(available)
   }
 
 
@@ -257,6 +286,55 @@ export function PlayerQueueList({ world }) {
             cursor: not-allowed;
           }
         }
+        .arena-wallet-list {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          width: 100%;
+          max-width: 14rem;
+        }
+        .arena-wallet-list-title {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #3d2817;
+          text-align: center;
+          margin-bottom: 0.15rem;
+        }
+        .arena-wallet-option {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.45rem 0.7rem;
+          border: 1px solid rgba(61, 40, 23, 0.35);
+          border-radius: 6px;
+          background: rgba(255, 248, 240, 0.55);
+          color: #3d2817;
+          font-size: 0.82rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.15s;
+          &:hover {
+            background: rgba(255, 248, 240, 0.9);
+          }
+          img {
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 4px;
+          }
+        }
+        .arena-wallet-cancel {
+          border: none;
+          background: none;
+          padding: 0.2rem;
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: #5c4033;
+          text-decoration: underline;
+          cursor: pointer;
+          &:hover {
+            color: #3d2817;
+          }
+        }
         .arena-error {
           font-size: 0.72rem;
           color: #7a1515;
@@ -306,6 +384,19 @@ export function PlayerQueueList({ world }) {
             {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
             {isQueued ? (
               <div className='arena-queued'>You are in the battle royale queue!</div>
+            ) : walletChoices ? (
+              <div className='arena-wallet-list'>
+                <div className='arena-wallet-list-title'>Choose a wallet</div>
+                {walletChoices.map(({ name, icon }) => (
+                  <button key={name} type='button' className='arena-wallet-option' onClick={() => connectAndPay(name)}>
+                    {icon ? <img src={icon} alt='' /> : null}
+                    <span>{name}</span>
+                  </button>
+                ))}
+                <button type='button' className='arena-wallet-cancel' onClick={() => setWalletChoices(null)}>
+                  Cancel
+                </button>
+              </div>
             ) : (
               <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
                 {pending ? 'Verifying payment…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
