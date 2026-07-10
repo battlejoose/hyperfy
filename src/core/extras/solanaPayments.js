@@ -59,18 +59,25 @@ function getAccountKeys(tx) {
   })
 }
 
-export async function verifyEntryPayment({ signature, walletPubkey, playerId }) {
-  const existing = await db('solana_txs').where('signature', signature).first()
-  if (existing) {
-    throw new Error('Transaction already used')
-  }
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+/**
+ * Check a single confirmed transaction against the entry fee rules.
+ * Throws 'not found' when the RPC has not seen the tx yet (retryable),
+ * or a validation error when the tx exists but is not a valid payment.
+ */
+async function checkEntryTx(signature, walletPubkey) {
   const tx = await connection.getTransaction(signature, {
     commitment: 'confirmed',
     maxSupportedTransactionVersion: 0,
   })
-  if (!tx?.meta || tx.meta.err) {
-    throw new Error('Transaction not found or failed')
+  if (!tx?.meta) {
+    const err = new Error('Transaction not found')
+    err.retryable = true
+    throw err
+  }
+  if (tx.meta.err) {
+    throw new Error('Transaction failed on-chain')
   }
 
   const treasuryPubkey = treasuryKeypair.publicKey
@@ -99,14 +106,73 @@ export async function verifyEntryPayment({ signature, walletPubkey, playerId }) 
     throw new Error('Sender did not pay entry fee')
   }
 
+  return true
+}
+
+async function recordEntryTx(signature, playerId) {
   await db('solana_txs').insert({
     signature,
     player_id: playerId,
     type: 'br_entry',
     created_at: new Date().toISOString(),
   })
+}
 
+export async function verifyEntryPayment({ signature, walletPubkey, playerId, attempts = 6, delayMs = 3000 }) {
+  const existing = await db('solana_txs').where('signature', signature).first()
+  if (existing) {
+    throw new Error('Transaction already used')
+  }
+
+  // the client's RPC node may be ahead of ours — retry while the tx propagates
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await checkEntryTx(signature, walletPubkey)
+      break
+    } catch (err) {
+      if (!err.retryable || attempt >= attempts) throw err
+      await sleep(delayMs)
+    }
+  }
+
+  await recordEntryTx(signature, playerId)
   return true
+}
+
+/**
+ * Recovery path: the player says they paid but the wallet never returned a
+ * signature (e.g. the Phantom extension port died mid-flow). Scan the wallet's
+ * recent transactions for an unclaimed entry payment to the treasury.
+ * Returns the signature when found and recorded, or null.
+ */
+export async function findRecentEntryPayment({ walletPubkey, playerId, maxAgeSeconds = 600, attempts = 6, delayMs = 5000 }) {
+  const senderPubkey = new PublicKey(walletPubkey)
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const infos = await connection.getSignaturesForAddress(senderPubkey, { limit: 10 }, 'confirmed')
+      const now = Date.now() / 1000
+      for (const info of infos) {
+        if (info.err) continue
+        if (info.blockTime && now - info.blockTime > maxAgeSeconds) continue
+        const existing = await db('solana_txs').where('signature', info.signature).first()
+        if (existing) continue
+        try {
+          await checkEntryTx(info.signature, walletPubkey)
+        } catch {
+          continue
+        }
+        await recordEntryTx(info.signature, playerId)
+        return info.signature
+      }
+    } catch (err) {
+      console.error('[solana] Entry payment recovery scan failed:', err)
+    }
+    // the payment may still be propagating — wait and rescan
+    if (attempt < attempts) await sleep(delayMs)
+  }
+
+  return null
 }
 
 /** Send lamports from the treasury to a wallet (e.g. the battle royale winner's pot). */

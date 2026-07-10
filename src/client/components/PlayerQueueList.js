@@ -4,8 +4,10 @@ import { isSpectatorSessionAvatar } from '../../core/extras/playerAvatars'
 import { BR_ENTRY_FEE_LAMPORTS, BR_HOUSE_FEE_PERCENT, LAMPORTS_PER_SOL } from '../../core/extras/solanaConfig.js'
 import {
   connectPhantom,
+  connectPhantomEager,
   getTreasuryPubkey,
   isPhantomInstalled,
+  isUserRejection,
   payEntryFee,
 } from '../extras/solanaWallet.js'
 
@@ -56,8 +58,24 @@ export function PlayerQueueList({ world }) {
     return () => world.off('pointer-lock', onPointerLock)
   }, [world])
 
+  // silently reconnect a previously-trusted wallet so the server can
+  // auto-restore any unclaimed entry payment after a crash or rejoin
+  useEffect(() => {
+    let cancelled = false
+    connectPhantomEager().then(pubkey => {
+      if (cancelled || !pubkey) return
+      setWallet(pubkey)
+      world.network.send('setSolanaWallet', { wallet: pubkey })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [world])
+
   useEffect(() => {
     const onResult = data => {
+      // the server is still verifying an earlier request — stay in pending
+      if (data?.pending) return
       setPending(false)
       if (!data?.ok) {
         setError(data?.error || 'Something went wrong')
@@ -119,13 +137,26 @@ export function PlayerQueueList({ world }) {
         world.network.send('setSolanaWallet', { wallet: activeWallet })
       }
 
-      const signature = await payEntryFee(treasury, BR_ENTRY_FEE_LAMPORTS)
-      world.network.send('joinBattleRoyale', { signature, wallet: activeWallet })
+      let signature = null
+      try {
+        signature = await payEntryFee(treasury, BR_ENTRY_FEE_LAMPORTS)
+      } catch (err) {
+        if (isUserRejection(err)) throw err
+        // the wallet extension can die after broadcasting the transaction —
+        // ask the server to find the payment on-chain instead of losing it
+        console.warn('[solana] payEntryFee failed, attempting on-chain recovery:', err)
+      }
+
+      world.network.send(
+        'joinBattleRoyale',
+        signature ? { signature, wallet: activeWallet } : { wallet: activeWallet, recover: true }
+      )
     } catch (err) {
       setPending(false)
       setError(err.message || 'Payment failed')
     }
   }
+
 
   return (
     <div
@@ -277,7 +308,7 @@ export function PlayerQueueList({ world }) {
               <div className='arena-queued'>You are in the battle royale queue!</div>
             ) : (
               <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
-                {pending ? 'Processing…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
+                {pending ? 'Verifying payment…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
               </button>
             )}
             <div className='arena-pot'>

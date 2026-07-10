@@ -16,7 +16,7 @@ import {
   createArenaRemnants,
   serializeArenaRemnants,
 } from '../extras/arenaRemnants'
-import { verifyEntryPayment, sendPayout } from '../extras/solanaPayments.js'
+import { verifyEntryPayment, findRecentEntryPayment, sendPayout } from '../extras/solanaPayments.js'
 import { PublicKey } from '@solana/web3.js'
 import {
   BR_ENTRY_FEE_LAMPORTS,
@@ -146,6 +146,7 @@ export class ServerNetwork extends System {
       phase: 'queue', // 'queue' | 'battle'
       endsAt: 0, // server time (seconds) when the queue period ends
       queued: new Map(), // playerId -> { wallet }
+      nextQueued: new Map(), // paid entries verified too late for the current cycle
       alive: new Set(), // playerIds still standing during a battle
       potLamports: 0,
     }
@@ -157,6 +158,9 @@ export class ServerNetwork extends System {
     const br = this.battleRoyale
     br.phase = 'queue'
     br.endsAt = this.getTime() + BR_QUEUE_DURATION_SECONDS
+    // payments that verified after the previous queue closed roll into this one
+    br.nextQueued.forEach((entry, playerId) => br.queued.set(playerId, entry))
+    br.nextQueued.clear()
     clearTimeout(this.brTimerId)
     this.brTimerId = setTimeout(() => this.beginBattleRoyale(), BR_QUEUE_DURATION_SECONDS * 1000)
     this.broadcastMatchState()
@@ -644,6 +648,12 @@ export class ServerNetwork extends System {
 
       this.broadcastScoreboard()
 
+      // if this player paid the battle royale entry fee but was never queued
+      // (crash, wallet failure, disconnect mid-payment), restore it automatically
+      if (user.wallet_pubkey) {
+        this.autoRecoverEntryPayment(socket, user.wallet_pubkey)
+      }
+
       // enter events on the server are sent after the snapshot.
       // on the client these are sent during PlayerRemote.js entity instantiation!
       this.world.events.emit('enter', { playerId: socket.player.data.id })
@@ -675,6 +685,55 @@ export class ServerNetwork extends System {
     const entry = this.scoreboard.get(socket.player.data.id)
     if (entry) {
       entry.wallet = walletPubkey
+    }
+
+    // a freshly connected wallet may hold an unclaimed entry payment
+    this.autoRecoverEntryPayment(socket, walletPubkey)
+  }
+
+  /** Put a player whose entry payment is verified into the queue (or the next one if a battle is running). */
+  queueVerifiedEntry(socket, playerId, wallet) {
+    const br = this.battleRoyale
+    if (br.phase === 'queue') {
+      br.queued.set(playerId, { wallet })
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true })
+    } else {
+      br.nextQueued.set(playerId, { wallet })
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true, nextRound: true })
+      const name = socket.player?.data?.name || 'A gladiator'
+      this.announce(`${name} is locked in for the next battle royale.`)
+    }
+    this.broadcastMatchState()
+  }
+
+  /**
+   * Silent background check: if this player's wallet paid an entry fee that
+   * was never redeemed (crash, extension failure, disconnect mid-payment),
+   * re-add them to the queue automatically instead of charging them again.
+   */
+  async autoRecoverEntryPayment(socket, wallet) {
+    const playerId = socket.player?.data?.id
+    if (!playerId) return
+    const br = this.battleRoyale
+    if (br.queued.has(playerId) || br.nextQueued.has(playerId)) return
+    if (socket.brVerifying) return
+    socket.brVerifying = true
+    try {
+      // single scan, no retries — a lost payment is long confirmed by now
+      const found = await findRecentEntryPayment({ walletPubkey: wallet, playerId, attempts: 1 })
+      if (!found) return
+      this.queueVerifiedEntry(socket, playerId, wallet)
+      this.sendTo(socket.id, 'chatAdded', {
+        id: uuid(),
+        from: null,
+        fromId: null,
+        body: 'We found your battle royale entry payment — you are back in the queue.',
+        createdAt: moment().toISOString(),
+      })
+    } catch (err) {
+      console.error('[solana] Auto entry recovery failed:', err)
+    } finally {
+      socket.brVerifying = false
     }
   }
 
@@ -727,32 +786,45 @@ export class ServerNetwork extends System {
     const playerId = socket.player.data.id
     const br = this.battleRoyale
 
-    if (br?.phase !== 'queue') {
-      this.sendTo(socket.id, 'joinBattleRoyaleResult', {
-        ok: false,
-        error: 'A battle royale is in progress — the queue opens when it ends.',
-      })
-      return
-    }
-
-    if (br.queued.has(playerId)) {
+    if (br.queued.has(playerId) || br.nextQueued.has(playerId)) {
       this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true, alreadyQueued: true })
       return
     }
 
     const signature = data?.signature
     const wallet = data?.wallet
-    if (!signature || !wallet) {
+    const recover = !!data?.recover
+    if (!wallet || (!signature && !recover)) {
       this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: false, error: 'Payment required' })
       return
     }
 
-    try {
-      await verifyEntryPayment({
-        signature,
-        walletPubkey: wallet,
-        playerId,
+    // verification retries take time — don't let the same socket start two
+    if (socket.brVerifying) {
+      this.sendTo(socket.id, 'joinBattleRoyaleResult', {
+        ok: false,
+        pending: true,
+        error: 'Still verifying your payment — hang tight.',
       })
+      return
+    }
+    socket.brVerifying = true
+
+    try {
+      if (signature) {
+        await verifyEntryPayment({
+          signature,
+          walletPubkey: wallet,
+          playerId,
+        })
+      } else {
+        // the wallet extension failed before returning a signature — look for
+        // the payment on-chain so the player is not charged for nothing
+        const found = await findRecentEntryPayment({ walletPubkey: wallet, playerId })
+        if (!found) {
+          throw new Error('No entry payment found for your wallet. If you paid, it will be restored automatically — you will not be charged twice.')
+        }
+      }
     } catch (err) {
       console.error('[solana] Battle royale entry verification failed:', err)
       this.sendTo(socket.id, 'joinBattleRoyaleResult', {
@@ -760,11 +832,14 @@ export class ServerNetwork extends System {
         error: err.message || 'Payment verification failed',
       })
       return
+    } finally {
+      socket.brVerifying = false
     }
 
-    br.queued.set(playerId, { wallet })
-    this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true })
-    this.broadcastMatchState()
+    // verification is async — the queue may have closed in the meantime.
+    // the payment is recorded either way, so never drop it: roll it into the
+    // next cycle when a battle is underway.
+    this.queueVerifiedEntry(socket, playerId, wallet)
   }
 
   onPlayerHit = async (socket, data) => {

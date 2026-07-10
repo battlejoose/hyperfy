@@ -29,6 +29,21 @@ export async function connectPhantom() {
   return resp.publicKey.toBase58()
 }
 
+/**
+ * Silently reconnect to Phantom if the user already trusted this site.
+ * Returns the wallet pubkey or null — never prompts or throws.
+ */
+export async function connectPhantomEager() {
+  const phantom = getPhantom()
+  if (!phantom) return null
+  try {
+    const resp = await phantom.connect({ onlyIfTrusted: true })
+    return resp.publicKey.toBase58()
+  } catch {
+    return null
+  }
+}
+
 export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPORTS) {
   const phantom = getPhantom()
   if (!phantom?.publicKey) {
@@ -53,16 +68,29 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
   )
 
   const { signature } = await phantom.signAndSendTransaction(transaction)
-  await connection.confirmTransaction(
-    {
-      signature,
-      blockhash,
-      lastValidBlockHeight,
-    },
-    'confirmed'
-  )
+  try {
+    await connection.confirmTransaction(
+      {
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      },
+      'confirmed'
+    )
+  } catch (err) {
+    // we already have the signature — the server verifies on-chain with
+    // retries, so a client-side confirmation hiccup must not lose the payment
+    console.warn('[solana] confirmTransaction failed, continuing with signature:', err)
+  }
 
   return signature
+}
+
+/** True when the wallet error means the user declined, rather than a wallet/extension failure. */
+export function isUserRejection(err) {
+  if (!err) return false
+  if (err.code === 4001) return true
+  return /reject|declin|denied|cancell?ed/i.test(err.message || '')
 }
 
 export function getTreasuryPubkey() {
