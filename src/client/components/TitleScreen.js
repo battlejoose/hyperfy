@@ -51,14 +51,71 @@ function stopAudio(audio) {
 // survives the title screen unmounting and keeps playing into the arena.
 let proximoClipVideo = null
 let proximoClipFinished = false
+let proximoClipRetryAttached = false
+
+function endProximoClip() {
+  proximoClipFinished = true
+  removeProximoClipRetry()
+  proximoClipVideo?.remove()
+  proximoClipVideo = null
+}
+
+// autoplay with sound is blocked until a user activation. NOTE: on touch
+// devices only pointerup/touchend/click/keydown count as activation —
+// pointerdown does NOT, which is why retrying there froze the video on mobile
+function onProximoClipRetry() {
+  if (proximoClipFinished || !proximoClipVideo) {
+    removeProximoClipRetry()
+    return
+  }
+  tryPlayProximoClip()
+}
+
+function addProximoClipRetry() {
+  if (proximoClipRetryAttached) return
+  proximoClipRetryAttached = true
+  window.addEventListener('click', onProximoClipRetry)
+  window.addEventListener('touchend', onProximoClipRetry)
+  window.addEventListener('keydown', onProximoClipRetry)
+}
+
+function removeProximoClipRetry() {
+  if (!proximoClipRetryAttached) return
+  proximoClipRetryAttached = false
+  window.removeEventListener('click', onProximoClipRetry)
+  window.removeEventListener('touchend', onProximoClipRetry)
+  window.removeEventListener('keydown', onProximoClipRetry)
+}
+
+function tryPlayProximoClip() {
+  const video = proximoClipVideo
+  if (!video) return
+  if (!video.paused) {
+    removeProximoClipRetry()
+    return
+  }
+  video
+    .play()
+    .then(() => removeProximoClipRetry())
+    .catch(() => addProximoClipRetry())
+}
 
 function startProximoClip() {
   if (proximoClipFinished) return
 
   if (!proximoClipVideo) {
-    const video = document.createElement('video')
+    const probe = document.createElement('video')
+    // devices that can't decode the clip (e.g. iOS Safari without VP9/alpha
+    // WebM support) would show a frozen empty box forever — skip entirely
+    if (!probe.canPlayType('video/webm; codecs="vp9"')) {
+      proximoClipFinished = true
+      return
+    }
+
+    const video = probe
     video.src = ASSETS.proximoClip
     video.playsInline = true
+    video.setAttribute('playsinline', '')
     video.preload = 'auto'
     video.style.cssText = [
       'position: fixed',
@@ -68,16 +125,19 @@ function startProximoClip() {
       'z-index: 10001',
       'pointer-events: none',
       'background: transparent',
+      // stay invisible until playback actually starts so a blocked video
+      // never sits frozen in the corner
+      'visibility: hidden',
     ].join(';')
     video.addEventListener(
-      'ended',
+      'playing',
       () => {
-        proximoClipFinished = true
-        video.remove()
-        if (proximoClipVideo === video) proximoClipVideo = null
+        video.style.visibility = 'visible'
       },
       { once: true }
     )
+    video.addEventListener('ended', endProximoClip, { once: true })
+    video.addEventListener('error', endProximoClip, { once: true })
 
     let clappingPlayed = false
     video.addEventListener('timeupdate', () => {
@@ -90,9 +150,7 @@ function startProximoClip() {
     proximoClipVideo = video
   }
 
-  if (proximoClipVideo.paused) {
-    proximoClipVideo.play().catch(() => {})
-  }
+  tryPlayProximoClip()
 }
 
 export function TitleScreen({ onStart }) {
@@ -106,21 +164,8 @@ export function TitleScreen({ onStart }) {
   const canStart = trimmedName.length > 0
 
   useEffect(() => {
+    // manages its own blocked-autoplay retries internally
     startProximoClip()
-
-    // autoplay with sound may be blocked until the user interacts
-    const onFirstInteraction = () => {
-      startProximoClip()
-      window.removeEventListener('pointerdown', onFirstInteraction)
-      window.removeEventListener('keydown', onFirstInteraction)
-    }
-    window.addEventListener('pointerdown', onFirstInteraction)
-    window.addEventListener('keydown', onFirstInteraction)
-
-    return () => {
-      window.removeEventListener('pointerdown', onFirstInteraction)
-      window.removeEventListener('keydown', onFirstInteraction)
-    }
   }, [])
 
   useEffect(() => {
@@ -162,19 +207,21 @@ export function TitleScreen({ onStart }) {
     startMusic()
     startProximoClip()
 
+    // retry blocked autoplay on the first real user activation — on touch
+    // devices pointerdown does not count, pointerup/keydown do
     const onFirstInteraction = () => {
       startMusic()
       startProximoClip()
-      window.removeEventListener('pointerdown', onFirstInteraction)
+      window.removeEventListener('pointerup', onFirstInteraction)
       window.removeEventListener('keydown', onFirstInteraction)
     }
-    window.addEventListener('pointerdown', onFirstInteraction)
+    window.addEventListener('pointerup', onFirstInteraction)
     window.addEventListener('keydown', onFirstInteraction)
 
     usernameRef.current?.focus()
 
     return () => {
-      window.removeEventListener('pointerdown', onFirstInteraction)
+      window.removeEventListener('pointerup', onFirstInteraction)
       window.removeEventListener('keydown', onFirstInteraction)
       stopAudio(titleMusicRef.current)
       titleMusicRef.current = null
