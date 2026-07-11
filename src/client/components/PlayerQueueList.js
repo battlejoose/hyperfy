@@ -28,6 +28,12 @@ function formatSol(lamports) {
   return (lamports / LAMPORTS_PER_SOL).toFixed(4).replace(/\.?0+$/, '')
 }
 
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${String(secs).padStart(2, '0')}`
+}
+
 export function PlayerQueueList({ world }) {
   const [isSpectator, setIsSpectator] = useState(() => {
     const p = world.entities?.player
@@ -40,6 +46,8 @@ export function PlayerQueueList({ world }) {
   const [pointerLocked, setPointerLocked] = useState(() => !!world.controls?.pointer?.locked)
   const [walletChoices, setWalletChoices] = useState(null) // wallet picker open when non-null
   const [notice, setNotice] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
+  const [remaining, setRemaining] = useState(0)
 
   useEffect(() => {
     const syncRole = () => {
@@ -64,6 +72,21 @@ export function PlayerQueueList({ world }) {
     world.on('pointer-lock', onPointerLock)
     return () => world.off('pointer-lock', onPointerLock)
   }, [world])
+
+  // countdown to the next battle royale
+  useEffect(() => {
+    if (!match) return
+    const update = () => {
+      if (match.phase !== 'queue' || !match.endsAt) {
+        setRemaining(0)
+        return
+      }
+      setRemaining(Math.max(0, Math.ceil(match.endsAt - world.network.getTime())))
+    }
+    update()
+    const id = setInterval(update, 200)
+    return () => clearInterval(id)
+  }, [match, world])
 
   // silently reconnect the wallet the user picked last time so the server can
   // auto-restore any unclaimed entry payment after a crash or rejoin
@@ -272,21 +295,71 @@ export function PlayerQueueList({ world }) {
           gap: 0.6rem;
           padding: 1.75rem 2.5rem 2rem;
         }
-        .arena-title {
-          font-size: clamp(1.1rem, 3vw, 1.35rem);
+        .arena-countdown-label {
+          font-size: 0.85rem;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #5c4033;
+          text-align: center;
+        }
+        .arena-countdown-time {
+          font-size: 2.1rem;
+          font-weight: 700;
+          font-variant-numeric: tabular-nums;
+          line-height: 1;
+          color: #3d2817;
+          text-align: center;
+        }
+        .arena-help {
+          position: absolute;
+          top: 1.2rem;
+          right: 1.9rem;
+          z-index: 2;
+          width: 1.4rem;
+          height: 1.4rem;
+          border: 1px solid rgba(61, 40, 23, 0.45);
+          border-radius: 50%;
+          background: rgba(255, 248, 240, 0.6);
+          color: #3d2817;
+          font-size: 0.85rem;
+          font-weight: 700;
+          line-height: 1;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: background 0.15s;
+          &:hover {
+            background: rgba(255, 248, 240, 0.95);
+          }
+        }
+        .arena-tutorial-title {
+          font-size: 1.05rem;
           font-weight: 700;
           margin: 0;
           color: #3d2817;
           text-align: center;
           letter-spacing: 0.02em;
         }
-        .arena-subtitle {
+        .arena-tutorial {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          max-width: 15rem;
+        }
+        .arena-tutorial-row {
+          display: flex;
+          gap: 0.5rem;
+          font-size: 0.78rem;
           color: #5c4033;
-          font-size: 0.82rem;
-          margin: 0;
-          max-width: 13rem;
-          text-align: center;
           line-height: 1.4;
+        }
+        .arena-tutorial-key {
+          flex-shrink: 0;
+          width: 3.2rem;
+          font-weight: 700;
+          color: #3d2817;
         }
         .arena-actions {
           display: flex;
@@ -417,19 +490,40 @@ export function PlayerQueueList({ world }) {
     >
       <div className='arena-panel'>
         <img className='arena-scroll' src={SCROLL_SRC} alt='' />
+        <button
+          type='button'
+          className='arena-help'
+          onClick={() => setShowHelp(v => !v)}
+          title='How to fight'
+          aria-label='How to fight'
+        >
+          ?
+        </button>
+        {showHelp ? (
+          <div className='arena-panel-content'>
+            <h2 className='arena-tutorial-title'>How to Fight</h2>
+            <div className='arena-tutorial'>
+              <div className='arena-tutorial-row'>
+                <span className='arena-tutorial-key'>Attack</span>
+                <span>Hold left click and drag left, right, up, or down to swing from that direction.</span>
+              </div>
+              <div className='arena-tutorial-row'>
+                <span className='arena-tutorial-key'>Block</span>
+                <span>Hold right click and drag a direction to hold a block on that side. Release to lower it.</span>
+              </div>
+              <div className='arena-tutorial-row'>
+                <span className='arena-tutorial-key'>Kick</span>
+                <span>Press F to kick and knock your opponent back.</span>
+              </div>
+            </div>
+            <button type='button' className='arena-wallet-cancel' onClick={() => setShowHelp(false)}>
+              Back
+            </button>
+          </div>
+        ) : (
         <div className='arena-panel-content'>
-          <h2 className='arena-title'>The Arena</h2>
-          {isSpectator ? (
-            <p className='arena-subtitle'>
-              Fight freely in the arena, or pay {BR_ENTRY_FEE_SOL} SOL to enter the battle royale. Winner takes the
-              pot.
-            </p>
-          ) : (
-            <p className='arena-subtitle'>
-              You are fighting in the arena. Return to the stands, or pay {BR_ENTRY_FEE_SOL} SOL to enter the battle
-              royale.
-            </p>
-          )}
+          <div className='arena-countdown-label'>Battle Royale In:</div>
+          <div className='arena-countdown-time'>{formatTime(remaining)}</div>
           <div className='arena-actions'>
             {isSpectator ? (
               <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending}>
@@ -486,6 +580,7 @@ export function PlayerQueueList({ world }) {
           {notice ? <div className='arena-notice'>{notice}</div> : null}
           {error ? <div className='arena-error'>{error}</div> : null}
         </div>
+        )}
       </div>
     </div>
   )
