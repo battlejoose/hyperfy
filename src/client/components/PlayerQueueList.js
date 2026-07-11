@@ -265,16 +265,17 @@ export function PlayerQueueList({ world }) {
     <div
       css={css`
         position: absolute;
-        top: 5.5rem;
-        right: 1rem;
+        top: 0.75rem;
+        left: 50%;
+        transform: translateX(-50%);
         width: fit-content;
-        max-width: min(27rem, calc(100vw - 2rem));
+        max-width: min(44rem, calc(100vw - 2rem));
         pointer-events: auto;
         z-index: 997;
         .arena-panel {
           position: relative;
           display: inline-block;
-          max-width: min(27rem, calc(100vw - 2rem));
+          max-width: min(44rem, calc(100vw - 2rem));
           border: none;
           background: transparent;
         }
@@ -292,8 +293,27 @@ export function PlayerQueueList({ world }) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.6rem;
-          padding: 1.75rem 2.5rem 2rem;
+          gap: 0.5rem;
+          padding: 1.4rem 3rem 1.6rem;
+        }
+        .arena-row {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1.75rem;
+        }
+        .arena-col {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.4rem;
+          min-width: 10rem;
+        }
+        .arena-col-center {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.3rem;
         }
         .arena-countdown-label {
           font-size: 0.85rem;
@@ -313,8 +333,8 @@ export function PlayerQueueList({ world }) {
         }
         .arena-help {
           position: absolute;
-          top: 1.2rem;
-          right: 1.9rem;
+          top: 1.15rem;
+          right: 2.4rem;
           z-index: 2;
           width: 1.4rem;
           height: 1.4rem;
@@ -360,13 +380,6 @@ export function PlayerQueueList({ world }) {
           width: 3.2rem;
           font-weight: 700;
           color: #3d2817;
-        }
-        .arena-actions {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0.5rem;
-          width: 100%;
         }
         .arena-enter,
         .arena-enter-test {
@@ -464,7 +477,7 @@ export function PlayerQueueList({ world }) {
           color: #7a1515;
           line-height: 1.35;
           text-align: center;
-          max-width: 13rem;
+          max-width: 24rem;
         }
         .arena-queued {
           font-size: 0.85rem;
@@ -484,7 +497,7 @@ export function PlayerQueueList({ world }) {
           color: #1e5c2f;
           line-height: 1.35;
           text-align: center;
-          max-width: 13rem;
+          max-width: 24rem;
         }
       `}
     >
@@ -522,59 +535,65 @@ export function PlayerQueueList({ world }) {
           </div>
         ) : (
         <div className='arena-panel-content'>
-          <div className='arena-countdown-label'>Battle Royale In:</div>
-          <div className='arena-countdown-time'>{formatTime(remaining)}</div>
-          <div className='arena-actions'>
-            {isSpectator ? (
-              <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending}>
-                Enter the Arena
-              </button>
-            ) : (
-              <button type='button' className='arena-enter-test' onClick={becomeSpectator} disabled={pending}>
-                Become Spectator
-              </button>
-            )}
-            {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
-            {isQueued ? (
-              <div className='arena-queued'>You are in the battle royale queue!</div>
-            ) : walletChoices ? (
-              <div className='arena-wallet-list'>
-                <div className='arena-wallet-list-title'>Choose a wallet</div>
-                {walletChoices.map(({ type, name, icon, url }) =>
-                  type === 'link' ? (
-                    <button
-                      key={name}
-                      type='button'
-                      className='arena-wallet-option'
-                      onClick={() => {
-                        window.location.href = url
-                      }}
-                    >
-                      <span>Open in {name}</span>
-                    </button>
-                  ) : (
-                    <button
-                      key={name}
-                      type='button'
-                      className='arena-wallet-option'
-                      onClick={() => connectAndPay(name)}
-                    >
-                      {icon ? <img src={icon} alt='' /> : null}
-                      <span>{name}</span>
-                    </button>
-                  )
-                )}
-                <button type='button' className='arena-wallet-cancel' onClick={() => setWalletChoices(null)}>
-                  Cancel
+          <div className='arena-row'>
+            <div className='arena-col'>
+              {isQueued ? (
+                <div className='arena-queued'>You are in the battle royale queue!</div>
+              ) : walletChoices ? (
+                <div className='arena-wallet-list'>
+                  <div className='arena-wallet-list-title'>Choose a wallet</div>
+                  {walletChoices.map(({ type, name, icon, url }) =>
+                    type === 'link' ? (
+                      <button
+                        key={name}
+                        type='button'
+                        className='arena-wallet-option'
+                        onClick={() => {
+                          window.location.href = url
+                        }}
+                      >
+                        <span>Open in {name}</span>
+                      </button>
+                    ) : (
+                      <button
+                        key={name}
+                        type='button'
+                        className='arena-wallet-option'
+                        onClick={() => connectAndPay(name)}
+                      >
+                        {icon ? <img src={icon} alt='' /> : null}
+                        <span>{name}</span>
+                      </button>
+                    )
+                  )}
+                  <button type='button' className='arena-wallet-cancel' onClick={() => setWalletChoices(null)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
+                  {pending ? 'Verifying payment…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
                 </button>
+              )}
+              {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
+              <div className='arena-pot'>
+                {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
               </div>
-            ) : (
-              <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
-                {pending ? 'Verifying payment…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
-              </button>
-            )}
-            <div className='arena-pot'>
-              {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
+            </div>
+            <div className='arena-col-center'>
+              <div className='arena-countdown-label'>Battle Royale In:</div>
+              <div className='arena-countdown-time'>{formatTime(remaining)}</div>
+            </div>
+            <div className='arena-col'>
+              {isSpectator ? (
+                <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending}>
+                  Enter the Arena
+                </button>
+              ) : (
+                <button type='button' className='arena-enter-test' onClick={becomeSpectator} disabled={pending}>
+                  Become Spectator
+                </button>
+              )}
             </div>
           </div>
           {notice ? <div className='arena-notice'>{notice}</div> : null}
