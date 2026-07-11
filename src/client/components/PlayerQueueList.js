@@ -301,6 +301,7 @@ export function PlayerQueueList({ world }) {
           align-items: center;
           justify-content: center;
           gap: 1.75rem;
+          width: 100%;
         }
         .arena-col {
           display: flex;
@@ -493,6 +494,76 @@ export function PlayerQueueList({ world }) {
           line-height: 1.35;
           text-align: center;
           max-width: 14rem;
+        }
+        @media (max-width: 640px) {
+          width: calc(100vw - 1rem);
+          max-width: calc(100vw - 1rem);
+          .arena-panel {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+          }
+          .arena-panel-content {
+            padding: 1rem 3.5rem 1.25rem;
+          }
+          .arena-row {
+            gap: 0.35rem;
+            width: 100%;
+            max-width: 100%;
+          }
+          .arena-col {
+            min-width: 0;
+            flex: 1 1 0;
+            max-width: 4.85rem;
+          }
+          .arena-col-center {
+            flex: 1.5 1 0;
+            min-width: 0;
+            max-width: 8.5rem;
+          }
+          .arena-countdown-label {
+            font-size: 0.62rem;
+            letter-spacing: 0.03em;
+          }
+          .arena-countdown-time {
+            font-size: 1.4rem;
+          }
+          .arena-enter,
+          .arena-enter-test {
+            font-size: 0.66rem;
+            padding: 0.32rem 0.4rem;
+            white-space: normal;
+            text-align: center;
+            line-height: 1.2;
+            width: 100%;
+            max-width: 100%;
+          }
+          .arena-howto {
+            font-size: 0.64rem;
+            padding: 0.28rem 0.38rem;
+            white-space: normal;
+            text-align: center;
+            line-height: 1.2;
+            width: 100%;
+            max-width: 100%;
+          }
+          .arena-wallet-label,
+          .arena-pot {
+            font-size: 0.62rem;
+            line-height: 1.25;
+          }
+          .arena-queued {
+            font-size: 0.68rem;
+            line-height: 1.25;
+          }
+          .arena-error,
+          .arena-notice {
+            font-size: 0.65rem;
+            max-width: 8.5rem;
+          }
+          .arena-wallet-list {
+            max-width: 8.5rem;
+          }
         }
       `}
     >
