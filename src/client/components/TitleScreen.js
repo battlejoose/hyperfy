@@ -10,7 +10,7 @@ const MAX_NAME_LENGTH = 24
 const FADE_MS = 600
 
 const ASSETS = {
-  bg: '/assets/gladimage.png',
+  bg: '/assets/gladiatorbackground.webp',
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
   proximoClip: '/assets/proximoclip.webm',
@@ -37,7 +37,7 @@ function loadImageSrc(src) {
 }
 
 // Only gate the spinner on the background — scroll and music load in the background.
-// index.html already preloads gladimage.png + scroll.png while the JS bundle loads.
+// index.html already preloads gladiatorbackground.webp + scroll.png while the JS bundle loads.
 const titleBgReady = loadImageSrc(ASSETS.bg)
 const titleScrollReady = loadImageSrc(ASSETS.scroll)
 
