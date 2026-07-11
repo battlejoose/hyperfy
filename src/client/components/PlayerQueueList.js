@@ -313,7 +313,7 @@ export function PlayerQueueList({ world }) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.3rem;
+          gap: 0.4rem;
         }
         .arena-countdown-label {
           font-size: 0.85rem;
@@ -331,24 +331,17 @@ export function PlayerQueueList({ world }) {
           color: #3d2817;
           text-align: center;
         }
-        .arena-help {
-          position: absolute;
-          top: 1.15rem;
-          right: 2.4rem;
-          z-index: 2;
-          width: 1.4rem;
-          height: 1.4rem;
+        .arena-howto {
+          width: fit-content;
+          padding: 0.35rem 0.8rem;
           border: 1px solid rgba(61, 40, 23, 0.45);
-          border-radius: 50%;
+          border-radius: 6px;
           background: rgba(255, 248, 240, 0.6);
           color: #3d2817;
-          font-size: 0.85rem;
+          font-size: 0.78rem;
           font-weight: 700;
-          line-height: 1;
           cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          white-space: nowrap;
           transition: background 0.15s;
           &:hover {
             background: rgba(255, 248, 240, 0.95);
@@ -402,6 +395,8 @@ export function PlayerQueueList({ world }) {
           text-align: center;
         }
         .arena-enter {
+          padding: 0.4rem 0.75rem;
+          font-size: 0.78rem;
           color: #fff8f0;
           background: #7a1515;
           &:hover:not(:disabled) {
@@ -477,7 +472,7 @@ export function PlayerQueueList({ world }) {
           color: #7a1515;
           line-height: 1.35;
           text-align: center;
-          max-width: 24rem;
+          max-width: 14rem;
         }
         .arena-queued {
           font-size: 0.85rem;
@@ -497,21 +492,12 @@ export function PlayerQueueList({ world }) {
           color: #1e5c2f;
           line-height: 1.35;
           text-align: center;
-          max-width: 24rem;
+          max-width: 14rem;
         }
       `}
     >
       <div className='arena-panel'>
         <img className='arena-scroll' src={SCROLL_SRC} alt='' />
-        <button
-          type='button'
-          className='arena-help'
-          onClick={() => setShowHelp(v => !v)}
-          title='How to fight'
-          aria-label='How to fight'
-        >
-          ?
-        </button>
         {showHelp ? (
           <div className='arena-panel-content'>
             <h2 className='arena-tutorial-title'>How to Fight</h2>
@@ -537,6 +523,14 @@ export function PlayerQueueList({ world }) {
         <div className='arena-panel-content'>
           <div className='arena-row'>
             <div className='arena-col'>
+              {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
+              <div className='arena-pot'>
+                {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
+              </div>
+            </div>
+            <div className='arena-col-center'>
+              <div className='arena-countdown-label'>Battle Royal begins in:</div>
+              <div className='arena-countdown-time'>{formatTime(remaining)}</div>
               {isQueued ? (
                 <div className='arena-queued'>You are in the battle royale queue!</div>
               ) : walletChoices ? (
@@ -572,32 +566,27 @@ export function PlayerQueueList({ world }) {
                 </div>
               ) : (
                 <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
-                  {pending ? 'Verifying payment…' : `Join Battle Royale (${BR_ENTRY_FEE_SOL} SOL)`}
+                  {pending ? 'Verifying payment…' : `Enter Queue (${BR_ENTRY_FEE_SOL} SOL)`}
                 </button>
               )}
-              {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
-              <div className='arena-pot'>
-                {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
-              </div>
-            </div>
-            <div className='arena-col-center'>
-              <div className='arena-countdown-label'>Battle Royale In:</div>
-              <div className='arena-countdown-time'>{formatTime(remaining)}</div>
+              {notice ? <div className='arena-notice'>{notice}</div> : null}
+              {error ? <div className='arena-error'>{error}</div> : null}
             </div>
             <div className='arena-col'>
               {isSpectator ? (
                 <button type='button' className='arena-enter-test' onClick={enterArena} disabled={pending}>
-                  Enter the Arena
+                  Fight for Free
                 </button>
               ) : (
                 <button type='button' className='arena-enter-test' onClick={becomeSpectator} disabled={pending}>
                   Become Spectator
                 </button>
               )}
+              <button type='button' className='arena-howto' onClick={() => setShowHelp(true)}>
+                How to Fight
+              </button>
             </div>
           </div>
-          {notice ? <div className='arena-notice'>{notice}</div> : null}
-          {error ? <div className='arena-error'>{error}</div> : null}
         </div>
         )}
       </div>
