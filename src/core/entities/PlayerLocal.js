@@ -46,6 +46,9 @@ const MIN_ZOOM = 0
 const MAX_ZOOM = 8
 const STICK_OUTER_RADIUS = 50
 const STICK_INNER_RADIUS = 25
+const TOUCH_COMBAT_ZONE_WIDTH = 150
+const TOUCH_COMBAT_ZONE_HEIGHT = 320
+const TOUCH_COMBAT_STICK_THRESHOLD = 0.5
 const DEFAULT_CAM_HEIGHT = 1.2
 
 const v1 = new THREE.Vector3()
@@ -169,6 +172,11 @@ export class PlayerLocal extends Entity {
     
     // Current attack tag for blocking system
     this.currentAttackTag = null // 'high', 'left', 'right', 'low'
+
+    // Mobile combat joysticks (set from CoreUI TouchCombatSticks)
+    this.attackStick = null
+    this.blockStick = null
+    this.touchAttackHadDeflection = false
 
     this.pushForce = null
     this.pushForceInit = false
@@ -1041,6 +1049,80 @@ export class PlayerLocal extends Entity {
     this.jumpCooldownUntil = Date.now() + JumpTiming.cooldown * 1000
   }
 
+  getDirectionalCombatEmote(dx, dy, kind) {
+    const absX = Math.abs(dx)
+    const absY = Math.abs(dy)
+    if (absX > absY) {
+      if (dx > 0) return kind === 'attack' ? Emotes.ATTACK_RIGHT : Emotes.BLOCK_RIGHT
+      return kind === 'attack' ? Emotes.ATTACK_LEFT : Emotes.BLOCK_LEFT
+    }
+    if (dy > 0) return kind === 'attack' ? Emotes.ATTACK_LOW : Emotes.BLOCK_LOW
+    return kind === 'attack' ? Emotes.ATTACK_HIGH : Emotes.BLOCK_HIGH
+  }
+
+  releaseChargedAttackFromInput() {
+    if (this.earlyReleaseHoldActive) return
+    const windupElapsed = this.chargeStartTime
+      ? (Date.now() - this.chargeStartTime) / 1000
+      : this.attackWindupTime
+    if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
+      this.completeChargedAttack()
+    } else {
+      this.pendingChargedRelease = true
+    }
+  }
+
+  processTouchCombatInput() {
+    const attackStick = this.attackStick
+    if (attackStick) {
+      if (attackStick.pressed) {
+        this.touchAttackHadDeflection = false
+        attackStick.pressed = false
+      }
+
+      const attackDist = Math.hypot(attackStick.x, attackStick.y)
+      if (
+        attackStick.down &&
+        attackDist > TOUCH_COMBAT_STICK_THRESHOLD &&
+        !this.isChargingAttack &&
+        !this.touchAttackHadDeflection
+      ) {
+        this.startAttack(this.getDirectionalCombatEmote(attackStick.x, attackStick.y, 'attack'), true)
+        this.touchAttackHadDeflection = true
+      }
+
+      if (attackStick.released) {
+        if (this.isChargingAttack) {
+          this.releaseChargedAttackFromInput()
+        } else if (!this.touchAttackHadDeflection) {
+          this.startAttack(Emotes.ATTACK_RIGHT)
+        }
+        this.touchAttackHadDeflection = false
+        attackStick.released = false
+      }
+    }
+
+    const blockStick = this.blockStick
+    if (blockStick) {
+      const blockDist = Math.hypot(blockStick.x, blockStick.y)
+      const blockDeflected = blockStick.down && blockDist > TOUCH_COMBAT_STICK_THRESHOLD
+
+      if (blockDeflected && !this.isHoldingBlock && !this.isBlockDragging) {
+        this.isBlockDragging = true
+        this.startBlock(this.getDirectionalCombatEmote(blockStick.x, blockStick.y, 'block'), true)
+      } else if (!blockDeflected && this.isHoldingBlock && blockStick.down) {
+        this.stopBlock()
+        this.isBlockDragging = false
+      }
+
+      if (blockStick.released) {
+        if (this.isHoldingBlock) this.stopBlock()
+        this.isBlockDragging = false
+        blockStick.released = false
+      }
+    }
+  }
+
   startAttack(emote, chargeMode = false) {
     if (this.isSpectator()) return
     // Can't attack while sprinting
@@ -1706,13 +1788,16 @@ export class PlayerLocal extends Entity {
     this.control = this.world.controls.bind({
       priority: ControlPriorities.PLAYER,
       onTouch: touch => {
-        if (!this.stick && touch.position.x < this.control.screen.width / 2) {
+        const inCombatZone =
+          touch.position.x < TOUCH_COMBAT_ZONE_WIDTH &&
+          touch.position.y > this.control.screen.height - TOUCH_COMBAT_ZONE_HEIGHT
+        if (!this.stick && touch.position.x < this.control.screen.width / 2 && !inCombatZone) {
           this.stick = {
             center: touch.position.clone(),
             active: false,
             touch,
           }
-        } else if (!this.pan) {
+        } else if (!this.pan && !inCombatZone) {
           this.pan = touch
         }
       },
@@ -2512,6 +2597,8 @@ export class PlayerLocal extends Entity {
         this.mouseDragAccumulated = null
         this.isDragging = false
       }
+
+      this.processTouchCombatInput()
     }
 
     // get our movement direction

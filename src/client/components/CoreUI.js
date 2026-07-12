@@ -111,6 +111,7 @@ export function CoreUI({ world }) {
       {!ready && <LoadingOverlay world={world} />}
       {kicked && <KickedOverlay code={kicked} />}
       {ready && isTouch && <TouchBtns world={world} />}
+      {ready && isTouch && <TouchCombatSticks world={world} />}
       {ready && isTouch && <TouchStick world={world} />}
       {confirm && <Confirm options={confirm} />}
       <div id='core-ui-portal' />
@@ -1142,7 +1143,7 @@ function TouchBtns({ world }) {
             width: 4rem;
             height: 4rem;
             bottom: 1rem;
-            right: 1rem;
+            left: 1rem;
           }
           &.action {
             width: 2.5rem;
@@ -1174,13 +1175,171 @@ function TouchBtns({ world }) {
           e.currentTarget.setPointerCapture(e.pointerId)
           world.controls.setTouchBtn('touchA', true)
         }}
-        onPointerLeave={e => {
+        onPointerUp={e => {
           world.controls.setTouchBtn('touchA', false)
           e.currentTarget.releasePointerCapture(e.pointerId)
+        }}
+        onPointerCancel={e => {
+          world.controls.setTouchBtn('touchA', false)
         }}
       >
         <ChevronDoubleUpIcon size='1.5rem' />
       </div>
+    </div>
+  )
+}
+
+const COMBAT_STICK_MOVE = 25
+
+function FixedCombatStick({ label, onStickChange }) {
+  const outerRef = useRef()
+  const innerRef = useRef()
+  const pointerIdRef = useRef(null)
+
+  const resetKnob = () => {
+    const inner = innerRef.current
+    if (inner) inner.style.transform = 'translate(-50%, -50%)'
+  }
+
+  const emit = partial => {
+    onStickChange({
+      down: false,
+      pressed: false,
+      released: false,
+      active: false,
+      x: 0,
+      y: 0,
+      ...partial,
+    })
+  }
+
+  const handlePointerDown = e => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    pointerIdRef.current = e.pointerId
+    resetKnob()
+    emit({ down: true, pressed: true })
+  }
+
+  const handlePointerMove = e => {
+    if (pointerIdRef.current !== e.pointerId) return
+    const outer = outerRef.current
+    const inner = innerRef.current
+    if (!outer || !inner) return
+
+    const rect = outer.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    let dx = e.clientX - cx
+    let dy = e.clientY - cy
+    const dist = Math.hypot(dx, dy)
+    if (dist > COMBAT_STICK_MOVE) {
+      dx = (dx * COMBAT_STICK_MOVE) / dist
+      dy = (dy * COMBAT_STICK_MOVE) / dist
+    }
+    inner.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`
+    emit({
+      down: true,
+      active: dist > 3,
+      x: dx / COMBAT_STICK_MOVE,
+      y: dy / COMBAT_STICK_MOVE,
+    })
+  }
+
+  const handlePointerEnd = e => {
+    if (pointerIdRef.current !== e.pointerId) return
+    pointerIdRef.current = null
+    resetKnob()
+    emit({ released: true })
+    e.currentTarget.releasePointerCapture(e.pointerId)
+  }
+
+  return (
+    <div
+      className='combat-stick'
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+    >
+      <div className='combat-stick-outer' ref={outerRef}>
+        <span className='combat-stick-label'>{label}</span>
+      </div>
+      <div className='combat-stick-inner' ref={innerRef} />
+    </div>
+  )
+}
+
+function TouchCombatSticks({ world }) {
+  useEffect(() => {
+    return () => {
+      const player = world.entities?.player
+      if (player) {
+        player.attackStick = null
+        player.blockStick = null
+      }
+    }
+  }, [world])
+
+  const setAttackStick = state => {
+    const player = world.entities?.player
+    if (player) player.attackStick = state
+  }
+
+  const setBlockStick = state => {
+    const player = world.entities?.player
+    if (player) player.blockStick = state
+  }
+
+  return (
+    <div
+      className='touch-combat'
+      css={css`
+        position: absolute;
+        left: calc(1rem + env(safe-area-inset-left));
+        bottom: calc(5.75rem + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        pointer-events: none;
+        z-index: 998;
+        .combat-stick {
+          pointer-events: auto;
+          position: relative;
+          width: 100px;
+          height: 100px;
+        }
+        .combat-stick-outer {
+          position: absolute;
+          inset: 0;
+          border-radius: 100px;
+          background: rgba(0, 0, 0, 0.3);
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          padding-bottom: 0.35rem;
+        }
+        .combat-stick-label {
+          font-size: 0.62rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          color: rgba(255, 255, 255, 0.75);
+          pointer-events: none;
+          user-select: none;
+        }
+        .combat-stick-inner {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 50px;
+          height: 50px;
+          border-radius: 50px;
+          background: white;
+          transform: translate(-50%, -50%);
+        }
+      `}
+    >
+      <FixedCombatStick label='ATK' onStickChange={setAttackStick} />
+      <FixedCombatStick label='BLK' onStickChange={setBlockStick} />
     </div>
   )
 }
@@ -1202,17 +1361,17 @@ function TouchStick({ world }) {
         inner.style.opacity = 0.1
         const radius = 50 // matches PlayerLocal.js STICK_OUTER_RADIUS
         if (window.innerWidth < window.innerHeight) {
-          // portrait
+          // portrait — keep idle hint mid-left so it doesn't overlap combat sticks
           outer.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 50px)`
-          outer.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
+          outer.style.top = `calc(50dvh)`
           inner.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 50px)`
-          inner.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
+          inner.style.top = `calc(50dvh)`
         } else {
           // landscape
           outer.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 90px)`
-          outer.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
+          outer.style.top = `calc(50dvh)`
           inner.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 90px)`
-          inner.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
+          inner.style.top = `calc(50dvh)`
         }
       }
     }
