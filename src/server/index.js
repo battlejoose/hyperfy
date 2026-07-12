@@ -14,6 +14,7 @@ import multipart from '@fastify/multipart'
 import { createServerWorld } from '../core/createServerWorld'
 import { initSolanaPayments } from '../core/extras/solanaPayments.js'
 import { getDB } from './db'
+import { getArenaLeaderboard } from '../core/extras/arenaRatingService.js'
 import { Storage } from './Storage'
 import { assets } from './assets'
 import { collections } from './collections'
@@ -184,6 +185,11 @@ fastify.post('/api/upload', async (req, reply) => {
 fastify.get('/api/upload-check', async (req, reply) => {
   const exists = await assets.exists(req.query.filename)
   return { exists }
+})
+
+fastify.get('/api/arena/leaderboard', async () => {
+  const players = await getArenaLeaderboard(db)
+  return { players }
 })
 
 fastify.get('/health', async (request, reply) => {

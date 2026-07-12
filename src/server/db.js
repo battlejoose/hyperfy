@@ -12,12 +12,16 @@ let db
 
 export async function getDB({ worldDir }) {
   if (!db) {
-    const isPostgres = process.env.DB_URI?.startsWith('postgres://') || process.env.DB_URI?.startsWith('postgresql://')
+    const dbUri = resolveDatabaseUri()
+    const isPostgres = dbUri?.startsWith('postgres://') || dbUri?.startsWith('postgresql://')
     if (isPostgres) {
       const schema = process.env.DB_SCHEMA || 'public'
+      const useHeroku = !!process.env.DATABASE_URL && dbUri === process.env.DATABASE_URL
       db = Knex({
         client: 'pg',
-        connection: process.env.DB_URI,
+        connection: useHeroku
+          ? { connectionString: dbUri, ssl: { rejectUnauthorized: false } }
+          : dbUri,
         pool: { min: 2, max: 10 },
         searchPath: [schema],
         useNullAsDefault: true,
@@ -37,6 +41,14 @@ export async function getDB({ worldDir }) {
     await migrate(db)
   }
   return db
+}
+
+function resolveDatabaseUri() {
+  const dbUri = process.env.DB_URI
+  if (dbUri && dbUri !== 'local') return dbUri
+  // Heroku Postgres sets DATABASE_URL automatically
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL
+  return dbUri
 }
 
 async function migrate(db) {
@@ -451,6 +463,16 @@ const migrations = [
       table.string('player_id').notNullable()
       table.string('type').notNullable() // 'entry' | 'kill_reward'
       table.timestamp('created_at').notNullable()
+    })
+  },
+  // persistent arena rating for paid battle royale
+  async db => {
+    await db.schema.alterTable('users', table => {
+      table.integer('arena_rating').notNullable().defaultTo(1000)
+      table.integer('arena_wins').notNullable().defaultTo(0)
+      table.integer('arena_kills').notNullable().defaultTo(0)
+      table.integer('arena_deaths').notNullable().defaultTo(0)
+      table.integer('arena_matches').notNullable().defaultTo(0)
     })
   },
 ]

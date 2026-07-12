@@ -26,6 +26,8 @@ export class ClientNetwork extends System {
     this.queue = []
     this.scoreboard = null
     this.matchState = null
+    this.arenaRating = null
+    this.arenaLeaderboard = null
     this.bootstrapping = null
   }
 
@@ -37,6 +39,16 @@ export class ClientNetwork extends System {
   setMatchState(data) {
     this.matchState = data
     this.world.emit('matchState', data)
+  }
+
+  setArenaRating(data) {
+    this.arenaRating = data
+    this.world.emit('arenaRating', data)
+  }
+
+  setArenaLeaderboard(data) {
+    this.arenaLeaderboard = data
+    this.world.emit('arenaLeaderboard', data)
   }
 
   init({ wsUrl, name, avatar }) {
@@ -145,6 +157,12 @@ export class ClientNetwork extends System {
     if (data.matchState) {
       this.setMatchState(data.matchState)
     }
+    if (data.arenaRating) {
+      this.setArenaRating(data.arenaRating)
+    }
+    if (data.arenaLeaderboard) {
+      this.setArenaLeaderboard(data.arenaLeaderboard)
+    }
     if (data.arenaRemnants) {
       try {
         replayCorpses(this.world, data.arenaRemnants.corpses)
@@ -230,6 +248,14 @@ export class ClientNetwork extends System {
 
   onMatchState = data => {
     this.setMatchState(data)
+  }
+
+  onArenaRating = data => {
+    this.setArenaRating(data)
+  }
+
+  onArenaLeaderboard = data => {
+    this.setArenaLeaderboard(data)
   }
 
   onEnterArenaResult = data => {

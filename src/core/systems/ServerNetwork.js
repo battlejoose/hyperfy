@@ -24,6 +24,14 @@ import {
   BR_QUEUE_DURATION_SECONDS,
   LAMPORTS_PER_SOL,
 } from '../extras/solanaConfig.js'
+import {
+  applyArenaDeathRating,
+  applyArenaKillRating,
+  applyArenaWinRating,
+  getArenaLeaderboard,
+  getUserArenaStats,
+  recordPaidBattleRoyaleMatches,
+} from '../extras/arenaRatingService.js'
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -208,6 +216,12 @@ export class ServerNetwork extends System {
     br.endsAt = 0
     br.potLamports = br.queued.size * BR_ENTRY_FEE_LAMPORTS
     br.alive = new Set()
+    br.ratedDeaths = new Set()
+
+    const matchPlayerIds = [...br.queued.keys()]
+    recordPaidBattleRoyaleMatches(this.db, matchPlayerIds).catch(err =>
+      console.error('[arena] failed to record paid battle royale matches:', err)
+    )
 
     // queued players still connected enter the battle; everyone else in the
     // arena is returned to the stands
@@ -247,6 +261,7 @@ export class ServerNetwork extends System {
     const br = this.battleRoyale
     if (br?.phase !== 'battle') return
     if (!br.alive.delete(playerId)) return
+    this.recordBattleRoyaleDeathRating(playerId)
     this.broadcastMatchState()
     this.checkBattleRoyaleWinner()
   }
@@ -265,6 +280,7 @@ export class ServerNetwork extends System {
     const payoutSol = payoutLamports / LAMPORTS_PER_SOL
 
     if (winnerId) {
+      this.recordBattleRoyaleWinRating(winnerId)
       const wallet = br.queued.get(winnerId)?.wallet
       const winnerPlayer = this.world.entities.get(winnerId)
       const winnerName = winnerPlayer?.data?.name || 'A gladiator'
@@ -420,7 +436,62 @@ export class ServerNetwork extends System {
       this.saveTeamKills().catch(err => console.error('failed to save teamKills:', err))
     }
     if (victim) victim.deaths += 1
+    this.recordBattleRoyaleKillRating(attackerId, targetId)
     this.broadcastScoreboard()
+  }
+
+  isPaidBattleRoyaleParticipant(playerId) {
+    const br = this.battleRoyale
+    return !!(br?.phase === 'battle' && br.queued.has(playerId))
+  }
+
+  recordBattleRoyaleKillRating(attackerId, targetId) {
+    if (!this.isPaidBattleRoyaleParticipant(attackerId)) return
+    if (!this.isPaidBattleRoyaleParticipant(targetId)) return
+    applyArenaKillRating(this.db, attackerId)
+      .then(change => change && this.onArenaRatingChanged(change))
+      .catch(err => console.error('[arena] failed to apply kill rating:', err))
+  }
+
+  recordBattleRoyaleDeathRating(playerId) {
+    const br = this.battleRoyale
+    if (!this.isPaidBattleRoyaleParticipant(playerId)) return
+    if (br.ratedDeaths.has(playerId)) return
+    br.ratedDeaths.add(playerId)
+    applyArenaDeathRating(this.db, playerId)
+      .then(change => change && this.onArenaRatingChanged(change))
+      .catch(err => console.error('[arena] failed to apply death rating:', err))
+  }
+
+  recordBattleRoyaleWinRating(winnerId) {
+    if (!this.battleRoyale?.queued.has(winnerId)) return
+    applyArenaWinRating(this.db, winnerId)
+      .then(change => change && this.onArenaRatingChanged(change))
+      .catch(err => console.error('[arena] failed to apply win rating:', err))
+  }
+
+  async getArenaLeaderboardPayload() {
+    try {
+      return await getArenaLeaderboard(this.db)
+    } catch (err) {
+      console.error('[arena] failed to load leaderboard:', err)
+      return []
+    }
+  }
+
+  async broadcastArenaLeaderboard() {
+    const players = await this.getArenaLeaderboardPayload()
+    this.send('arenaLeaderboard', { players })
+  }
+
+  onArenaRatingChanged(change) {
+    const { userId } = change
+    getUserArenaStats(this.db, userId)
+      .then(stats => {
+        if (stats) this.sendTo(userId, 'arenaRating', stats)
+      })
+      .catch(err => console.error('[arena] failed to send rating update:', err))
+    this.broadcastArenaLeaderboard().catch(err => console.error('[arena] failed to broadcast leaderboard:', err))
   }
 
   saveTeamKills = async () => {
@@ -624,6 +695,8 @@ export class ServerNetwork extends System {
       )
 
       // send snapshot
+      const arenaRating = await getUserArenaStats(this.db, user.id)
+      const arenaLeaderboard = await this.getArenaLeaderboardPayload()
       socket.send('snapshot', {
         id: socket.id,
         serverTime: performance.now(),
@@ -642,6 +715,8 @@ export class ServerNetwork extends System {
         scoreboard: this.getScoreboardPayload(),
         matchState: this.getMatchStatePayload(),
         arenaRemnants: serializeArenaRemnants(this.arenaRemnants),
+        arenaRating,
+        arenaLeaderboard,
       })
 
       this.sockets.set(socket.id, socket)

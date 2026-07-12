@@ -14,6 +14,7 @@ Use this index before changing networking, combat, or player code.
 | [server-client.md](server-client.md) | Authority model, WebSocket protocol, connection lifecycle, packet reference |
 | [character-sync.md](character-sync.md) | Player state sync, interpolation, animation fields, avatar loading |
 | [combat.md](combat.md) | Sword attacks, blocks, hit detection, damage, death/respawn, combat packets |
+| [arena-rating.md](arena-rating.md) | Paid battle royale rating, Postgres persistence, leaderboard |
 
 ---
 
