@@ -1061,13 +1061,21 @@ export class PlayerLocal extends Entity {
       if (attackStick.pressed) {
         this.control.mouseLeft.pressed = true
         this.control.mouseLeft.down = true
+        this.mouseDragStart = { time: Date.now() }
+        this.mouseDragAccumulated = { x: 0, y: 0 }
+        this.isDragging = false
         attackStick.pressed = false
       }
       if (attackStick.down) {
         this.control.mouseLeft.down = true
+        if (!this.mouseDragStart) {
+          this.mouseDragStart = { time: Date.now() }
+          this.mouseDragAccumulated = { x: 0, y: 0 }
+          this.isDragging = false
+        }
         if (attackStick.deltaX || attackStick.deltaY) {
-          this.control.pointer.delta.x += attackStick.deltaX * COMBAT_STICK_DELTA_SCALE
-          this.control.pointer.delta.y += attackStick.deltaY * COMBAT_STICK_DELTA_SCALE
+          this.mouseDragAccumulated.x += attackStick.deltaX * COMBAT_STICK_DELTA_SCALE
+          this.mouseDragAccumulated.y += attackStick.deltaY * COMBAT_STICK_DELTA_SCALE
           attackStick.deltaX = 0
           attackStick.deltaY = 0
         }
@@ -1075,7 +1083,7 @@ export class PlayerLocal extends Entity {
       if (attackStick.released) {
         this.control.mouseLeft.released = true
         this.control.mouseLeft.down = false
-        attackStick.released = false
+        this.attackStick = null
       }
     }
 
@@ -1084,13 +1092,21 @@ export class PlayerLocal extends Entity {
       if (blockStick.pressed) {
         this.control.mouseRight.pressed = true
         this.control.mouseRight.down = true
+        this.blockDragStart = { time: Date.now() }
+        this.blockDragAccumulated = { x: 0, y: 0 }
+        this.isBlockDragging = false
         blockStick.pressed = false
       }
       if (blockStick.down) {
         this.control.mouseRight.down = true
+        if (!this.blockDragStart) {
+          this.blockDragStart = { time: Date.now() }
+          this.blockDragAccumulated = { x: 0, y: 0 }
+          this.isBlockDragging = false
+        }
         if (blockStick.deltaX || blockStick.deltaY) {
-          this.control.pointer.delta.x += blockStick.deltaX * COMBAT_STICK_DELTA_SCALE
-          this.control.pointer.delta.y += blockStick.deltaY * COMBAT_STICK_DELTA_SCALE
+          this.blockDragAccumulated.x += blockStick.deltaX * COMBAT_STICK_DELTA_SCALE
+          this.blockDragAccumulated.y += blockStick.deltaY * COMBAT_STICK_DELTA_SCALE
           blockStick.deltaX = 0
           blockStick.deltaY = 0
         }
@@ -1098,7 +1114,7 @@ export class PlayerLocal extends Entity {
       if (blockStick.released) {
         this.control.mouseRight.released = true
         this.control.mouseRight.down = false
-        blockStick.released = false
+        this.blockStick = null
       }
     }
   }
@@ -1575,7 +1591,7 @@ export class PlayerLocal extends Entity {
   }
   
   stopBlock() {
-    if (!this.isHoldingBlock) return
+    if (!this.isHoldingBlock && !this.isBlocking && !this.blockAnimationPaused) return
     
     console.log('[Block] Stopping held block')
     
@@ -1600,6 +1616,7 @@ export class PlayerLocal extends Entity {
     // Reset state
     this.isHoldingBlock = false
     this.isBlocking = false
+    this.isBlockDragging = false
     this.currentBlockEmote = null
     this.currentBlockTag = null // Clear block tag
     
@@ -2421,19 +2438,23 @@ export class PlayerLocal extends Entity {
       
       // Right mouse down: start tracking block drag
       if (this.control.mouseRight.pressed && this.canUsePointerCombat('block')) {
-        this.blockDragStart = {
-          time: Date.now()
+        if (!this.blockStick) {
+          this.blockDragStart = {
+            time: Date.now()
+          }
+          this.blockDragAccumulated = { x: 0, y: 0 }
+          this.isBlockDragging = false
+          console.log('[Mouse Block] Right mouse down - starting block drag tracking')
         }
-        this.blockDragAccumulated = { x: 0, y: 0 }
-        this.isBlockDragging = false
-        console.log('[Mouse Block] Right mouse down - starting block drag tracking')
       }
       
       // Track mouse movement while dragging (accumulate deltas)
-      if (this.control.mouseRight.down && this.blockDragStart && this.canUsePointerCombat('block')) {
-        const delta = this.control.pointer.delta
-        this.blockDragAccumulated.x += delta.x
-        this.blockDragAccumulated.y += delta.y
+      if (this.control.mouseRight.down && this.blockDragStart) {
+        if (!this.blockStick) {
+          const delta = this.control.pointer.delta
+          this.blockDragAccumulated.x += delta.x
+          this.blockDragAccumulated.y += delta.y
+        }
         
         // Check if we've moved enough to be considered a drag
         const distance = Math.sqrt(
@@ -2478,8 +2499,8 @@ export class PlayerLocal extends Entity {
       }
       
       // Right mouse released: stop held block
-      if (this.control.mouseRight.released && this.blockDragStart && this.canUsePointerCombat('block')) {
-        if (this.isHoldingBlock) {
+      if (this.control.mouseRight.released && this.blockDragStart) {
+        if (this.isHoldingBlock || this.isBlocking || this.blockAnimationPaused) {
           // Stop the held block (no follow-through)
           console.log('[Mouse Block] Right mouse released - stopping held block')
           this.stopBlock()
@@ -2495,19 +2516,23 @@ export class PlayerLocal extends Entity {
       
       // Left mouse down: start tracking drag
       if (this.control.mouseLeft.pressed && this.canUsePointerCombat('attack')) {
-        this.mouseDragStart = {
-          time: Date.now()
+        if (!this.attackStick) {
+          this.mouseDragStart = {
+            time: Date.now()
+          }
+          this.mouseDragAccumulated = { x: 0, y: 0 }
+          this.isDragging = false
+          console.log('[Mouse Attack] Mouse down - starting drag tracking')
         }
-        this.mouseDragAccumulated = { x: 0, y: 0 }
-        this.isDragging = false
-        console.log('[Mouse Attack] Mouse down - starting drag tracking')
       }
       
       // Track mouse movement while dragging (accumulate deltas)
-      if (this.control.mouseLeft.down && this.mouseDragStart && this.canUsePointerCombat('attack')) {
-        const delta = this.control.pointer.delta
-        this.mouseDragAccumulated.x += delta.x
-        this.mouseDragAccumulated.y += delta.y
+      if (this.control.mouseLeft.down && this.mouseDragStart) {
+        if (!this.attackStick) {
+          const delta = this.control.pointer.delta
+          this.mouseDragAccumulated.x += delta.x
+          this.mouseDragAccumulated.y += delta.y
+        }
         
         // Check if we've moved enough to be considered a drag
         const distance = Math.sqrt(
@@ -2552,7 +2577,7 @@ export class PlayerLocal extends Entity {
       }
       
       // Left mouse released: complete charged attack if charging
-      if (this.control.mouseLeft.released && this.mouseDragStart && this.canUsePointerCombat('attack')) {
+      if (this.control.mouseLeft.released && this.mouseDragStart) {
         if (this.isChargingAttack) {
           if (this.earlyReleaseHoldActive) {
             console.log('[Mouse Attack] In early-release hold — swing fires automatically')
