@@ -46,8 +46,6 @@ const MIN_ZOOM = 0
 const MAX_ZOOM = 8
 const STICK_OUTER_RADIUS = 50
 const STICK_INNER_RADIUS = 25
-const TOUCH_COMBAT_ZONE_WIDTH = 180
-const TOUCH_COMBAT_ZONE_HEIGHT = 360
 const COMBAT_STICK_DELTA_SCALE = 1.5
 const DEFAULT_CAM_HEIGHT = 1.2
 
@@ -1822,16 +1820,13 @@ export class PlayerLocal extends Entity {
     this.control = this.world.controls.bind({
       priority: ControlPriorities.PLAYER,
       onTouch: touch => {
-        const inCombatZone =
-          touch.position.x > this.control.screen.width - TOUCH_COMBAT_ZONE_WIDTH &&
-          touch.position.y > this.control.screen.height - TOUCH_COMBAT_ZONE_HEIGHT
         if (!this.stick && touch.position.x < this.control.screen.width / 2) {
           this.stick = {
             center: touch.position.clone(),
             active: false,
             touch,
           }
-        } else if (!this.pan && !inCombatZone) {
+        } else if (!this.pan) {
           this.pan = touch
         }
       },

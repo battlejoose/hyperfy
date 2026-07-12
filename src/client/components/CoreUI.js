@@ -1295,7 +1295,7 @@ function TouchCombatSticks({ world }) {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        pointer-events: auto;
+        pointer-events: none;
         touch-action: none;
         z-index: 1001;
         .combat-stick {
