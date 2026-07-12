@@ -48,7 +48,7 @@ const STICK_OUTER_RADIUS = 50
 const STICK_INNER_RADIUS = 25
 const TOUCH_COMBAT_ZONE_WIDTH = 150
 const TOUCH_COMBAT_ZONE_HEIGHT = 320
-const TOUCH_COMBAT_STICK_THRESHOLD = 0.5
+const COMBAT_STICK_DELTA_SCALE = 1.5
 const DEFAULT_CAM_HEIGHT = 1.2
 
 const v1 = new THREE.Vector3()
@@ -176,7 +176,6 @@ export class PlayerLocal extends Entity {
     // Mobile combat joysticks (set from CoreUI TouchCombatSticks)
     this.attackStick = null
     this.blockStick = null
-    this.touchAttackHadDeflection = false
 
     this.pushForce = null
     this.pushForceInit = false
@@ -1049,75 +1048,56 @@ export class PlayerLocal extends Entity {
     this.jumpCooldownUntil = Date.now() + JumpTiming.cooldown * 1000
   }
 
-  getDirectionalCombatEmote(dx, dy, kind) {
-    const absX = Math.abs(dx)
-    const absY = Math.abs(dy)
-    if (absX > absY) {
-      if (dx > 0) return kind === 'attack' ? Emotes.ATTACK_RIGHT : Emotes.BLOCK_RIGHT
-      return kind === 'attack' ? Emotes.ATTACK_LEFT : Emotes.BLOCK_LEFT
-    }
-    if (dy > 0) return kind === 'attack' ? Emotes.ATTACK_LOW : Emotes.BLOCK_LOW
-    return kind === 'attack' ? Emotes.ATTACK_HIGH : Emotes.BLOCK_HIGH
+  canUsePointerCombat(side) {
+    if (this.control.pointer.locked) return true
+    if (side === 'attack') return !!(this.attackStick?.down || this.attackStick?.released)
+    if (side === 'block') return !!(this.blockStick?.down || this.blockStick?.released)
+    return false
   }
 
-  releaseChargedAttackFromInput() {
-    if (this.earlyReleaseHoldActive) return
-    const windupElapsed = this.chargeStartTime
-      ? (Date.now() - this.chargeStartTime) / 1000
-      : this.attackWindupTime
-    if (windupElapsed >= this.attackWindupTime || this.attackAnimationPaused) {
-      this.completeChargedAttack()
-    } else {
-      this.pendingChargedRelease = true
-    }
-  }
-
-  processTouchCombatInput() {
+  injectCombatStickMouse() {
     const attackStick = this.attackStick
     if (attackStick) {
       if (attackStick.pressed) {
-        this.touchAttackHadDeflection = false
+        this.control.mouseLeft.pressed = true
+        this.control.mouseLeft.down = true
         attackStick.pressed = false
       }
-
-      const attackDist = Math.hypot(attackStick.x, attackStick.y)
-      if (
-        attackStick.down &&
-        attackDist > TOUCH_COMBAT_STICK_THRESHOLD &&
-        !this.isChargingAttack &&
-        !this.touchAttackHadDeflection
-      ) {
-        this.startAttack(this.getDirectionalCombatEmote(attackStick.x, attackStick.y, 'attack'), true)
-        this.touchAttackHadDeflection = true
-      }
-
-      if (attackStick.released) {
-        if (this.isChargingAttack) {
-          this.releaseChargedAttackFromInput()
-        } else if (!this.touchAttackHadDeflection) {
-          this.startAttack(Emotes.ATTACK_RIGHT)
+      if (attackStick.down) {
+        this.control.mouseLeft.down = true
+        if (attackStick.deltaX || attackStick.deltaY) {
+          this.control.pointer.delta.x += attackStick.deltaX * COMBAT_STICK_DELTA_SCALE
+          this.control.pointer.delta.y += attackStick.deltaY * COMBAT_STICK_DELTA_SCALE
+          attackStick.deltaX = 0
+          attackStick.deltaY = 0
         }
-        this.touchAttackHadDeflection = false
+      }
+      if (attackStick.released) {
+        this.control.mouseLeft.released = true
+        this.control.mouseLeft.down = false
         attackStick.released = false
       }
     }
 
     const blockStick = this.blockStick
     if (blockStick) {
-      const blockDist = Math.hypot(blockStick.x, blockStick.y)
-      const blockDeflected = blockStick.down && blockDist > TOUCH_COMBAT_STICK_THRESHOLD
-
-      if (blockDeflected && !this.isHoldingBlock && !this.isBlockDragging) {
-        this.isBlockDragging = true
-        this.startBlock(this.getDirectionalCombatEmote(blockStick.x, blockStick.y, 'block'), true)
-      } else if (!blockDeflected && this.isHoldingBlock && blockStick.down) {
-        this.stopBlock()
-        this.isBlockDragging = false
+      if (blockStick.pressed) {
+        this.control.mouseRight.pressed = true
+        this.control.mouseRight.down = true
+        blockStick.pressed = false
       }
-
+      if (blockStick.down) {
+        this.control.mouseRight.down = true
+        if (blockStick.deltaX || blockStick.deltaY) {
+          this.control.pointer.delta.x += blockStick.deltaX * COMBAT_STICK_DELTA_SCALE
+          this.control.pointer.delta.y += blockStick.deltaY * COMBAT_STICK_DELTA_SCALE
+          blockStick.deltaX = 0
+          blockStick.deltaY = 0
+        }
+      }
       if (blockStick.released) {
-        if (this.isHoldingBlock) this.stopBlock()
-        this.isBlockDragging = false
+        this.control.mouseRight.released = true
+        this.control.mouseRight.down = false
         blockStick.released = false
       }
     }
@@ -1789,9 +1769,9 @@ export class PlayerLocal extends Entity {
       priority: ControlPriorities.PLAYER,
       onTouch: touch => {
         const inCombatZone =
-          touch.position.x < TOUCH_COMBAT_ZONE_WIDTH &&
+          touch.position.x > this.control.screen.width - TOUCH_COMBAT_ZONE_WIDTH &&
           touch.position.y > this.control.screen.height - TOUCH_COMBAT_ZONE_HEIGHT
-        if (!this.stick && touch.position.x < this.control.screen.width / 2 && !inCombatZone) {
+        if (!this.stick && touch.position.x < this.control.screen.width / 2) {
           this.stick = {
             center: touch.position.clone(),
             active: false,
@@ -2432,12 +2412,15 @@ export class PlayerLocal extends Entity {
         this.startKick()
       }
       
+      // Mobile combat sticks feed left/right mouse + pointer delta (see injectCombatStickMouse)
+      this.injectCombatStickMouse()
+
       // Mouse drag attack system
       // Left mouse: drag direction determines attack
       // Right mouse: block
       
       // Right mouse down: start tracking block drag
-      if (this.control.mouseRight.pressed && this.control.pointer.locked) {
+      if (this.control.mouseRight.pressed && this.canUsePointerCombat('block')) {
         this.blockDragStart = {
           time: Date.now()
         }
@@ -2447,7 +2430,7 @@ export class PlayerLocal extends Entity {
       }
       
       // Track mouse movement while dragging (accumulate deltas)
-      if (this.control.mouseRight.down && this.blockDragStart && this.control.pointer.locked) {
+      if (this.control.mouseRight.down && this.blockDragStart && this.canUsePointerCombat('block')) {
         const delta = this.control.pointer.delta
         this.blockDragAccumulated.x += delta.x
         this.blockDragAccumulated.y += delta.y
@@ -2495,7 +2478,7 @@ export class PlayerLocal extends Entity {
       }
       
       // Right mouse released: stop held block
-      if (this.control.mouseRight.released && this.blockDragStart && this.control.pointer.locked) {
+      if (this.control.mouseRight.released && this.blockDragStart && this.canUsePointerCombat('block')) {
         if (this.isHoldingBlock) {
           // Stop the held block (no follow-through)
           console.log('[Mouse Block] Right mouse released - stopping held block')
@@ -2511,7 +2494,7 @@ export class PlayerLocal extends Entity {
       }
       
       // Left mouse down: start tracking drag
-      if (this.control.mouseLeft.pressed && this.control.pointer.locked) {
+      if (this.control.mouseLeft.pressed && this.canUsePointerCombat('attack')) {
         this.mouseDragStart = {
           time: Date.now()
         }
@@ -2521,7 +2504,7 @@ export class PlayerLocal extends Entity {
       }
       
       // Track mouse movement while dragging (accumulate deltas)
-      if (this.control.mouseLeft.down && this.mouseDragStart && this.control.pointer.locked) {
+      if (this.control.mouseLeft.down && this.mouseDragStart && this.canUsePointerCombat('attack')) {
         const delta = this.control.pointer.delta
         this.mouseDragAccumulated.x += delta.x
         this.mouseDragAccumulated.y += delta.y
@@ -2569,7 +2552,7 @@ export class PlayerLocal extends Entity {
       }
       
       // Left mouse released: complete charged attack if charging
-      if (this.control.mouseLeft.released && this.mouseDragStart && this.control.pointer.locked) {
+      if (this.control.mouseLeft.released && this.mouseDragStart && this.canUsePointerCombat('attack')) {
         if (this.isChargingAttack) {
           if (this.earlyReleaseHoldActive) {
             console.log('[Mouse Attack] In early-release hold — swing fires automatically')
@@ -2597,8 +2580,6 @@ export class PlayerLocal extends Entity {
         this.mouseDragAccumulated = null
         this.isDragging = false
       }
-
-      this.processTouchCombatInput()
     }
 
     // get our movement direction

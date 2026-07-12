@@ -1143,7 +1143,7 @@ function TouchBtns({ world }) {
             width: 4rem;
             height: 4rem;
             bottom: 1rem;
-            left: 1rem;
+            right: 1rem;
           }
           &.action {
             width: 2.5rem;
@@ -1190,13 +1190,36 @@ function TouchBtns({ world }) {
 }
 
 const COMBAT_STICK_MOVE = 25
+const COMBAT_STICK_DELTA_SCALE = 1.5
+
+function applyCombatStickState(player, key, next) {
+  if (!player) return
+  if (next.pressed) {
+    player[key] = { down: true, pressed: true, released: false, deltaX: 0, deltaY: 0 }
+    return
+  }
+  if (next.released) {
+    player[key] = { down: false, pressed: false, released: true, deltaX: 0, deltaY: 0 }
+    return
+  }
+  const prev = player[key]
+  player[key] = {
+    down: true,
+    pressed: false,
+    released: false,
+    deltaX: (prev?.deltaX || 0) + (next.deltaX || 0),
+    deltaY: (prev?.deltaY || 0) + (next.deltaY || 0),
+  }
+}
 
 function FixedCombatStick({ label, onStickChange }) {
   const outerRef = useRef()
   const innerRef = useRef()
   const pointerIdRef = useRef(null)
+  const knobRef = useRef({ x: 0, y: 0 })
 
   const resetKnob = () => {
+    knobRef.current = { x: 0, y: 0 }
     const inner = innerRef.current
     if (inner) inner.style.transform = 'translate(-50%, -50%)'
   }
@@ -1206,9 +1229,8 @@ function FixedCombatStick({ label, onStickChange }) {
       down: false,
       pressed: false,
       released: false,
-      active: false,
-      x: 0,
-      y: 0,
+      deltaX: 0,
+      deltaY: 0,
       ...partial,
     })
   }
@@ -1236,20 +1258,20 @@ function FixedCombatStick({ label, onStickChange }) {
       dx = (dx * COMBAT_STICK_MOVE) / dist
       dy = (dy * COMBAT_STICK_MOVE) / dist
     }
+    const deltaX = dx - knobRef.current.x
+    const deltaY = dy - knobRef.current.y
+    knobRef.current = { x: dx, y: dy }
     inner.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`
-    emit({
-      down: true,
-      active: dist > 3,
-      x: dx / COMBAT_STICK_MOVE,
-      y: dy / COMBAT_STICK_MOVE,
-    })
+    if (deltaX || deltaY) {
+      emit({ down: true, deltaX, deltaY })
+    }
   }
 
   const handlePointerEnd = e => {
     if (pointerIdRef.current !== e.pointerId) return
     pointerIdRef.current = null
     resetKnob()
-    emit({ released: true })
+    emit({ down: false, released: true })
     e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
@@ -1281,13 +1303,11 @@ function TouchCombatSticks({ world }) {
   }, [world])
 
   const setAttackStick = state => {
-    const player = world.entities?.player
-    if (player) player.attackStick = state
+    applyCombatStickState(world.entities?.player, 'attackStick', state)
   }
 
   const setBlockStick = state => {
-    const player = world.entities?.player
-    if (player) player.blockStick = state
+    applyCombatStickState(world.entities?.player, 'blockStick', state)
   }
 
   return (
@@ -1295,7 +1315,7 @@ function TouchCombatSticks({ world }) {
       className='touch-combat'
       css={css`
         position: absolute;
-        left: calc(1rem + env(safe-area-inset-left));
+        right: calc(1rem + env(safe-area-inset-right));
         bottom: calc(5.75rem + env(safe-area-inset-bottom));
         display: flex;
         flex-direction: column;
@@ -1361,17 +1381,17 @@ function TouchStick({ world }) {
         inner.style.opacity = 0.1
         const radius = 50 // matches PlayerLocal.js STICK_OUTER_RADIUS
         if (window.innerWidth < window.innerHeight) {
-          // portrait — keep idle hint mid-left so it doesn't overlap combat sticks
+          // portrait
           outer.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 50px)`
-          outer.style.top = `calc(50dvh)`
+          outer.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
           inner.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 50px)`
-          inner.style.top = `calc(50dvh)`
+          inner.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
         } else {
           // landscape
           outer.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 90px)`
-          outer.style.top = `calc(50dvh)`
+          outer.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
           inner.style.left = `calc(env(safe-area-inset-left) + ${radius}px + 90px)`
-          inner.style.top = `calc(50dvh)`
+          inner.style.top = `calc(100dvh - env(safe-area-inset-bottom) - ${radius}px - 50px)`
         }
       }
     }
