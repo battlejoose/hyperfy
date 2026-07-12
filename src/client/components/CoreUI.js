@@ -110,8 +110,8 @@ export function CoreUI({ world }) {
       {/* {apps && <AppsPane world={world} close={() => world.ui.toggleApps()} />} */}
       {!ready && <LoadingOverlay world={world} />}
       {kicked && <KickedOverlay code={kicked} />}
-      {ready && isTouch && <TouchBtns world={world} />}
       {ready && isTouch && <TouchCombatSticks world={world} />}
+      {ready && isTouch && <TouchBtns world={world} />}
       {ready && isTouch && <TouchStick world={world} />}
       {confirm && <Confirm options={confirm} />}
       <div id='core-ui-portal' />
@@ -1130,6 +1130,7 @@ function TouchBtns({ world }) {
         right: calc(1.5rem + env(safe-area-inset-right));
         bottom: calc(1.5rem + env(safe-area-inset-bottom));
         left: calc(1.5rem + env(safe-area-inset-left));
+        pointer-events: none;
         .touchbtns-btn {
           pointer-events: auto;
           position: absolute;
@@ -1190,6 +1191,8 @@ function TouchBtns({ world }) {
 }
 
 const COMBAT_STICK_MOVE = 25
+const COMBAT_STICK_OUTER_RADIUS = 50
+const COMBAT_STICK_LIFT = COMBAT_STICK_OUTER_RADIUS / 2
 
 function FixedCombatStick({ label, onStickInput }) {
   const outerRef = useRef()
@@ -1215,6 +1218,7 @@ function FixedCombatStick({ label, onStickInput }) {
   }
 
   const handlePointerDown = e => {
+    e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
     pointerIdRef.current = e.pointerId
     resetKnob()
@@ -1222,6 +1226,7 @@ function FixedCombatStick({ label, onStickInput }) {
   }
 
   const handlePointerMove = e => {
+    e.stopPropagation()
     if (pointerIdRef.current !== e.pointerId) return
     const outer = outerRef.current
     const inner = innerRef.current
@@ -1247,6 +1252,7 @@ function FixedCombatStick({ label, onStickInput }) {
   }
 
   const handlePointerEnd = e => {
+    e.stopPropagation()
     if (pointerIdRef.current !== e.pointerId) return
     pointerIdRef.current = null
     resetKnob()
@@ -1285,14 +1291,16 @@ function TouchCombatSticks({ world }) {
       css={css`
         position: absolute;
         right: calc(1rem + env(safe-area-inset-right));
-        bottom: calc(5.75rem + env(safe-area-inset-bottom));
+        bottom: calc(5.75rem + ${COMBAT_STICK_LIFT}px + env(safe-area-inset-bottom));
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        pointer-events: none;
-        z-index: 998;
+        pointer-events: auto;
+        touch-action: none;
+        z-index: 1001;
         .combat-stick {
           pointer-events: auto;
+          touch-action: none;
           position: relative;
           width: 100px;
           height: 100px;
@@ -1374,6 +1382,8 @@ function TouchStick({ world }) {
     <div
       className='stick'
       css={css`
+        pointer-events: none;
+        touch-action: none;
         .stick-outer {
           position: absolute;
           width: 100px;
