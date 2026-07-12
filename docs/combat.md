@@ -28,7 +28,7 @@ This means the server is the single authority when the attacker's and defender's
 | Left mouse drag ≥ 30px (pointer locked) | Charged directional attack — drag starts backswing; release triggers swing (early release waits for windup) |
 | Mobile attack joystick (bottom-right) | Same drag logic as left mouse — touch down begins drag, deflect adds drag delta, release completes the swing |
 
-Drag direction picks emote (dominant axis: horizontal vs vertical, sign of dx/dy). Guards: not sprinting, not already charging, not committed mid-swing.
+Drag direction picks emote (dominant axis: horizontal vs vertical, sign of dx/dy). Guards: not already charging, not committed mid-swing. Starting an attack applies sprint cooldown (same as block).
 
 Instant attacks (`startAttack(emote, false)`) skip the hold phase and activate the sword collider at 500 ms.
 

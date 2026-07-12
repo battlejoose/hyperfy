@@ -1163,11 +1163,6 @@ export class PlayerLocal extends Entity {
 
   startAttack(emote, chargeMode = false) {
     if (this.isSpectator()) return
-    // Can't attack while sprinting
-    if (this.running) {
-      console.log('[Attack] Cannot attack while sprinting')
-      return
-    }
 
     if (Date.now() < this.attackBlockCooldownUntil) {
       console.log('[Attack] Attack on cooldown after block')
