@@ -1190,29 +1190,8 @@ function TouchBtns({ world }) {
 }
 
 const COMBAT_STICK_MOVE = 25
-const COMBAT_STICK_DELTA_SCALE = 1.5
 
-function applyCombatStickState(player, key, next) {
-  if (!player) return
-  if (next.pressed) {
-    player[key] = { down: true, pressed: true, released: false, deltaX: 0, deltaY: 0 }
-    return
-  }
-  if (next.released) {
-    player[key] = { down: false, pressed: false, released: true, deltaX: 0, deltaY: 0 }
-    return
-  }
-  const prev = player[key]
-  player[key] = {
-    down: true,
-    pressed: false,
-    released: false,
-    deltaX: (prev?.deltaX || 0) + (next.deltaX || 0),
-    deltaY: (prev?.deltaY || 0) + (next.deltaY || 0),
-  }
-}
-
-function FixedCombatStick({ label, onStickChange }) {
+function FixedCombatStick({ label, onStickInput }) {
   const outerRef = useRef()
   const innerRef = useRef()
   const pointerIdRef = useRef(null)
@@ -1225,7 +1204,7 @@ function FixedCombatStick({ label, onStickChange }) {
   }
 
   const emit = partial => {
-    onStickChange({
+    onStickInput({
       down: false,
       pressed: false,
       released: false,
@@ -1292,22 +1271,12 @@ function FixedCombatStick({ label, onStickChange }) {
 }
 
 function TouchCombatSticks({ world }) {
-  useEffect(() => {
-    return () => {
-      const player = world.entities?.player
-      if (player) {
-        player.attackStick = null
-        player.blockStick = null
-      }
-    }
-  }, [world])
-
-  const setAttackStick = state => {
-    applyCombatStickState(world.entities?.player, 'attackStick', state)
+  const onAttackInput = state => {
+    world.entities?.player?.handleAttackStickInput?.(state)
   }
 
-  const setBlockStick = state => {
-    applyCombatStickState(world.entities?.player, 'blockStick', state)
+  const onBlockInput = state => {
+    world.entities?.player?.handleBlockStickInput?.(state)
   }
 
   return (
@@ -1358,8 +1327,8 @@ function TouchCombatSticks({ world }) {
         }
       `}
     >
-      <FixedCombatStick label='ATK' onStickChange={setAttackStick} />
-      <FixedCombatStick label='BLK' onStickChange={setBlockStick} />
+      <FixedCombatStick label='ATK' onStickInput={onAttackInput} />
+      <FixedCombatStick label='BLK' onStickInput={onBlockInput} />
     </div>
   )
 }
