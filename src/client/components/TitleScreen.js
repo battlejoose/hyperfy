@@ -3,14 +3,17 @@ import { css } from '@firebolt-dev/css'
 
 import { AVATAR_CRUSADER } from '../../core/extras/playerAvatars'
 import { prefetchGameAssets } from '../../core/extras/assetPrefetch'
+import { TitleArenaRankings } from './ArenaRankings'
 
 export { AVATAR_CRUSADER }
 
 const MAX_NAME_LENGTH = 24
 const FADE_MS = 600
 
+export const TITLE_BG_SRC = '/assets/gladiatorbackground.webp'
+
 const ASSETS = {
-  bg: '/assets/gladiatorbackground.webp',
+  bg: TITLE_BG_SRC,
   scroll: '/assets/scroll.png',
   titleMusic: '/assets/battleprep.mp3',
   proximoClip: '/assets/proximoclip.webm',
@@ -300,6 +303,49 @@ export function TitleScreen({ onStart }) {
             opacity: 1;
           }
         }
+        .title-layout {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1.5rem;
+          width: 100%;
+          max-width: min(96vw, 52rem);
+          padding: 1rem;
+          box-sizing: border-box;
+          flex-wrap: wrap;
+        }
+        .title-rankings-slot {
+          flex: 0 1 18rem;
+          order: 1;
+        }
+        .title-panel {
+          position: relative;
+          display: inline-block;
+          max-width: min(92vw, 22rem);
+          border: none;
+          background: transparent;
+          flex: 0 1 22rem;
+          order: 2;
+        }
+        @media (max-width: 700px) {
+          .title-layout {
+            flex-direction: column;
+            justify-content: flex-start;
+            padding-top: 1.25rem;
+            max-height: 100%;
+            overflow: auto;
+          }
+          .title-rankings-slot {
+            order: 2;
+            width: 100%;
+            max-width: 22rem;
+          }
+          .title-panel {
+            order: 1;
+          }
+        }
         .title-bg {
           position: absolute;
           inset: 0;
@@ -313,13 +359,6 @@ export function TitleScreen({ onStart }) {
           inset: 0;
           background: rgba(0, 0, 0, 0.25);
           pointer-events: none;
-        }
-        .title-panel {
-          position: relative;
-          display: inline-block;
-          max-width: min(92vw, 22rem);
-          border: none;
-          background: transparent;
         }
         .title-scroll {
           position: absolute;
@@ -409,32 +448,37 @@ export function TitleScreen({ onStart }) {
         <div className='title-stage visible'>
           <img className='title-bg' src={ASSETS.bg} alt='' />
           <div className='title-overlay' />
-          <form className='title-panel' onSubmit={handleSubmit}>
-            <img className={`title-scroll${scrollReady ? ' ready' : ''}`} src={ASSETS.scroll} alt='' />
-            <div className='title-panel-content'>
-              <h1 className='title-heading'>Proximo</h1>
-              <p className='title-sub'>Enter your name to join the Arena</p>
-
-              <label className='field-label' htmlFor='username'>
-                Username
-              </label>
-              <input
-                ref={usernameRef}
-                id='username'
-                className='name-input'
-                type='text'
-                value={name}
-                maxLength={MAX_NAME_LENGTH}
-                placeholder='Enter your name'
-                autoComplete='off'
-                onChange={e => setName(e.target.value)}
-              />
-
-              <button type='submit' className='enter-btn' disabled={!canStart}>
-                Enter the Arena
-              </button>
+          <div className='title-layout'>
+            <div className='title-rankings-slot'>
+              <TitleArenaRankings />
             </div>
-          </form>
+            <form className='title-panel' onSubmit={handleSubmit}>
+              <img className={`title-scroll${scrollReady ? ' ready' : ''}`} src={ASSETS.scroll} alt='' />
+              <div className='title-panel-content'>
+                <h1 className='title-heading'>Proximo</h1>
+                <p className='title-sub'>Enter your name to join the Arena</p>
+
+                <label className='field-label' htmlFor='username'>
+                  Username
+                </label>
+                <input
+                  ref={usernameRef}
+                  id='username'
+                  className='name-input'
+                  type='text'
+                  value={name}
+                  maxLength={MAX_NAME_LENGTH}
+                  placeholder='Enter your name'
+                  autoComplete='off'
+                  onChange={e => setName(e.target.value)}
+                />
+
+                <button type='submit' className='enter-btn' disabled={!canStart}>
+                  Enter the Arena
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

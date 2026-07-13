@@ -21,6 +21,7 @@ import { Scoreboard } from './Scoreboard'
 import { PlayerQueueList } from './PlayerQueueList'
 import { MatchRound } from './MatchRound'
 import { ArenaRankings } from './ArenaRankings'
+import { TITLE_BG_SRC } from './TitleScreen'
 
 export function CoreUI({ world }) {
   const ref = useRef()
@@ -752,7 +753,7 @@ function Disconnected() {
 
 function LoadingOverlay({ world }) {
   const [progress, setProgress] = useState(0)
-  const { title, desc, image } = world.settings
+  const { title, desc } = world.settings
   useEffect(() => {
     world.on('progress', setProgress)
     return () => {
@@ -764,7 +765,7 @@ function LoadingOverlay({ world }) {
       css={css`
         position: absolute;
         inset: 0;
-        background: black;
+        background: #0a0a0f;
         display: flex;
         pointer-events: auto;
         @keyframes pulse {
@@ -784,7 +785,7 @@ function LoadingOverlay({ world }) {
           background-position: center;
           background-size: cover;
           background-repeat: no-repeat;
-          background-image: ${image ? `url(${world.resolveURL(image.url)})` : 'none'};
+          background-image: url(${TITLE_BG_SRC});
           animation: pulse 5s ease-in-out infinite;
         }
         .loading-shade {
@@ -805,6 +806,7 @@ function LoadingOverlay({ world }) {
           line-height: 1.2;
           font-weight: 600;
           margin: 0 0 0.5rem;
+          color: #e8dcc8;
         }
         .loading-desc {
           color: rgba(255, 255, 255, 0.9);

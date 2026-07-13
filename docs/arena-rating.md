@@ -41,7 +41,9 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 ## API & UI
 
 - `GET /api/arena/leaderboard?limit=25&wallet=<optional>` → `{ players, you }`
-- Client: **Arena Rankings** toggle (bottom-left) in [`ArenaRankings.js`](../src/client/components/ArenaRankings.js)
+- Client: **Arena Rankings** toggle (bottom-left in-game) and full scrollable rankings on the title screen
+  ([`ArenaRankings.js`](../src/client/components/ArenaRankings.js) / [`TitleScreen.js`](../src/client/components/TitleScreen.js))
+- Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)
 
 ## Heroku / database
 
