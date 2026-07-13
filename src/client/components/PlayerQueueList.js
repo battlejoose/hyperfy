@@ -526,8 +526,17 @@ export function PlayerQueueList({ world }) {
           .arena-col-left {
             max-width: 4.85rem;
           }
-          .arena-col-left .queue-rankings {
-            display: none;
+          .arena-col-left .rank-open-btn {
+            font-size: 0.58rem;
+            padding: 0.28rem 0.35rem;
+            white-space: normal;
+            line-height: 1.2;
+            width: 100%;
+          }
+          .arena-col-left .rank-popup {
+            left: 0;
+            transform: none;
+            width: min(16rem, calc(100vw - 2rem));
           }
           .arena-col-center {
             flex: 1.5 1 0;

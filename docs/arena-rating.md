@@ -41,7 +41,7 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 ## API & UI
 
 - `GET /api/arena/leaderboard?limit=25&wallet=<optional>` → `{ players, you }`
-- Client: full scrollable rankings on the title screen; in-game rankings live in the queue scroll UI under wallet/pot
+- Client: full scrollable rankings on the title screen; in-game queue UI has a Rankings button that opens a closable popup
   ([`ArenaRankings.js`](../src/client/components/ArenaRankings.js) / [`TitleScreen.js`](../src/client/components/TitleScreen.js) / [`PlayerQueueList.js`](../src/client/components/PlayerQueueList.js))
 - Leaderboard fetch uses `PUBLIC_API_URL` correctly when it already ends in `/api` (e.g. `https://host/api/arena/leaderboard`)
 - Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)
