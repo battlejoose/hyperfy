@@ -605,7 +605,7 @@ export function PlayerQueueList({ world }) {
               </div>
               <div className='arena-tutorial-row'>
                 <span className='arena-tutorial-key'>Kick</span>
-                <span>Press F to kick and knock your opponent back.</span>
+                <span>Press F to kick and break an opponent’s block.</span>
               </div>
             </div>
             <button type='button' className='arena-wallet-cancel' onClick={() => setShowHelp(false)}>

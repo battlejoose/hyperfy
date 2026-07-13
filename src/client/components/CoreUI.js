@@ -923,7 +923,7 @@ function LoadingOverlay({ world }) {
             </div>
             <div className='loading-howto-row'>
               <span className='loading-howto-key'>Kick</span>
-              <span>{isTouch ? 'Tap the kick control to knock your opponent back.' : 'Press F to kick and knock your opponent back.'}</span>
+              <span>{isTouch ? 'Tap the kick control to break an opponent’s block.' : 'Press F to kick and break an opponent’s block.'}</span>
             </div>
           </div>
         </div>
