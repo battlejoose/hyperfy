@@ -67,10 +67,14 @@ export class ClientLoader extends System {
     this.preloadItems.push({ type, url })
   }
 
-  execPreload() {
-    if (!this.preloadItems.length) return Promise.resolve()
+  execPreload({ progressStart = 0, progressEnd = 100 } = {}) {
+    if (!this.preloadItems.length) {
+      this.world.emit('progress', progressEnd)
+      return Promise.resolve()
+    }
     let loadedItems = 0
     const totalItems = this.preloadItems.length
+    const span = progressEnd - progressStart
     const items = this.preloadItems.splice(0)
     const promises = items.map(item => {
       return this.load(item.type, item.url)
@@ -79,11 +83,13 @@ export class ClientLoader extends System {
         })
         .then(() => {
           loadedItems++
-          this.world.emit('progress', (loadedItems / totalItems) * 100)
+          const pct = progressStart + (loadedItems / totalItems) * span
+          this.world.emit('progress', pct)
         })
     })
     this.preloader = Promise.all(promises).then(() => {
       this.preloader = null
+      this.world.emit('progress', progressEnd)
     })
     return this.preloader
   }

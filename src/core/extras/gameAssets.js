@@ -53,14 +53,23 @@ export function queueClientGamePreloads(world, data) {
 export async function prepareClientGameAssets(world, data) {
   // Load the large arena model alone first — concurrent fetches of this + VRMs
   // on a Heroku dyno often fail with net::ERR_FAILED and leave an empty desert.
+  // Progress: 0–55% is the arena (previously silent, so the bar looked stuck
+  // until the video finished); 55–100% is the remaining preload queue.
+  const emitProgress = pct => world.emit('progress', pct)
+  emitProgress(3)
+
   let lastErr = null
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       if (attempt > 1) {
+        emitProgress(5)
         await new Promise(r => setTimeout(r, 500 * attempt))
       }
+      emitProgress(8)
       await world.loader.load('model', ARENA_SRC)
+      emitProgress(40)
       await loadArenaEnvironment(world)
+      emitProgress(55)
       lastErr = null
       break
     } catch (err) {
@@ -75,5 +84,5 @@ export async function prepareClientGameAssets(world, data) {
   }
 
   queueClientGamePreloads(world, data)
-  await world.loader.execPreload()
+  await world.loader.execPreload({ progressStart: 55, progressEnd: 100 })
 }
