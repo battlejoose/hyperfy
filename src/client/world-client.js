@@ -31,12 +31,12 @@ export function Client({ wsUrl, onSetup }) {
       const viewport = viewportRef.current
       const ui = uiRef.current
       const baseEnvironment = {
-        model: null,
-        bg: null,
-        hdr: null,
+        model: '/base-environment.glb',
+        bg: null, // '/day2-2k.jpg',
+        hdr: '/Clear_08_4pm_LDR.hdr',
         rotationY: 0,
         sunDirection: new THREE.Vector3(-1, -2, -2).normalize(),
-        sunIntensity: 2.2,
+        sunIntensity: 1,
         sunColor: 0xffffff,
         fogNear: null,
         fogFar: null,

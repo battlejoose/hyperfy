@@ -126,18 +126,12 @@ export class ClientEnvironment extends System {
       this.world.stage.scene.add(this.sky)
     }
 
-    if (!this.ambient) {
-      this.ambient = new THREE.AmbientLight(0xffe0b0, 0.55)
-      this.world.stage.scene.add(this.ambient)
-    }
-
     const base = this.base
     const node = this.skys[this.skys.length - 1]?.node
     const bgUrl = node?._bg || base.bg
     const hdrUrl = node?._hdr || base.hdr
     const rotationY = isNumber(node?._rotationY) ? node._rotationY : base.rotationY
     const sunDirection = node?._sunDirection || base.sunDirection
-    // Missing HDR env maps make PBR materials look black — keep sunlight strong enough to read the arena.
     const sunIntensity = isNumber(node?._sunIntensity) ? node._sunIntensity : base.sunIntensity
     const sunColor = isString(node?._sunColor) ? node._sunColor : base.sunColor
     const fogNear = isNumber(node?._fogNear) ? node._fogNear : base.fogNear
@@ -145,45 +139,30 @@ export class ClientEnvironment extends System {
     const fogColor = isString(node?._fogColor) ? node._fogColor : base.fogColor
 
     const n = ++this.skyN
-    let bgTexture = null
-    let hdrTexture = null
-
-    if (bgUrl) {
-      try {
-        bgTexture = await this.world.loader.load('texture', bgUrl)
-      } catch (err) {
-        console.warn('[environment] sky background failed to load:', bgUrl, err?.message || err)
-      }
-    }
-    if (hdrUrl) {
-      try {
-        hdrTexture = await this.world.loader.load('hdr', hdrUrl)
-      } catch (err) {
-        console.warn('[environment] HDR failed to load:', hdrUrl, err?.message || err)
-      }
-    }
+    let bgTexture
+    if (bgUrl) bgTexture = await this.world.loader.load('texture', bgUrl)
+    let hdrTexture
+    if (hdrUrl) hdrTexture = await this.world.loader.load('hdr', hdrUrl)
     if (n !== this.skyN) return
 
     if (bgTexture) {
+      // bgTexture = bgTexture.clone()
       bgTexture.minFilter = bgTexture.magFilter = THREE.LinearFilter
       bgTexture.mapping = THREE.EquirectangularReflectionMapping
+      // bgTexture.encoding = Encoding[this.encoding]
       bgTexture.colorSpace = THREE.SRGBColorSpace
       this.sky.material.map = bgTexture
-      this.sky.material.color.set(0xffffff)
       this.sky.visible = true
     } else {
-      // Procedural desert sky so a missing uploaded sky app does not leave a black void
-      this.sky.material.map = null
-      this.sky.material.color.set(0xc48a4a)
-      this.sky.visible = true
+      this.sky.visible = false
     }
 
     if (hdrTexture) {
+      // hdrTexture.colorSpace = THREE.NoColorSpace
+      // hdrTexture.colorSpace = THREE.SRGBColorSpace
+      // hdrTexture.colorSpace = THREE.LinearSRGBColorSpace
       hdrTexture.mapping = THREE.EquirectangularReflectionMapping
       this.world.stage.scene.environment = hdrTexture
-    } else if (!this.world.stage.scene.environment) {
-      // No IBL — ambient + directional CSM still light MeshStandardMaterials
-      this.world.stage.scene.environment = null
     }
 
     this.world.stage.scene.environmentRotation.y = rotationY
@@ -192,13 +171,10 @@ export class ClientEnvironment extends System {
 
     this.csm.lightDirection = sunDirection
 
-    // If HDR is missing, bump sun so sandy/PBR arena materials stay readable
-    const effectiveSun = hdrTexture ? sunIntensity : Math.max(sunIntensity ?? 1, 2.2)
     for (const light of this.csm.lights) {
-      light.intensity = effectiveSun
+      light.intensity = sunIntensity
       light.color.set(sunColor)
     }
-    this.ambient.intensity = hdrTexture ? 0.25 : 0.7
 
     if (isNumber(fogNear) && isNumber(fogFar) && fogColor) {
       const color = new THREE.Color(fogColor)
@@ -212,7 +188,7 @@ export class ClientEnvironment extends System {
       hdrUrl,
       rotationY,
       sunDirection,
-      sunIntensity: effectiveSun,
+      sunIntensity,
       sunColor,
       fogNear,
       fogFar,
