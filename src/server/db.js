@@ -12,11 +12,21 @@ let db
 
 function resolveDatabaseUri() {
   const uri = process.env.DB_URI
-  if (uri && (uri.startsWith('postgres://') || uri.startsWith('postgresql://'))) {
-    // Heroku dynos need SSL even when DB_URI is set manually to the Postgres URL
-    return { uri, useSsl: !!process.env.DYNO }
+  // Explicit local/sqlite — never silently switch to DATABASE_URL
+  if (!uri || uri === 'local' || uri === 'sqlite') {
+    return null
   }
-  // Heroku Postgres injects DATABASE_URL; require SSL
+  if (uri.startsWith('postgres://') || uri.startsWith('postgresql://')) {
+    // Heroku dynos need SSL even when DB_URI is set manually to the Postgres URL
+    return { uri, useSsl: !!process.env.DYNO || !!process.env.DATABASE_URL }
+  }
+  // DB_URI unset is handled above; if somehow empty string after trim...
+  return null
+}
+
+function resolvePostgresFromHeroku() {
+  // Only when DB_URI is not set at all — Heroku Postgres add-on
+  if (process.env.DB_URI) return null
   const herokuUri = process.env.DATABASE_URL
   if (herokuUri && (herokuUri.startsWith('postgres://') || herokuUri.startsWith('postgresql://'))) {
     return { uri: herokuUri, useSsl: true }
@@ -24,9 +34,25 @@ function resolveDatabaseUri() {
   return null
 }
 
+async function ensureArenaRatingsTable(db) {
+  const exists = await db.schema.hasTable('arena_ratings')
+  if (exists) return
+  console.log('[db] creating arena_ratings table')
+  await db.schema.createTable('arena_ratings', table => {
+    table.string('wallet_pubkey').primary()
+    table.string('username').notNullable()
+    table.integer('rating').notNullable().defaultTo(1000)
+    table.integer('kills').notNullable().defaultTo(0)
+    table.integer('deaths').notNullable().defaultTo(0)
+    table.integer('wins').notNullable().defaultTo(0)
+    table.timestamp('updated_at').notNullable()
+    table.index(['rating'], 'arena_ratings_rating_idx')
+  })
+}
+
 export async function getDB({ worldDir }) {
   if (!db) {
-    const postgres = resolveDatabaseUri()
+    const postgres = resolveDatabaseUri() || resolvePostgresFromHeroku()
     if (postgres) {
       const schema = process.env.DB_SCHEMA || 'public'
       db = Knex({
@@ -52,6 +78,7 @@ export async function getDB({ worldDir }) {
       })
     }
     await migrate(db)
+    await ensureArenaRatingsTable(db)
   }
   return db
 }
@@ -472,15 +499,11 @@ const migrations = [
   },
   // Paid battle royale arena ratings keyed by Solana wallet
   async db => {
-    await db.schema.createTable('arena_ratings', table => {
-      table.string('wallet_pubkey').primary()
-      table.string('username').notNullable()
-      table.integer('rating').notNullable().defaultTo(1000)
-      table.integer('kills').notNullable().defaultTo(0)
-      table.integer('deaths').notNullable().defaultTo(0)
-      table.integer('wins').notNullable().defaultTo(0)
-      table.timestamp('updated_at').notNullable()
-      table.index(['rating'], 'arena_ratings_rating_idx')
-    })
+    await ensureArenaRatingsTable(db)
+  },
+  // Ensure arena_ratings exists even if an older rolled-back deploy advanced config.version
+  // past this point without creating the table.
+  async db => {
+    await ensureArenaRatingsTable(db)
   },
 ]

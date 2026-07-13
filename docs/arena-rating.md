@@ -46,9 +46,9 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 ## Heroku Postgres
 
 1. Attach the **Heroku Postgres** add-on (sets `DATABASE_URL`).
-2. Leave `DB_URI` unset or `local` — the server falls back to `DATABASE_URL` with SSL.
-3. Or set `DB_URI` to a postgres URI for non-Heroku Postgres.
-4. Migrations run automatically on boot (`Procfile`: `web: npm start`).
+2. **Unset `DB_URI`** on the dyno (or set it to the postgres URI). If `DB_URI=local`, the app uses SQLite and ignores `DATABASE_URL`.
+3. For world meshes/textures on Heroku, use `ASSETS=s3` — local `world/assets` is ephemeral on dynos.
+4. Migrations (including `arena_ratings`) run automatically on boot (`Procfile`: `web: npm start`).
 
 Local default remains SQLite via `DB_URI=local`.
 
