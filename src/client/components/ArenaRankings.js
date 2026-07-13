@@ -340,16 +340,21 @@ export function QueueArenaRankings() {
           color: #5c4033;
         }
         .rank-close-btn {
-          border: none;
-          background: transparent;
-          color: #5c4033;
-          font-size: 0.72rem;
+          flex-shrink: 0;
+          border: 1px solid rgba(61, 40, 23, 0.45);
+          border-radius: 6px;
+          background: rgba(255, 248, 240, 0.85);
+          color: #3d2817;
+          font-size: 0.68rem;
           font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
           cursor: pointer;
-          padding: 0.15rem 0.35rem;
-          border-radius: 4px;
+          padding: 0.28rem 0.55rem;
+          white-space: nowrap;
+          transition: background 0.15s;
           &:hover {
-            background: rgba(61, 40, 23, 0.1);
+            background: rgba(255, 248, 240, 1);
           }
         }
         .rank-body {
@@ -420,7 +425,7 @@ export function QueueArenaRankings() {
         }
       `}
     >
-      <button type='button' className='rank-open-btn' onClick={() => setOpen(true)}>
+      <button type='button' className='rank-open-btn' onClick={() => setOpen(v => !v)}>
         Rankings
       </button>
       {open && (

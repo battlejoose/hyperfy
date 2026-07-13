@@ -339,6 +339,14 @@ export function PlayerQueueList({ world }) {
           color: #3d2817;
           text-align: center;
         }
+        .arena-howto-wrap {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          width: 100%;
+        }
         .arena-howto {
           width: fit-content;
           padding: 0.35rem 0.8rem;
@@ -355,19 +363,56 @@ export function PlayerQueueList({ world }) {
             background: rgba(255, 248, 240, 0.95);
           }
         }
-        .arena-tutorial-title {
-          font-size: 1.05rem;
-          font-weight: 700;
-          margin: 0;
+        .arena-howto-popup {
+          position: absolute;
+          top: calc(100% + 0.4rem);
+          right: 0;
+          width: min(18rem, 70vw);
+          display: flex;
+          flex-direction: column;
+          gap: 0.55rem;
+          background: rgba(255, 248, 235, 0.97);
+          border: 1px solid rgba(61, 40, 23, 0.35);
+          border-radius: 0.55rem;
+          box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+          padding: 0.7rem 0.75rem;
           color: #3d2817;
-          text-align: center;
-          letter-spacing: 0.02em;
+        }
+        .arena-howto-popup-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.5rem;
+        }
+        .arena-howto-popup-title {
+          font-size: 0.72rem;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #5c4033;
+        }
+        .arena-howto-close {
+          flex-shrink: 0;
+          border: 1px solid rgba(61, 40, 23, 0.45);
+          border-radius: 6px;
+          background: rgba(255, 248, 240, 0.85);
+          color: #3d2817;
+          font-size: 0.68rem;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          cursor: pointer;
+          padding: 0.28rem 0.55rem;
+          white-space: nowrap;
+          transition: background 0.15s;
+          &:hover {
+            background: rgba(255, 248, 240, 1);
+          }
         }
         .arena-tutorial {
           display: flex;
           flex-direction: column;
           gap: 0.5rem;
-          max-width: 15rem;
         }
         .arena-tutorial-row {
           display: flex;
@@ -569,6 +614,11 @@ export function PlayerQueueList({ world }) {
             width: 100%;
             max-width: 100%;
           }
+          .arena-howto-popup {
+            right: 0;
+            left: auto;
+            width: min(16rem, calc(100vw - 2rem));
+          }
           .arena-wallet-label,
           .arena-pot {
             font-size: 0.62rem;
@@ -591,28 +641,6 @@ export function PlayerQueueList({ world }) {
     >
       <div className='arena-panel'>
         <img className='arena-scroll' src={SCROLL_SRC} alt='' />
-        {showHelp ? (
-          <div className='arena-panel-content'>
-            <h2 className='arena-tutorial-title'>How to Fight</h2>
-            <div className='arena-tutorial'>
-              <div className='arena-tutorial-row'>
-                <span className='arena-tutorial-key'>Attack</span>
-                <span>Hold left click and drag left, right, up, or down to swing from that direction.</span>
-              </div>
-              <div className='arena-tutorial-row'>
-                <span className='arena-tutorial-key'>Block</span>
-                <span>Hold right click and drag a direction to hold a block on that side. Release to lower it.</span>
-              </div>
-              <div className='arena-tutorial-row'>
-                <span className='arena-tutorial-key'>Kick</span>
-                <span>Press F to kick and break an opponent’s block.</span>
-              </div>
-            </div>
-            <button type='button' className='arena-wallet-cancel' onClick={() => setShowHelp(false)}>
-              Back
-            </button>
-          </div>
-        ) : (
         <div className='arena-panel-content'>
           <div className='arena-row'>
             <div className='arena-col arena-col-left'>
@@ -676,13 +704,38 @@ export function PlayerQueueList({ world }) {
                   Become Spectator
                 </button>
               )}
-              <button type='button' className='arena-howto' onClick={() => setShowHelp(true)}>
-                How to Fight
-              </button>
+              <div className='arena-howto-wrap'>
+                <button type='button' className='arena-howto' onClick={() => setShowHelp(v => !v)}>
+                  How to Fight
+                </button>
+                {showHelp && (
+                  <div className='arena-howto-popup'>
+                    <div className='arena-howto-popup-header'>
+                      <div className='arena-howto-popup-title'>How to Fight</div>
+                      <button type='button' className='arena-howto-close' onClick={() => setShowHelp(false)}>
+                        Close
+                      </button>
+                    </div>
+                    <div className='arena-tutorial'>
+                      <div className='arena-tutorial-row'>
+                        <span className='arena-tutorial-key'>Attack</span>
+                        <span>Hold left click and drag left, right, up, or down to swing from that direction.</span>
+                      </div>
+                      <div className='arena-tutorial-row'>
+                        <span className='arena-tutorial-key'>Block</span>
+                        <span>Hold right click and drag a direction to hold a block on that side. Release to lower it.</span>
+                      </div>
+                      <div className='arena-tutorial-row'>
+                        <span className='arena-tutorial-key'>Kick</span>
+                        <span>Press F to kick and break an opponent’s block.</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
-        )}
       </div>
     </div>
   )
