@@ -1,6 +1,7 @@
 import * as THREE from '../extras/three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { VRMLoaderPlugin } from '@pixiv/three-vrm'
 
 import { System } from './System'
@@ -11,7 +12,6 @@ import { createEmoteFactory } from '../extras/createEmoteFactory'
 import { TextureLoader } from 'three'
 import { formatBytes } from '../extras/formatBytes'
 import { getPrefetchedBlob } from '../extras/assetPrefetch'
-import { emoteUrls } from '../extras/playerEmotes'
 import Hls from 'hls.js/dist/hls.js'
 
 // THREE.Cache.enabled = true
@@ -32,6 +32,7 @@ export class ClientLoader extends System {
     this.rgbeLoader = new RGBELoader()
     this.texLoader = new TextureLoader()
     this.gltfLoader = new GLTFLoader()
+    this.gltfLoader.setMeshoptDecoder(MeshoptDecoder)
     this.gltfLoader.register(parser => new VRMLoaderPlugin(parser))
     this.preloadItems = []
   }
@@ -92,6 +93,19 @@ export class ClientLoader extends System {
       this.world.emit('progress', progressEnd)
     })
     return this.preloader
+  }
+
+  /** Load queued items without blocking PlayerLocal / other loads via `this.preloader`. */
+  execBackgroundPreload() {
+    const items = this.preloadItems.splice(0)
+    if (!items.length) return Promise.resolve()
+    return Promise.all(
+      items.map(item =>
+        this.load(item.type, item.url).catch(err => {
+          console.warn('[preload:lazy]', item.type, item.url, err.message || err)
+        })
+      )
+    )
   }
 
   setFile(url, file) {

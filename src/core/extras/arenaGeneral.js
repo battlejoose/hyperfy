@@ -1,7 +1,7 @@
 import * as THREE from './three'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { BARRIZER_IDS } from './arenaFireFx.js'
+import { loadGlbViaLoader } from './loadGlbViaLoader'
 
 export const ARENA_GENERAL_SRC = 'asset://general.glb'
 const IDLE_CLIP_NAME = 'Idle_11'
@@ -40,33 +40,17 @@ function faceArenaCenter(object, position, arenaRoot) {
 export async function addArenaGeneral(world, arenaRoot) {
   if (world.network?.isServer) return
 
-  const url = world.resolveURL(ARENA_GENERAL_SRC)
-  if (url.startsWith('asset://')) {
-    console.error('[Arena] general url not resolved')
-    return
-  }
-
   const midpoint = getBarrizerMidpointWorld(arenaRoot)
   if (!midpoint) {
     console.warn('[Arena] could not place general — barrizers not found')
     return
   }
 
-  let buffer
-  try {
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`status ${resp.status}`)
-    buffer = await resp.arrayBuffer()
-  } catch (err) {
-    console.error('[Arena] failed to load general:', err)
-    return
-  }
-
   let gltf
   try {
-    gltf = await new GLTFLoader().parseAsync(buffer)
+    gltf = await loadGlbViaLoader(world, ARENA_GENERAL_SRC)
   } catch (err) {
-    console.error('[Arena] failed to parse general:', err)
+    console.error('[Arena] failed to load general:', err)
     return
   }
 

@@ -3,6 +3,7 @@ import path from 'path'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 // import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { GLTFLoader } from '../libs/gltfloader/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 // import { VRMLoaderPlugin } from '@pixiv/three-vrm'
 
 import { System } from './System'
@@ -25,6 +26,7 @@ export class ServerLoader extends System {
     this.results = new Map()
     this.rgbeLoader = new RGBELoader()
     this.gltfLoader = new GLTFLoader()
+    this.gltfLoader.setMeshoptDecoder(MeshoptDecoder)
     this.preloadItems = []
     // this.gltfLoader.register(parser => new VRMLoaderPlugin(parser))
 

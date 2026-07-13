@@ -34,7 +34,7 @@ export function prefetchAsset(url) {
 
 /**
  * Warm the browser cache before entering the arena.
- * Title screen must stay LIGHT — prefetching the 30MB+ arena + VRMs while the
+ * Title screen must stay LIGHT — prefetching the arena + VRMs while the
  * Proximo video plays saturates Heroku and causes net::ERR_FAILED, so the arena
  * never loads.
  */

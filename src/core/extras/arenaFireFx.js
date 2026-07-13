@@ -1,5 +1,5 @@
 import * as THREE from './three'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { loadGlbViaLoader } from './loadGlbViaLoader'
 
 export const ARENA_FIRE_SRC = 'asset://animated_fire.glb'
 export const BARRIZER_IDS = ['barrizer', 'barrizer_2']
@@ -16,27 +16,11 @@ const _spin = new THREE.Quaternion()
 export async function addArenaFireFx(world, arenaRoot) {
   if (world.network?.isServer) return
 
-  const url = world.resolveURL(ARENA_FIRE_SRC)
-  if (url.startsWith('asset://')) {
-    console.error('[Arena] fire fx url not resolved')
-    return
-  }
-
-  let buffer
-  try {
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`status ${resp.status}`)
-    buffer = await resp.arrayBuffer()
-  } catch (err) {
-    console.error('[Arena] failed to load fire fx:', err)
-    return
-  }
-
   let gltf
   try {
-    gltf = await new GLTFLoader().parseAsync(buffer)
+    gltf = await loadGlbViaLoader(world, ARENA_FIRE_SRC)
   } catch (err) {
-    console.error('[Arena] failed to parse fire fx:', err)
+    console.error('[Arena] failed to load fire fx:', err)
     return
   }
 

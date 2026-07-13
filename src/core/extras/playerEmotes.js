@@ -90,3 +90,30 @@ export const emoteUrls = [
   Emotes.DEAD,
   Emotes.GETUP,
 ]
+
+/** Required before the player can move / fight. */
+export const criticalEmoteUrls = [
+  Emotes.IDLE,
+  Emotes.WALK,
+  Emotes.WALK_LEFT,
+  Emotes.WALK_RIGHT,
+  Emotes.WALK_BACK,
+  Emotes.RUN,
+  Emotes.RUN_LEFT,
+  Emotes.RUN_RIGHT,
+  Emotes.RUN_BACK,
+  Emotes.JUMP,
+  Emotes.FALL,
+  Emotes.ATTACK_LEFT,
+  Emotes.ATTACK_RIGHT,
+  Emotes.ATTACK_HIGH,
+  Emotes.ATTACK_LOW,
+  Emotes.BLOCK_LEFT,
+  Emotes.BLOCK_RIGHT,
+  Emotes.BLOCK_HIGH,
+  Emotes.BLOCK_LOW,
+  Emotes.KICK,
+]
+
+/** Nice-to-have; loaded in the background after ready. */
+export const lazyEmoteUrls = [Emotes.FLY, Emotes.FLIP, Emotes.TALK, Emotes.DEATH_FALL, Emotes.DEAD, Emotes.GETUP]

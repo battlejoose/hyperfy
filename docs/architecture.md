@@ -186,7 +186,15 @@ asset://avatar.vrm      → resolved to assets server path
 https://...             → passthrough
 ```
 
-Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. `preload` flag causes download at world join to prevent in-game stalls.
+Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. Meshopt-compressed GLBs (`EXT_meshopt_compression`) are supported on client and server.
+
+Client join bootstrap (`prepareClientGameAssets`):
+
+1. Load arena GLB alone first (~23 MB meshopt `smallarenarome.glb`), then arena environment (fire / general / crowd via shared loader cache — no duplicate fetches).
+2. **Critical** preload (blocks loading screen): local avatar, sword, locomotion + combat emotes.
+3. **Lazy** background preload after ready: death emotes, blood texture, other players’ avatars, blueprint `preload` assets.
+
+Blueprint `preload` flag still queues assets, but they no longer block arena entry.
 
 ---
 

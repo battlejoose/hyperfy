@@ -1,8 +1,8 @@
 import * as THREE from './three'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createNode } from './createNode'
 import { getBarrizerMidpointWorld } from './arenaGeneral.js'
+import { loadGlbViaLoader } from './loadGlbViaLoader'
 
 export const ARENA_CROWD_SOURCES = [
   'asset://crowd0.glb',
@@ -165,27 +165,11 @@ function getCrowdPlacements(arenaRoot) {
 }
 
 async function loadCrowdSource(world, src) {
-  const url = world.resolveURL(src)
-  if (url.startsWith('asset://')) {
-    console.error('[Arena] crowd url not resolved:', src)
-    return null
-  }
-
-  let buffer
-  try {
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`status ${resp.status}`)
-    buffer = await resp.arrayBuffer()
-  } catch (err) {
-    console.error('[Arena] failed to load crowd:', src, err)
-    return null
-  }
-
   let gltf
   try {
-    gltf = await new GLTFLoader().parseAsync(buffer)
+    gltf = await loadGlbViaLoader(world, src)
   } catch (err) {
-    console.error('[Arena] failed to parse crowd:', src, err)
+    console.error('[Arena] failed to load crowd:', src, err)
     return null
   }
 
