@@ -10,14 +10,31 @@ import { assets } from './assets'
 
 let db
 
+function resolveDatabaseUri() {
+  const uri = process.env.DB_URI
+  if (uri && (uri.startsWith('postgres://') || uri.startsWith('postgresql://'))) {
+    // Heroku dynos need SSL even when DB_URI is set manually to the Postgres URL
+    return { uri, useSsl: !!process.env.DYNO }
+  }
+  // Heroku Postgres injects DATABASE_URL; require SSL
+  const herokuUri = process.env.DATABASE_URL
+  if (herokuUri && (herokuUri.startsWith('postgres://') || herokuUri.startsWith('postgresql://'))) {
+    return { uri: herokuUri, useSsl: true }
+  }
+  return null
+}
+
 export async function getDB({ worldDir }) {
   if (!db) {
-    const isPostgres = process.env.DB_URI?.startsWith('postgres://') || process.env.DB_URI?.startsWith('postgresql://')
-    if (isPostgres) {
+    const postgres = resolveDatabaseUri()
+    if (postgres) {
       const schema = process.env.DB_SCHEMA || 'public'
       db = Knex({
         client: 'pg',
-        connection: process.env.DB_URI,
+        connection: {
+          connectionString: postgres.uri,
+          ...(postgres.useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+        },
         pool: { min: 2, max: 10 },
         searchPath: [schema],
         useNullAsDefault: true,
@@ -451,6 +468,19 @@ const migrations = [
       table.string('player_id').notNullable()
       table.string('type').notNullable() // 'entry' | 'kill_reward'
       table.timestamp('created_at').notNullable()
+    })
+  },
+  // Paid battle royale arena ratings keyed by Solana wallet
+  async db => {
+    await db.schema.createTable('arena_ratings', table => {
+      table.string('wallet_pubkey').primary()
+      table.string('username').notNullable()
+      table.integer('rating').notNullable().defaultTo(1000)
+      table.integer('kills').notNullable().defaultTo(0)
+      table.integer('deaths').notNullable().defaultTo(0)
+      table.integer('wins').notNullable().defaultTo(0)
+      table.timestamp('updated_at').notNullable()
+      table.index(['rating'], 'arena_ratings_rating_idx')
     })
   },
 ]

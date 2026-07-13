@@ -26,6 +26,7 @@ description: >-
 | Server ↔ client networking | `docs/server-client.md` |
 | Character sync & interpolation | `docs/character-sync.md` |
 | Sword combat | `docs/combat.md` |
+| Arena rating (paid BR) | `docs/arena-rating.md` |
 | App scripting (upstream) | `docs/scripting/README.md` |
 
 ## Architecture Summary
@@ -75,5 +76,6 @@ Movement is **not** server-validated. Damage is **server-authoritative** via `pl
 | Packets, connection, authority | `docs/server-client.md` |
 | Player sync, interpolation, avatars | `docs/character-sync.md` |
 | Attacks, blocks, damage, death | `docs/combat.md` |
+| Arena rating / leaderboard / wallet stats | `docs/arena-rating.md` |
 | Systems, tick loop, physics layers | `docs/architecture.md` |
 | New top-level subsystem | `docs/README.md` index + new doc if warranted |

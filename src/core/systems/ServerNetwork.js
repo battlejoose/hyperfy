@@ -17,6 +17,12 @@ import {
   serializeArenaRemnants,
 } from '../extras/arenaRemnants'
 import { verifyEntryPayment, findRecentEntryPayment, sendPayout } from '../extras/solanaPayments.js'
+import {
+  applyDeath as applyArenaDeathRating,
+  applyKill as applyArenaKillRating,
+  applyWin as applyArenaWinRating,
+  upsertWalletProfile,
+} from '../extras/arenaRatingService.js'
 import { PublicKey } from '@solana/web3.js'
 import {
   BR_ENTRY_FEE_LAMPORTS,
@@ -247,6 +253,16 @@ export class ServerNetwork extends System {
     const br = this.battleRoyale
     if (br?.phase !== 'battle') return
     if (!br.alive.delete(playerId)) return
+
+    // Paid BR death: combat kill or disconnect while still alive in the battle
+    const wallet = br.queued.get(playerId)?.wallet
+    if (wallet) {
+      const name = this.world.entities.get(playerId)?.data?.name
+      applyArenaDeathRating(this.db, wallet, name).catch(err =>
+        console.error('[arena-rating] death update failed:', err)
+      )
+    }
+
     this.broadcastMatchState()
     this.checkBattleRoyaleWinner()
   }
@@ -270,6 +286,9 @@ export class ServerNetwork extends System {
       const winnerName = winnerPlayer?.data?.name || 'A gladiator'
       this.announce(`${winnerName} wins the battle royale and takes ${payoutSol} SOL!`)
       if (wallet) {
+        applyArenaWinRating(this.db, wallet, winnerName).catch(err =>
+          console.error('[arena-rating] win update failed:', err)
+        )
         sendPayout(wallet, payoutLamports, winnerId, 'br_win')
           .then(signature => {
             if (!signature) {
@@ -421,6 +440,18 @@ export class ServerNetwork extends System {
     }
     if (victim) victim.deaths += 1
     this.broadcastScoreboard()
+
+    // Paid BR kill rating (free-play arena kills are ignored)
+    const br = this.battleRoyale
+    if (br?.phase === 'battle' && br.queued.has(attackerId) && br.queued.has(targetId)) {
+      const wallet = br.queued.get(attackerId)?.wallet
+      if (wallet) {
+        const name = this.world.entities.get(attackerId)?.data?.name
+        applyArenaKillRating(this.db, wallet, name).catch(err =>
+          console.error('[arena-rating] kill update failed:', err)
+        )
+      }
+    }
   }
 
   saveTeamKills = async () => {
@@ -686,6 +717,10 @@ export class ServerNetwork extends System {
     if (entry) {
       entry.wallet = walletPubkey
     }
+
+    upsertWalletProfile(this.db, walletPubkey, socket.player.data.name).catch(err =>
+      console.error('[arena-rating] wallet profile upsert failed:', err)
+    )
 
     // a freshly connected wallet may hold an unclaimed entry payment
     this.autoRecoverEntryPayment(socket, walletPubkey)

@@ -186,6 +186,39 @@ fastify.get('/api/upload-check', async (req, reply) => {
   return { exists }
 })
 
+fastify.get('/api/arena/leaderboard', async (req, reply) => {
+  try {
+    const { getByWallet, getLeaderboard } = await import('../core/extras/arenaRatingService.js')
+    const limit = req.query?.limit
+    const players = await getLeaderboard(db, limit)
+    const wallet = typeof req.query?.wallet === 'string' ? req.query.wallet : null
+    const you = wallet ? await getByWallet(db, wallet) : null
+    return {
+      players: players.map(row => ({
+        wallet: row.wallet_pubkey,
+        username: row.username,
+        rating: row.rating,
+        kills: row.kills,
+        deaths: row.deaths,
+        wins: row.wins,
+      })),
+      you: you
+        ? {
+            wallet: you.wallet_pubkey,
+            username: you.username,
+            rating: you.rating,
+            kills: you.kills,
+            deaths: you.deaths,
+            wins: you.wins,
+          }
+        : null,
+    }
+  } catch (err) {
+    console.error('[arena-rating] leaderboard failed:', err)
+    return reply.code(500).send({ error: 'Failed to load leaderboard' })
+  }
+})
+
 fastify.get('/health', async (request, reply) => {
   try {
     // Basic health check
