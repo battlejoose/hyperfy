@@ -654,6 +654,13 @@ export class ServerNetwork extends System {
         user.wallet_pubkey ?? null
       )
 
+      // Keep arena rating username in sync when this account already has a wallet
+      if (user.wallet_pubkey) {
+        upsertWalletProfile(this.db, user.wallet_pubkey, socket.player.data.name).catch(err =>
+          console.error('[arena-rating] wallet profile upsert failed:', err)
+        )
+      }
+
       // send snapshot
       socket.send('snapshot', {
         id: socket.id,

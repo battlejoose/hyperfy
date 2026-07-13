@@ -11,22 +11,32 @@ function truncateAddress(address) {
   return `${address.slice(0, 4)}…${address.slice(-4)}`
 }
 
-export function leaderboardUrl(wallet, limit = 25) {
+/** PUBLIC_API_URL is typically `https://host/api` — don't double the `/api` segment. */
+export function arenaApiRoot() {
   const base = (typeof env !== 'undefined' && env.PUBLIC_API_URL) || ''
-  const root = base.replace(/\/$/, '')
+  if (!base) return '/api'
+  const root = String(base).replace(/\/$/, '')
+  return root.endsWith('/api') ? root : `${root}/api`
+}
+
+export function leaderboardUrl(wallet, limit = 25) {
   const params = new URLSearchParams({ limit: String(limit) })
   if (wallet) params.set('wallet', wallet)
-  return `${root}/api/arena/leaderboard?${params}`
+  return `${arenaApiRoot()}/arena/leaderboard?${params}`
 }
 
 export async function fetchArenaLeaderboard(wallet, limit = 25) {
-  const res = await fetch(leaderboardUrl(wallet, limit))
+  const res = await fetch(leaderboardUrl(wallet, limit), { credentials: 'same-origin' })
   if (!res.ok) throw new Error('Failed to load rankings')
   const data = await res.json()
-  return {
-    players: Array.isArray(data.players) ? data.players : [],
-    you: data.you || null,
+  const players = Array.isArray(data.players) ? data.players : []
+  const you = data.you || null
+  // Ensure the connected wallet row is visible even if ranking list was capped/missed
+  if (you && !players.some(p => p.wallet === you.wallet)) {
+    players.push(you)
+    players.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
   }
+  return { players, you }
 }
 
 function syncWallet(setWallet) {
@@ -97,20 +107,29 @@ function useArenaLeaderboard({ enabled = true, limit = 25, pollMs = 15000 } = {}
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    syncWallet(setWallet)
-    const off = onSolanaWalletsChange(() => syncWallet(setWallet))
-    return () => off?.()
+    try {
+      syncWallet(setWallet)
+      const off = onSolanaWalletsChange(() => syncWallet(setWallet))
+      return () => off?.()
+    } catch (err) {
+      console.warn('[arena-rating] wallet sync unavailable:', err)
+    }
   }, [])
 
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
     const load = async () => {
-      syncWallet(setWallet)
       setLoading(true)
       setError(null)
       try {
-        const currentWallet = getConnectedPubkey() || wallet
+        // Prefer live connected pubkey, but never block the public leaderboard on wallet
+        let currentWallet = null
+        try {
+          currentWallet = getConnectedPubkey() || wallet
+        } catch {
+          currentWallet = wallet
+        }
         const data = await fetchArenaLeaderboard(currentWallet, limit)
         if (cancelled) return
         setPlayers(data.players)
