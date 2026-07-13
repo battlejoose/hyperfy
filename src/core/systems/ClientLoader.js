@@ -125,14 +125,28 @@ export class ClientLoader extends System {
     } catch {
       // fall through to fetch
     }
-    const resp = await fetch(url)
-    if (!resp.ok) {
-      throw new Error(`failed to load ${url} (${resp.status})`)
+
+    // Heroku can drop large asset transfers under load — retry briefly
+    let lastErr
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 400 * attempt))
+        }
+        const resp = await fetch(url)
+        if (!resp.ok) {
+          throw new Error(`failed to load ${url} (${resp.status})`)
+        }
+        const blob = await resp.blob()
+        const file = new File([blob], url.split('/').pop(), { type: blob.type })
+        this.files.set(url, file)
+        return file
+      } catch (err) {
+        lastErr = err
+        console.warn(`[loader] attempt ${attempt + 1}/3 failed for ${url}:`, err.message || err)
+      }
     }
-    const blob = await resp.blob()
-    const file = new File([blob], url.split('/').pop(), { type: blob.type })
-    this.files.set(url, file)
-    return file
+    throw lastErr
   }
 
   async load(type, url) {
@@ -155,7 +169,8 @@ export class ClientLoader extends System {
       this.promises.set(key, promise)
       return promise
     }
-    const promise = this.loadFile(url).then(async file => {
+    const promise = this.loadFile(url)
+      .then(async file => {
       if (type === 'hdr') {
         const buffer = await file.arrayBuffer()
         const result = this.rgbeLoader.parse(buffer)
@@ -265,6 +280,9 @@ export class ClientLoader extends System {
         this.results.set(key, audioBuffer)
         return audioBuffer
       }
+    }).catch(err => {
+      this.promises.delete(key)
+      throw err
     })
     this.promises.set(key, promise)
     return promise

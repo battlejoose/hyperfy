@@ -108,9 +108,26 @@ export class ClientNetwork extends System {
   }
 
   onSnapshot(data) {
+    this.pendingSnapshot = data
     this.bootstrapping = this.bootstrapGame(data)
       .catch(err => {
         console.error('[ClientNetwork] bootstrap failed:', err)
+        this.world.emit('loadError', { message: err.message || 'Failed to load the arena' })
+      })
+      .finally(() => {
+        this.bootstrapping = null
+      })
+  }
+
+  /** Retry asset load + world enter after a critical load failure. */
+  retryBootstrap() {
+    if (this.bootstrapping || !this.pendingSnapshot) return
+    this.world.emit('loadError', null)
+    this.world.emit('progress', 0)
+    this.bootstrapping = this.bootstrapGame(this.pendingSnapshot)
+      .catch(err => {
+        console.error('[ClientNetwork] bootstrap retry failed:', err)
+        this.world.emit('loadError', { message: err.message || 'Failed to load the arena' })
       })
       .finally(() => {
         this.bootstrapping = null
@@ -124,12 +141,8 @@ export class ClientNetwork extends System {
     this.maxUploadSize = data.maxUploadSize
     this.world.assetsUrl = data.assetsUrl
 
-    try {
-      await prepareClientGameAssets(this.world, data)
-    } catch (err) {
-      console.error('[ClientNetwork] asset load failed:', err)
-      // Still enter the game; missing optional assets should not block forever.
-    }
+    // Critical: arena must load before we enter. Do not swallow this failure.
+    await prepareClientGameAssets(this.world, data)
 
     this.world.collections.deserialize(data.collections)
     this.world.settings.deserialize(data.settings)

@@ -32,9 +32,17 @@ export function prefetchAsset(url) {
   return promise
 }
 
-export function prefetchGameAssets({ avatar } = {}) {
-  const urls = [ARENA_SRC, SWORD_SRC, AVATAR_CRUSADER, AVATAR_SARACEN, BLOOD_SPLATTER_SRC]
-  if (avatar && !urls.includes(avatar)) urls.push(avatar)
+/**
+ * Warm the browser cache before entering the arena.
+ * Title screen must stay LIGHT — prefetching the 30MB+ arena + VRMs while the
+ * Proximo video plays saturates Heroku and causes net::ERR_FAILED, so the arena
+ * never loads.
+ */
+export function prefetchGameAssets({ avatar, light = false } = {}) {
+  const urls = light
+    ? [SWORD_SRC, BLOOD_SPLATTER_SRC]
+    : [ARENA_SRC, SWORD_SRC, AVATAR_CRUSADER, AVATAR_SARACEN, BLOOD_SPLATTER_SRC]
+  if (!light && avatar && !urls.includes(avatar)) urls.push(avatar)
   return Promise.allSettled(urls.map(prefetchAsset))
 }
 

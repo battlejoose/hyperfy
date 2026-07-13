@@ -197,7 +197,7 @@ export function TitleScreen({ onStart }) {
 
   useEffect(() => {
     if (!showTitle) return
-    prefetchGameAssets()
+    prefetchGameAssets({ light: true })
   }, [showTitle])
 
   useEffect(() => {

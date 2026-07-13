@@ -755,11 +755,15 @@ function Disconnected() {
 
 function LoadingOverlay({ world }) {
   const [progress, setProgress] = useState(0)
+  const [loadError, setLoadError] = useState(null)
   const { title, desc } = world.settings
   useEffect(() => {
     world.on('progress', setProgress)
+    const onLoadError = err => setLoadError(err)
+    world.on('loadError', onLoadError)
     return () => {
       world.off('progress', setProgress)
+      world.off('loadError', onLoadError)
     }
   }, [])
   return (
@@ -831,6 +835,26 @@ function LoadingOverlay({ world }) {
           border-radius: 3px;
           transition: width 0.2s ease-out;
         }
+        .loading-error {
+          margin-top: 1rem;
+          color: #ffb4b4;
+          font-size: 0.95rem;
+          line-height: 1.4;
+        }
+        .loading-retry {
+          margin-top: 0.85rem;
+          border: none;
+          border-radius: 6px;
+          padding: 0.65rem 1rem;
+          background: #7a1515;
+          color: #fff8f0;
+          font-size: 0.95rem;
+          font-weight: 700;
+          cursor: pointer;
+          &:hover {
+            background: #8b1a1a;
+          }
+        }
       `}
     >
       <div className='loading-image' />
@@ -838,9 +862,19 @@ function LoadingOverlay({ world }) {
       <div className='loading-info'>
         {title && <div className='loading-title'>{title}</div>}
         {desc && <div className='loading-desc'>{desc}</div>}
-        <div className='loading-track'>
-          <div className='loading-bar' />
-        </div>
+        {!loadError && (
+          <div className='loading-track'>
+            <div className='loading-bar' />
+          </div>
+        )}
+        {loadError && (
+          <>
+            <div className='loading-error'>{loadError.message || 'Failed to load the arena.'}</div>
+            <button type='button' className='loading-retry' onClick={() => world.network.retryBootstrap()}>
+              Retry
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
