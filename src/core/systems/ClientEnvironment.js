@@ -86,10 +86,32 @@ export class ClientEnvironment extends System {
 
   async start() {
     this.buildCSM()
-    this.updateSky()
+    try {
+      await this.updateSky()
+    } catch (err) {
+      console.error('[Environment] failed to load sky:', err)
+    }
+    if (this.base?.model) {
+      try {
+        await this.updateModel()
+      } catch (err) {
+        console.error('[Environment] failed to load base model:', err)
+      }
+    }
 
+    this.world.settings.on('change', this.onSettingsChange)
     this.world.prefs.on('change', this.onPrefsChange)
     this.world.graphics.on('resize', this.onViewportResize)
+  }
+
+  async updateModel() {
+    const url = this.world.settings.model?.url || this.base?.model
+    if (!url) return
+    let glb = this.world.loader.get('model', url)
+    if (!glb) glb = await this.world.loader.load('model', url)
+    if (this.model) this.model.deactivate()
+    this.model = glb.toNodes()
+    this.model.activate({ world: this.world, label: 'base' })
   }
 
   addSky(node) {
@@ -153,8 +175,10 @@ export class ClientEnvironment extends System {
       bgTexture.colorSpace = THREE.SRGBColorSpace
       this.sky.material.map = bgTexture
       this.sky.visible = true
+      this.world.stage.scene.background = bgTexture
     } else {
       this.sky.visible = false
+      this.world.stage.scene.background = null
     }
 
     if (hdrTexture) {
@@ -163,6 +187,11 @@ export class ClientEnvironment extends System {
       // hdrTexture.colorSpace = THREE.LinearSRGBColorSpace
       hdrTexture.mapping = THREE.EquirectangularReflectionMapping
       this.world.stage.scene.environment = hdrTexture
+      if (!bgTexture) {
+        this.world.stage.scene.background = hdrTexture
+      }
+    } else if (!bgTexture) {
+      this.world.stage.scene.environment = null
     }
 
     this.world.stage.scene.environmentRotation.y = rotationY
@@ -201,6 +230,7 @@ export class ClientEnvironment extends System {
   }
 
   lateUpdate(delta) {
+    if (!this.sky) return
     this.sky.position.x = this.world.rig.position.x
     this.sky.position.z = this.world.rig.position.z
     this.sky.matrixWorld.setPosition(this.sky.position)
@@ -255,6 +285,12 @@ export class ClientEnvironment extends System {
           light.castShadow = false
         }
       }
+    }
+  }
+
+  onSettingsChange = changes => {
+    if (changes.model) {
+      this.updateModel()
     }
   }
 

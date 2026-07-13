@@ -18,6 +18,11 @@ export function queueClientGamePreloads(world, data) {
   loader.preload('avatar', AVATAR_SARACEN)
   loader.preload('texture', BLOOD_SPLATTER_SRC)
 
+  const base = world.environment?.base
+  if (base?.model) loader.preload('model', base.model)
+  if (base?.hdr) loader.preload('hdr', base.hdr)
+  if (base?.bg) loader.preload('texture', base.bg)
+
   for (const url of emoteUrls) {
     loader.preload('emote', url)
   }
