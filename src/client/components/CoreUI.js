@@ -1390,6 +1390,10 @@ function TouchCombatSticks({ world }) {
     world.entities?.player?.handleBlockStickInput?.(state)
   }
 
+  const onKick = () => {
+    world.entities?.player?.startKick?.()
+  }
+
   return (
     <div
       className='touch-combat'
@@ -1398,11 +1402,38 @@ function TouchCombatSticks({ world }) {
         right: calc(1rem + env(safe-area-inset-right));
         bottom: calc(5.75rem + ${COMBAT_STICK_LIFT}px + env(safe-area-inset-bottom));
         display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.65rem;
         pointer-events: none;
         touch-action: none;
         z-index: 1001;
+        .combat-kick {
+          pointer-events: auto;
+          touch-action: none;
+          width: 4rem;
+          height: 4rem;
+          border-radius: 10rem;
+          background: rgba(0, 0, 0, 0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          user-select: none;
+          -webkit-user-select: none;
+        }
+        .combat-kick-label {
+          font-size: 0.62rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          color: rgba(255, 255, 255, 0.85);
+          pointer-events: none;
+        }
+        .combat-sticks {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
         .combat-stick {
           pointer-events: auto;
           touch-action: none;
@@ -1440,8 +1471,27 @@ function TouchCombatSticks({ world }) {
         }
       `}
     >
-      <FixedCombatStick label='ATK' onStickInput={onAttackInput} />
-      <FixedCombatStick label='BLK' onStickInput={onBlockInput} />
+      <div
+        className='combat-kick'
+        onPointerDown={e => {
+          e.stopPropagation()
+          e.currentTarget.setPointerCapture(e.pointerId)
+          onKick()
+        }}
+        onPointerUp={e => {
+          e.stopPropagation()
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        }}
+        onPointerCancel={e => {
+          e.stopPropagation()
+        }}
+      >
+        <span className='combat-kick-label'>KICK</span>
+      </div>
+      <div className='combat-sticks'>
+        <FixedCombatStick label='ATK' onStickInput={onAttackInput} />
+        <FixedCombatStick label='BLK' onStickInput={onBlockInput} />
+      </div>
     </div>
   )
 }

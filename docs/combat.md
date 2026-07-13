@@ -27,6 +27,7 @@ This means the server is the single authority when the attacker's and defender's
 | Key 4 | Instant attack low |
 | Left mouse drag ≥ 30px (pointer locked) | Charged directional attack — drag starts backswing; release triggers swing (early release waits for windup) |
 | Mobile attack joystick (bottom-right) | Same drag logic as left mouse — touch down begins drag, deflect adds drag delta, release completes the swing |
+| Key F / mobile KICK button (left of combat sticks) | Kick — breaks an opponent’s block |
 
 Drag direction picks emote (dominant axis: horizontal vs vertical, sign of dx/dy). Guards: not already charging, not committed mid-swing. Starting an attack applies sprint cooldown (same as block).
 
@@ -118,7 +119,7 @@ Blocking is **directional**: your block pose must match the incoming attack dire
 |-------|--------|
 | Key 5 | Generic block (`Emotes.BLOCK`) — `currentBlockTag = null`, blocks **all** directions |
 | Right mouse drag ≥ 30px (pointer locked) | Held directional block — animation freezes at block pose until release |
-| Mobile block joystick (bottom-right, above attack stick) | Same drag logic as right mouse — touch down begins drag, deflect adds drag delta, release lowers block |
+| Mobile block joystick (bottom-right, under attack stick) | Same drag logic as right mouse — touch down begins drag, deflect adds drag delta, release lowers block |
 
 Mouse drag picks block emote the same way as attacks (dominant axis + sign).
 
