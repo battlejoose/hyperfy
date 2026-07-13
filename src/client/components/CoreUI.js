@@ -756,7 +756,7 @@ function Disconnected() {
 function LoadingOverlay({ world }) {
   const [progress, setProgress] = useState(0)
   const [loadError, setLoadError] = useState(null)
-  const { title, desc } = world.settings
+  const { title } = world.settings
   useEffect(() => {
     world.on('progress', setProgress)
     const onLoadError = err => setLoadError(err)
@@ -797,29 +797,70 @@ function LoadingOverlay({ world }) {
         .loading-shade {
           position: absolute;
           inset: 0;
-          background: rgba(0, 0, 0, 0.4);
-          backdrop-filter: blur(15px);
+          background: rgba(0, 0, 0, 0.45);
         }
         .loading-info {
           position: absolute;
-          bottom: 50px;
-          left: 50px;
-          right: 50px;
-          max-width: 28rem;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 1.25rem;
+          padding: 1.5rem;
+          box-sizing: border-box;
         }
         .loading-title {
-          font-size: 2.4rem;
+          font-size: clamp(1.8rem, 5vw, 2.4rem);
           line-height: 1.2;
-          font-weight: 600;
-          margin: 0 0 0.5rem;
+          font-weight: 700;
+          margin: 0;
           color: #e8dcc8;
+          letter-spacing: 0.04em;
+          text-align: center;
         }
-        .loading-desc {
-          color: rgba(255, 255, 255, 0.9);
-          font-size: 1rem;
-          margin: 0 0 20px;
+        .loading-howto {
+          width: min(28rem, 100%);
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          padding: 1rem 1.15rem;
+          background: rgba(0, 0, 0, 0.45);
+          border: 1px solid rgba(232, 220, 200, 0.18);
+          border-radius: 0.65rem;
+        }
+        .loading-howto-title {
+          margin: 0;
+          font-size: 0.85rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #e8dcc8;
+          text-align: center;
+        }
+        .loading-howto-list {
+          display: flex;
+          flex-direction: column;
+          gap: 0.55rem;
+        }
+        .loading-howto-row {
+          display: flex;
+          gap: 0.75rem;
+          align-items: flex-start;
+          font-size: 0.84rem;
+          line-height: 1.4;
+          color: rgba(255, 255, 255, 0.88);
+        }
+        .loading-howto-key {
+          flex-shrink: 0;
+          width: 3.6rem;
+          font-weight: 700;
+          color: #c9a227;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
         }
         .loading-track {
+          width: min(28rem, 100%);
           height: 5px;
           border-radius: 3px;
           background: rgba(255, 255, 255, 0.1);
@@ -836,13 +877,13 @@ function LoadingOverlay({ world }) {
           transition: width 0.2s ease-out;
         }
         .loading-error {
-          margin-top: 1rem;
+          width: min(28rem, 100%);
           color: #ffb4b4;
-          font-size: 0.95rem;
+          font-size: 0.9rem;
           line-height: 1.4;
+          text-align: center;
         }
         .loading-retry {
-          margin-top: 0.85rem;
           border: none;
           border-radius: 6px;
           padding: 0.65rem 1rem;
@@ -860,8 +901,32 @@ function LoadingOverlay({ world }) {
       <div className='loading-image' />
       <div className='loading-shade' />
       <div className='loading-info'>
-        {title && <div className='loading-title'>{title}</div>}
-        {desc && <div className='loading-desc'>{desc}</div>}
+        <div className='loading-title'>{title || 'Proximo'}</div>
+        <div className='loading-howto'>
+          <h2 className='loading-howto-title'>How to Fight</h2>
+          <div className='loading-howto-list'>
+            <div className='loading-howto-row'>
+              <span className='loading-howto-key'>Attack</span>
+              <span>
+                {isTouch
+                  ? 'Use the ATK stick: tap to start, drag left, right, up, or down to swing from that direction, then release.'
+                  : 'Hold left click and drag left, right, up, or down to swing from that direction.'}
+              </span>
+            </div>
+            <div className='loading-howto-row'>
+              <span className='loading-howto-key'>Block</span>
+              <span>
+                {isTouch
+                  ? 'Use the BLK stick: tap to raise a block, drag to choose the side, then release to lower it.'
+                  : 'Hold right click and drag a direction to hold a block on that side. Release to lower it.'}
+              </span>
+            </div>
+            <div className='loading-howto-row'>
+              <span className='loading-howto-key'>Kick</span>
+              <span>{isTouch ? 'Tap the kick control to knock your opponent back.' : 'Press F to kick and knock your opponent back.'}</span>
+            </div>
+          </div>
+        </div>
         {!loadError && (
           <div className='loading-track'>
             <div className='loading-bar' />
