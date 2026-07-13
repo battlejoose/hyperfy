@@ -15,7 +15,7 @@ Disconnect while still alive in a paid battle counts as a death.
 
 ## Storage
 
-Table `arena_ratings` (SQLite locally, Postgres on Heroku):
+Table `arena_ratings` (SQLite by default; Postgres only when `DB_URI` is an explicit postgres URL):
 
 | Column | Notes |
 |--------|--------|
@@ -43,14 +43,18 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 - `GET /api/arena/leaderboard?limit=25&wallet=<optional>` → `{ players, you }`
 - Client: **Arena Rankings** toggle (bottom-left) in [`ArenaRankings.js`](../src/client/components/ArenaRankings.js)
 
-## Heroku Postgres
+## Heroku / database
 
-1. Attach the **Heroku Postgres** add-on (sets `DATABASE_URL`).
-2. **Unset `DB_URI`** on the dyno (or set it to the postgres URI). If `DB_URI=local`, the app uses SQLite and ignores `DATABASE_URL`.
-3. For world meshes/textures on Heroku, use `ASSETS=s3` — local `world/assets` is ephemeral on dynos.
-4. Migrations (including `arena_ratings`) run automatically on boot (`Procfile`: `web: npm start`).
+Ratings work on SQLite or Postgres. **Do not auto-bind Heroku `DATABASE_URL`.**
 
-Local default remains SQLite via `DB_URI=local`.
+The first rating deploy did that and silently loaded a different Postgres world DB, which referenced hashed sky/terrain assets that are not on the dyno — that is what blacked out the arena.
+
+| Config | Behavior |
+|--------|----------|
+| `DB_URI=local` (or non-postgres) | SQLite in `{WORLD}/db.sqlite` — **same as before ratings** |
+| `DB_URI=postgres://…` | Postgres (set this explicitly to your Heroku `DATABASE_URL` value if you want Postgres) |
+
+On Heroku dynos, Postgres connections enable SSL automatically when `DYNO` is set. Migrations (including `arena_ratings`) run on boot.
 
 ## Code map
 
@@ -58,5 +62,5 @@ Local default remains SQLite via `DB_URI=local`.
 |------|------|
 | [`src/core/extras/arenaRating.js`](../src/core/extras/arenaRating.js) | Delta constants |
 | [`src/core/extras/arenaRatingService.js`](../src/core/extras/arenaRatingService.js) | Knex helpers |
-| [`src/server/db.js`](../src/server/db.js) | Migration + `DATABASE_URL` resolve |
+| [`src/server/db.js`](../src/server/db.js) | Migration + DB_URI selection (no DATABASE_URL auto-switch) |
 | [`src/server/index.js`](../src/server/index.js) | Leaderboard HTTP route |

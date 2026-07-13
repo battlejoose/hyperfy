@@ -104,9 +104,18 @@ export class App extends Entity {
     }
     // if script crashed (or failed to load model), show crash-block
     if (crashed) {
-      let glb = this.world.loader.get('model', 'asset://crash-block.glb')
-      if (!glb) glb = await this.world.loader.load('model', 'asset://crash-block.glb')
-      root = glb.toNodes()
+      try {
+        let glb = this.world.loader.get('model', 'asset://crash-block.glb')
+        if (!glb) glb = await this.world.loader.load('model', 'asset://crash-block.glb')
+        root = glb.toNodes()
+      } catch {
+        // crash-block itself may be missing on Heroku — keep a simple placeholder
+        root = createNode('mesh')
+        root.type = 'box'
+        root.width = 1
+        root.height = 1
+        root.depth = 1
+      }
     }
     // if a new build happened while we were fetching, stop here
     if (this.n !== n) return

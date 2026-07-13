@@ -10,28 +10,8 @@ import { assets } from './assets'
 
 let db
 
-function resolveDatabaseUri() {
-  const uri = process.env.DB_URI
-  // Explicit local/sqlite — never silently switch to DATABASE_URL
-  if (!uri || uri === 'local' || uri === 'sqlite') {
-    return null
-  }
-  if (uri.startsWith('postgres://') || uri.startsWith('postgresql://')) {
-    // Heroku dynos need SSL even when DB_URI is set manually to the Postgres URL
-    return { uri, useSsl: !!process.env.DYNO || !!process.env.DATABASE_URL }
-  }
-  // DB_URI unset is handled above; if somehow empty string after trim...
-  return null
-}
-
-function resolvePostgresFromHeroku() {
-  // Only when DB_URI is not set at all — Heroku Postgres add-on
-  if (process.env.DB_URI) return null
-  const herokuUri = process.env.DATABASE_URL
-  if (herokuUri && (herokuUri.startsWith('postgres://') || herokuUri.startsWith('postgresql://'))) {
-    return { uri: herokuUri, useSsl: true }
-  }
-  return null
+function isPostgresUri(uri) {
+  return typeof uri === 'string' && (uri.startsWith('postgres://') || uri.startsWith('postgresql://'))
 }
 
 async function ensureArenaRatingsTable(db) {
@@ -52,15 +32,19 @@ async function ensureArenaRatingsTable(db) {
 
 export async function getDB({ worldDir }) {
   if (!db) {
-    const postgres = resolveDatabaseUri() || resolvePostgresFromHeroku()
-    if (postgres) {
+    // Match pre-rating behavior: only use Postgres when DB_URI is explicitly a
+    // postgres URL. Do NOT auto-switch to Heroku DATABASE_URL — that silently
+    // loads a different world DB and breaks asset hashes on ASSETS=local.
+    const uri = process.env.DB_URI
+    const isPostgres = isPostgresUri(uri)
+    if (isPostgres) {
       const schema = process.env.DB_SCHEMA || 'public'
+      const useSsl = !!process.env.DYNO
       db = Knex({
         client: 'pg',
-        connection: {
-          connectionString: postgres.uri,
-          ...(postgres.useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
-        },
+        connection: useSsl
+          ? { connectionString: uri, ssl: { rejectUnauthorized: false } }
+          : uri,
         pool: { min: 2, max: 10 },
         searchPath: [schema],
         useNullAsDefault: true,
@@ -68,6 +52,7 @@ export async function getDB({ worldDir }) {
       if (schema !== 'public') {
         await db.raw(`CREATE SCHEMA IF NOT EXISTS ??`, [schema])
       }
+      console.log('[db] using Postgres from DB_URI')
     } else {
       db = Knex({
         client: 'better-sqlite3',
@@ -76,6 +61,7 @@ export async function getDB({ worldDir }) {
         },
         useNullAsDefault: true,
       })
+      console.log('[db] using SQLite at', path.join(worldDir, '/db.sqlite'))
     }
     await migrate(db)
     await ensureArenaRatingsTable(db)
