@@ -267,84 +267,92 @@ export function TitleArenaRankings() {
   )
 }
 
-/** In-game toggleable rankings HUD. */
-export function ArenaRankings() {
-  const [open, setOpen] = useState(false)
+/** In-game rankings embedded in the queue scroll UI (parchment styling). */
+export function QueueArenaRankings() {
   const { wallet, players, you, error, loading } = useArenaLeaderboard({
-    enabled: open,
+    enabled: true,
     limit: 25,
     pollMs: 15000,
   })
 
   return (
     <div
+      className='queue-rankings'
       css={css`
-        position: absolute;
-        bottom: calc(1rem + env(safe-area-inset-bottom));
-        left: calc(1rem + env(safe-area-inset-left));
-        z-index: 996;
-        pointer-events: auto;
-        font-family: system-ui, sans-serif;
-        .rank-toggle {
-          border: none;
-          border-radius: 0.5rem;
-          background: rgba(0, 0, 0, 0.55);
-          color: #f2e6d0;
-          font-size: 0.75rem;
+        width: 100%;
+        max-width: 11rem;
+        margin-top: 0.35rem;
+        display: flex;
+        flex-direction: column;
+        max-height: 9.5rem;
+        .rank-title {
+          font-size: 0.68rem;
           font-weight: 700;
           letter-spacing: 0.06em;
           text-transform: uppercase;
-          padding: 0.55rem 0.85rem;
-          cursor: pointer;
+          color: #5c4033;
+          margin-bottom: 0.25rem;
+          text-align: center;
+          flex-shrink: 0;
         }
-        .rank-panel {
-          margin-top: 0.4rem;
-          width: min(20rem, calc(100vw - 2rem));
-          background: rgba(0, 0, 0, 0.72);
-          border: 1px solid rgba(242, 230, 208, 0.18);
-          border-radius: 0.6rem;
-          padding: 0.75rem 0.85rem;
-          color: #f2e6d0;
-        }
-        .rank-title {
-          font-size: 0.8rem;
-          font-weight: 700;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          margin-bottom: 0.55rem;
+        .rank-body {
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          min-height: 0;
+          flex: 1 1 auto;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(92, 64, 51, 0.35) transparent;
+          &::-webkit-scrollbar {
+            width: 5px;
+          }
+          &::-webkit-scrollbar-thumb {
+            background: rgba(92, 64, 51, 0.35);
+            border-radius: 3px;
+          }
         }
         .rank-status {
-          font-size: 0.72rem;
-          opacity: 0.75;
-          margin-bottom: 0.4rem;
+          font-size: 0.65rem;
+          color: #5c4033;
+          opacity: 0.85;
+          line-height: 1.3;
+          text-align: center;
         }
         .rank-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 0.72rem;
+          font-size: 0.65rem;
+          color: #3d2817;
         }
         .rank-table th {
           text-align: left;
-          font-weight: 600;
-          opacity: 0.65;
-          padding: 0.2rem 0.25rem 0.35rem;
+          font-weight: 700;
+          color: #5c4033;
+          opacity: 0.8;
+          padding: 0.1rem 0.15rem 0.25rem;
+          position: sticky;
+          top: 0;
+          background: rgba(255, 248, 235, 0.92);
+          z-index: 1;
         }
         .rank-table td {
-          padding: 0.22rem 0.25rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          padding: 0.12rem 0.15rem;
+          border-top: 1px solid rgba(61, 40, 23, 0.12);
         }
         .rank-table tr.you td {
-          color: #ffe4a3;
+          color: #7a1515;
           font-weight: 700;
         }
         .rank-you {
-          margin-top: 0.55rem;
-          padding-top: 0.45rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.1);
-          font-size: 0.72rem;
+          margin-top: 0.3rem;
+          padding-top: 0.25rem;
+          border-top: 1px solid rgba(61, 40, 23, 0.18);
+          font-size: 0.62rem;
+          color: #5c4033;
+          text-align: center;
+          flex-shrink: 0;
         }
         .rank-num {
-          width: 1.4rem;
+          width: 1.1rem;
           opacity: 0.7;
         }
         .rank-rating {
@@ -353,20 +361,21 @@ export function ArenaRankings() {
         }
       `}
     >
-      <button type='button' className='rank-toggle' onClick={() => setOpen(v => !v)}>
-        {open ? 'Hide Rankings' : 'Arena Rankings'}
-      </button>
-      {open && (
-        <div className='rank-panel'>
-          <div className='rank-title'>Arena Rankings</div>
-          <ArenaRankingsPanel
-            players={players}
-            you={you}
-            wallet={wallet}
-            loading={loading}
-            error={error}
-            limit={25}
-          />
+      <div className='rank-title'>Rankings</div>
+      <div className='rank-body'>
+        <ArenaRankingsPanel
+          players={players}
+          you={null}
+          wallet={wallet}
+          loading={loading}
+          error={error}
+          limit={25}
+          emptyMessage='No rated fighters yet.'
+        />
+      </div>
+      {you && (
+        <div className='rank-you'>
+          You: {you.rating} · {you.kills}K/{you.deaths}D · {you.wins}W
         </div>
       )}
     </div>

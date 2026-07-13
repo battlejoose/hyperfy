@@ -15,6 +15,7 @@ import {
   payEntryFee,
   payEntryFeeMwa,
 } from '../extras/solanaWallet.js'
+import { QueueArenaRankings } from './ArenaRankings'
 
 const SCROLL_SRC = '/assets/scroll.png'
 const BR_ENTRY_FEE_SOL = BR_ENTRY_FEE_LAMPORTS / LAMPORTS_PER_SOL
@@ -298,7 +299,7 @@ export function PlayerQueueList({ world }) {
         }
         .arena-row {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: center;
           gap: 1.75rem;
           width: 100%;
@@ -307,14 +308,20 @@ export function PlayerQueueList({ world }) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.4rem;
+          gap: 0.35rem;
           min-width: 10rem;
+        }
+        .arena-col-left {
+          align-items: center;
+          justify-content: flex-start;
+          min-width: 11rem;
         }
         .arena-col-center {
           display: flex;
           flex-direction: column;
           align-items: center;
           gap: 0.4rem;
+          padding-top: 0.15rem;
         }
         .arena-countdown-label {
           font-size: 0.85rem;
@@ -516,6 +523,12 @@ export function PlayerQueueList({ world }) {
             flex: 1 1 0;
             max-width: 4.85rem;
           }
+          .arena-col-left {
+            max-width: 4.85rem;
+          }
+          .arena-col-left .queue-rankings {
+            display: none;
+          }
           .arena-col-center {
             flex: 1.5 1 0;
             min-width: 0;
@@ -593,11 +606,12 @@ export function PlayerQueueList({ world }) {
         ) : (
         <div className='arena-panel-content'>
           <div className='arena-row'>
-            <div className='arena-col'>
+            <div className='arena-col arena-col-left'>
               {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}
               <div className='arena-pot'>
                 {queuedIds.length} queued · pot {formatSol(winnerLamports)} SOL
               </div>
+              <QueueArenaRankings />
             </div>
             <div className='arena-col-center'>
               <div className='arena-countdown-label'>Battle Royal begins in:</div>

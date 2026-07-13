@@ -63,6 +63,11 @@ function endProximoClip() {
   proximoClipVideo = null
 }
 
+/** Stop the title/loading Proximo clip once the arena is ready. */
+export function stopProximoClip() {
+  endProximoClip()
+}
+
 // autoplay with sound is blocked until a user activation. NOTE: on touch
 // devices only pointerup/touchend/click/keydown count as activation —
 // pointerdown does NOT, which is why retrying there froze the video on mobile
@@ -122,8 +127,8 @@ function startProximoClip() {
     video.preload = 'auto'
     video.style.cssText = [
       'position: fixed',
-      'left: 1rem',
-      'bottom: 1rem',
+      'left: calc(1rem + 50px)',
+      'bottom: calc(1rem + 50px)',
       'width: min(30vw, 20rem)',
       'z-index: 10001',
       'pointer-events: none',
