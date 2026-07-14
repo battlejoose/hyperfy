@@ -575,9 +575,11 @@ export function PlayerQueueList({ world }) {
           text-align: center;
           max-width: 14rem;
         }
-        @media (max-width: 640px) {
-          width: calc(100vw - 1rem);
-          max-width: calc(100vw - 1rem);
+        /* Portrait phones + landscape phones (short height). Use vmin so landscape
+           keeps the same physical width as portrait instead of stretching to 100vw. */
+        @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+          width: calc(100vmin - 1rem);
+          max-width: calc(100vmin - 1rem);
           .arena-panel {
             display: block;
             width: 100%;
@@ -609,7 +611,7 @@ export function PlayerQueueList({ world }) {
           .arena-col-left .rank-popup {
             left: 0;
             transform: none;
-            width: min(16rem, calc(100vw - 2rem));
+            width: min(16rem, calc(100vmin - 2rem));
           }
           .arena-col-center {
             flex: 1.5 1 0;
@@ -648,7 +650,7 @@ export function PlayerQueueList({ world }) {
           .arena-howto-popup {
             right: 0;
             left: auto;
-            width: min(16rem, calc(100vw - 2rem));
+            width: min(16rem, calc(100vmin - 2rem));
           }
           .arena-wallet-label,
           .arena-pot {
