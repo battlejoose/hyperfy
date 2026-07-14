@@ -18,6 +18,9 @@ import {
 import { QueueArenaRankings } from './ArenaRankings'
 
 const SCROLL_SRC = '/assets/scroll.png'
+const LEFT_CLICK_ICON = '/assets/leftclick.png'
+const RIGHT_CLICK_ICON = '/assets/rightclick.png'
+const F_KEY_ICON = '/assets/fkey.png'
 
 function truncateAddress(address) {
   if (!address || address.length < 10) return address
@@ -488,7 +491,8 @@ export function PlayerQueueList({ world }) {
         }
         .arena-tutorial-row {
           display: flex;
-          gap: 0.5rem;
+          gap: 0.45rem;
+          align-items: center;
           font-size: 0.78rem;
           color: #5c4033;
           line-height: 1.4;
@@ -498,6 +502,13 @@ export function PlayerQueueList({ world }) {
           width: 3.2rem;
           font-weight: 700;
           color: #3d2817;
+        }
+        .arena-tutorial-icon {
+          flex-shrink: 0;
+          width: 1.5rem;
+          height: 1.5rem;
+          object-fit: contain;
+          display: block;
         }
         .arena-enter,
         .arena-enter-test {
@@ -805,14 +816,17 @@ export function PlayerQueueList({ world }) {
                     <div className='arena-tutorial'>
                       <div className='arena-tutorial-row'>
                         <span className='arena-tutorial-key'>Attack</span>
+                        <img className='arena-tutorial-icon' src={LEFT_CLICK_ICON} alt='' />
                         <span>LEFT CLICK (hold and drag in any direction)</span>
                       </div>
                       <div className='arena-tutorial-row'>
                         <span className='arena-tutorial-key'>Block</span>
+                        <img className='arena-tutorial-icon' src={RIGHT_CLICK_ICON} alt='' />
                         <span>RIGHT CLICK (hold and drag in any direction)</span>
                       </div>
                       <div className='arena-tutorial-row'>
                         <span className='arena-tutorial-key'>Kick</span>
+                        <img className='arena-tutorial-icon' src={F_KEY_ICON} alt='' />
                         <span>F KEY (breaks an opponent's block)</span>
                       </div>
                     </div>

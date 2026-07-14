@@ -833,8 +833,8 @@ function LoadingOverlay({ world }) {
         }
         .loading-howto-row {
           display: flex;
-          gap: 0.75rem;
-          align-items: flex-start;
+          gap: 0.65rem;
+          align-items: center;
           font-size: 0.84rem;
           line-height: 1.4;
           color: rgba(255, 255, 255, 0.88);
@@ -846,6 +846,13 @@ function LoadingOverlay({ world }) {
           color: #c9a227;
           letter-spacing: 0.04em;
           text-transform: uppercase;
+        }
+        .loading-howto-icon {
+          flex-shrink: 0;
+          width: 1.75rem;
+          height: 1.75rem;
+          object-fit: contain;
+          display: block;
         }
         .loading-track {
           width: min(28rem, 100%);
@@ -895,6 +902,7 @@ function LoadingOverlay({ world }) {
           <div className='loading-howto-list'>
             <div className='loading-howto-row'>
               <span className='loading-howto-key'>Attack</span>
+              <img className='loading-howto-icon' src='/assets/leftclick.png' alt='' />
               <span>
                 {isTouch
                   ? 'ATK STICK (hold and drag in any direction)'
@@ -903,6 +911,7 @@ function LoadingOverlay({ world }) {
             </div>
             <div className='loading-howto-row'>
               <span className='loading-howto-key'>Block</span>
+              <img className='loading-howto-icon' src='/assets/rightclick.png' alt='' />
               <span>
                 {isTouch
                   ? 'BLK STICK (hold and drag in any direction)'
@@ -911,6 +920,7 @@ function LoadingOverlay({ world }) {
             </div>
             <div className='loading-howto-row'>
               <span className='loading-howto-key'>Kick</span>
+              <img className='loading-howto-icon' src='/assets/fkey.png' alt='' />
               <span>
                 {isTouch ? 'KICK BUTTON (breaks an opponent\'s block)' : 'F KEY (breaks an opponent\'s block)'}
               </span>
