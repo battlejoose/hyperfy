@@ -14,7 +14,7 @@ const { GLTFLoader } = await import('../src/core/libs/gltfloader/GLTFLoader.js')
 const loader = new GLTFLoader()
 loader.setMeshoptDecoder(MeshoptDecoder)
 
-const buf = fs.readFileSync('src/world/assets/arena-rome.glb')
+const buf = fs.readFileSync('src/world/assets/arena-rome-v2.glb')
 const glb = await new Promise((resolve, reject) => {
   loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', resolve, reject)
 })
@@ -27,4 +27,4 @@ glb.scene.traverse(obj => {
     vertices += obj.geometry.attributes.position?.count || 0
   }
 })
-console.log(`OK: parsed arena-rome.glb — ${meshes} meshes, ${vertices} vertices`)
+console.log(`OK: parsed arena-rome-v2.glb — ${meshes} meshes, ${vertices} vertices`)

@@ -4,7 +4,49 @@ import CustomShaderMaterial from '../libs/three-custom-shader-material'
 
 const groupTypes = ['Scene', 'Group', 'Object3D']
 
+/**
+ * meshopt / KHR_mesh_quantization stores positions as normalized int16 (often
+ * interleaved). That saves download size, but CSM depth shaders and some GPUs
+ * then fail to compile / OOM. Expand to plain float32 BufferAttributes once
+ * after parse — node transforms still carry the dequantization scale.
+ */
+function ensureFloatGeometry(geometry) {
+  if (!geometry?.attributes) return
+  let changed = false
+  for (const name of Object.keys(geometry.attributes)) {
+    const attr = geometry.attributes[name]
+    if (!attr) continue
+    const plain =
+      attr.array instanceof Float32Array && !attr.isInterleavedBufferAttribute && !attr.normalized
+    if (plain) continue
+    const itemSize = attr.itemSize
+    const count = attr.count
+    const arr = new Float32Array(count * itemSize)
+    for (let i = 0; i < count; i++) {
+      for (let c = 0; c < itemSize; c++) {
+        arr[i * itemSize + c] = attr.getComponent(i, c)
+      }
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(arr, itemSize, false))
+    changed = true
+  }
+  if (changed) {
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+  }
+}
+
+function dequantizeGlbGeometries(glb) {
+  glb?.scene?.traverse(obj => {
+    if (obj.isMesh || obj.isSkinnedMesh) {
+      ensureFloatGeometry(obj.geometry)
+    }
+  })
+}
+
 export function glbToNodes(glb, world) {
+  dequantizeGlbGeometries(glb)
+
   function registerNode(name, data) {
     const node = createNode(name, data)
     return node

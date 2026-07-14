@@ -4,9 +4,9 @@ import { addArenaFireFx, clearArenaFireFx } from './arenaFireFx.js'
 import { addArenaGeneral } from './arenaGeneral.js'
 import { addArenaCrowd, clearArenaCrowd } from './arenaCrowd.js'
 
-// meshopt + WebP compressed (13MB, was smallarenarome.glb at 34MB) — new
-// filename so clients never hit a stale immutable-cached copy of the old file
-export const ARENA_SRC = 'asset://arena-rome.glb'
+// meshopt + WebP, textures capped at 1024 (was 34MB raw / 13MB v1 with 2K
+// textures that OOM'd WebGL). New filename busts the immutable asset cache.
+export const ARENA_SRC = 'asset://arena-rome-v2.glb'
 
 /** Separates gladiator floor (inside) from spectator ring (outside). */
 export const ARENA_RING_WALL_RADIUS = 12.2
