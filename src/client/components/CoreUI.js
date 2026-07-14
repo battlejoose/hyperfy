@@ -764,17 +764,6 @@ function LoadingOverlay({ world }) {
         background: #0a0a0f;
         display: flex;
         pointer-events: auto;
-        @keyframes pulse {
-          0% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.05);
-          }
-          100% {
-            transform: scale(1);
-          }
-        }
         .loading-image {
           position: absolute;
           inset: 0;
@@ -782,7 +771,6 @@ function LoadingOverlay({ world }) {
           background-size: cover;
           background-repeat: no-repeat;
           background-image: url(${TITLE_BG_SRC});
-          animation: pulse 5s ease-in-out infinite;
         }
         .loading-shade {
           position: absolute;

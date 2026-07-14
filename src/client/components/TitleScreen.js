@@ -11,6 +11,11 @@ const PROXIMO_CLIP_VOLUME = 0.5
 /** Mobile is half of desktop — iOS also ignores video.volume, so we use a GainNode. */
 const PROXIMO_CLIP_VOLUME_MOBILE = PROXIMO_CLIP_VOLUME * 0.5
 
+/** Title-screen battleprep loop. */
+const TITLE_MUSIC_VOLUME = 0.45
+/** Mobile is half of desktop — same iOS volume workaround as the Proximo clip. */
+const TITLE_MUSIC_VOLUME_MOBILE = TITLE_MUSIC_VOLUME * 0.5
+
 export { AVATAR_CRUSADER }
 
 const MAX_NAME_LENGTH = 24
@@ -50,10 +55,58 @@ function loadImageSrc(src) {
 const titleBgReady = loadImageSrc(ASSETS.bg)
 const titleScrollReady = loadImageSrc(ASSETS.scroll)
 
+let titleMusicAudioCtx = null
+let titleMusicGain = null
+
 function stopAudio(audio) {
   if (!audio) return
   audio.pause()
   audio.src = ''
+}
+
+function getTitleMusicVolume() {
+  return isTouch ? TITLE_MUSIC_VOLUME_MOBILE : TITLE_MUSIC_VOLUME
+}
+
+function attachTitleMusicVolume(audio) {
+  const target = getTitleMusicVolume()
+  audio.volume = 1
+  audio.crossOrigin = 'anonymous'
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) {
+      audio.volume = target
+      return
+    }
+    titleMusicAudioCtx = new Ctx()
+    const source = titleMusicAudioCtx.createMediaElementSource(audio)
+    titleMusicGain = titleMusicAudioCtx.createGain()
+    titleMusicGain.gain.value = target
+    source.connect(titleMusicGain)
+    titleMusicGain.connect(titleMusicAudioCtx.destination)
+  } catch (err) {
+    console.warn('[title] music Web Audio volume unavailable:', err)
+    audio.volume = target
+  }
+}
+
+function resumeTitleMusicAudio() {
+  if (!titleMusicAudioCtx) return
+  if (titleMusicAudioCtx.state === 'suspended') {
+    titleMusicAudioCtx.resume().catch(() => {})
+  }
+}
+
+function stopTitleMusic(audio) {
+  stopAudio(audio)
+  try {
+    titleMusicGain?.disconnect()
+    titleMusicAudioCtx?.close()
+  } catch {
+    // ignore teardown errors
+  }
+  titleMusicGain = null
+  titleMusicAudioCtx = null
 }
 
 // The Proximo talking-head video lives outside React on document.body so it
@@ -267,10 +320,11 @@ export function TitleScreen({ onStart }) {
 
     const music = new Audio(ASSETS.titleMusic)
     music.loop = true
-    music.volume = 0.45
+    attachTitleMusicVolume(music)
     titleMusicRef.current = music
 
     const startMusic = () => {
+      resumeTitleMusicAudio()
       music.play().catch(() => {})
     }
 
@@ -293,7 +347,7 @@ export function TitleScreen({ onStart }) {
     return () => {
       window.removeEventListener('pointerup', onFirstInteraction)
       window.removeEventListener('keydown', onFirstInteraction)
-      stopAudio(titleMusicRef.current)
+      stopTitleMusic(titleMusicRef.current)
       titleMusicRef.current = null
     }
   }, [showTitle])
@@ -302,7 +356,7 @@ export function TitleScreen({ onStart }) {
     e.preventDefault()
     if (!canStart) return
 
-    stopAudio(titleMusicRef.current)
+    stopTitleMusic(titleMusicRef.current)
     titleMusicRef.current = null
 
     const playerName = trimmedName.slice(0, MAX_NAME_LENGTH)
