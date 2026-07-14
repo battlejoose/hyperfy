@@ -438,7 +438,7 @@ function Chat({ world }) {
         position: absolute;
         left: calc(5.375rem + env(safe-area-inset-left));
         bottom: calc(2rem + env(safe-area-inset-bottom));
-        width: 20rem;
+        width: ${isTouch ? '18rem' : '20rem'};
         font-size: 1rem;
         @media all and (max-width: 1200px) {
           left: calc(4.375rem + env(safe-area-inset-left));
