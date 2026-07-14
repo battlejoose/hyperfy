@@ -507,17 +507,8 @@ export function PlayerQueueList({ world }) {
           flex-shrink: 0;
           width: 1.5rem;
           height: 1.5rem;
-          padding: 0.18rem;
-          box-sizing: content-box;
           object-fit: contain;
           display: block;
-          border-radius: 0.35rem;
-          background: radial-gradient(
-            circle at center,
-            rgba(255, 255, 255, 0.9) 35%,
-            rgba(255, 255, 255, 0.4) 70%,
-            rgba(255, 255, 255, 0) 100%
-          );
         }
         .arena-enter,
         .arena-enter-test {
