@@ -18,7 +18,6 @@ import {
 import { QueueArenaRankings } from './ArenaRankings'
 
 const SCROLL_SRC = '/assets/scroll.png'
-const BR_ENTRY_FEE_SOL = BR_ENTRY_FEE_LAMPORTS / LAMPORTS_PER_SOL
 
 function truncateAddress(address) {
   if (!address || address.length < 10) return address
@@ -27,6 +26,11 @@ function truncateAddress(address) {
 
 function formatSol(lamports) {
   return (lamports / LAMPORTS_PER_SOL).toFixed(4).replace(/\.?0+$/, '')
+}
+
+function formatFeeLabel(lamports) {
+  // e.g. 0.01 -> .01
+  return (lamports / LAMPORTS_PER_SOL).toFixed(2).replace(/^0/, '')
 }
 
 function formatTime(seconds) {
@@ -324,15 +328,34 @@ export function PlayerQueueList({ world }) {
           gap: 0.28rem;
           padding-top: 0;
         }
-        .arena-countdown-label {
-          font-size: 0.8rem;
+        .arena-countdown {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 0.35rem;
+        }
+        .arena-countdown-words {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          justify-content: center;
+          gap: 0;
+          font-size: 0.72rem;
           font-weight: 700;
           letter-spacing: 0.04em;
           text-transform: uppercase;
           color: #5c4033;
-          text-align: center;
-          white-space: nowrap;
-          line-height: 1.15;
+          line-height: 1.1;
+          text-align: right;
+        }
+        .arena-countdown-colon {
+          font-size: 1.7rem;
+          font-weight: 700;
+          line-height: 1;
+          color: #5c4033;
+          align-self: stretch;
+          display: flex;
+          align-items: center;
         }
         .arena-countdown-time {
           font-size: 1.95rem;
@@ -593,9 +616,12 @@ export function PlayerQueueList({ world }) {
             min-width: 0;
             max-width: 8.5rem;
           }
-          .arena-countdown-label {
-            font-size: 0.62rem;
-            letter-spacing: 0.03em;
+          .arena-countdown-words {
+            font-size: 0.55rem;
+            letter-spacing: 0.02em;
+          }
+          .arena-countdown-colon {
+            font-size: 1.2rem;
           }
           .arena-countdown-time {
             font-size: 1.4rem;
@@ -656,8 +682,14 @@ export function PlayerQueueList({ world }) {
               <QueueArenaRankings />
             </div>
             <div className='arena-col-center'>
-              <div className='arena-countdown-label'>Battle Royal begins:</div>
-              <div className='arena-countdown-time'>{formatTime(remaining)}</div>
+              <div className='arena-countdown'>
+                <div className='arena-countdown-words'>
+                  <span>Next</span>
+                  <span>Battle</span>
+                </div>
+                <div className='arena-countdown-colon'>:</div>
+                <div className='arena-countdown-time'>{formatTime(remaining)}</div>
+              </div>
               {isQueued ? (
                 <div className='arena-queued'>You are in the battle royale queue!</div>
               ) : walletChoices ? (
@@ -693,7 +725,7 @@ export function PlayerQueueList({ world }) {
                 </div>
               ) : (
                 <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
-                  {pending ? 'Verifying payment…' : `Join Battle Royal (${BR_ENTRY_FEE_SOL} SOL)`}
+                  {pending ? 'Verifying payment…' : `Join Battle (${formatFeeLabel(BR_ENTRY_FEE_LAMPORTS)} SOL)`}
                 </button>
               )}
               {notice ? <div className='arena-notice'>{notice}</div> : null}
