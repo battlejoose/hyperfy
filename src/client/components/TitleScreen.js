@@ -7,7 +7,7 @@ import { isTouch } from '../utils'
 import { TitleArenaRankings } from './ArenaRankings'
 
 /** Desktop HTML/WebAudio clip level. */
-const PROXIMO_CLIP_VOLUME = 0.25
+const PROXIMO_CLIP_VOLUME = 0.5
 /** Mobile is half of desktop — iOS also ignores video.volume, so we use a GainNode. */
 const PROXIMO_CLIP_VOLUME_MOBILE = PROXIMO_CLIP_VOLUME * 0.5
 
