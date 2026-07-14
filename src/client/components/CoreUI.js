@@ -436,12 +436,12 @@ function Chat({ world }) {
       className={cls('mainchat', { active })}
       css={css`
         position: absolute;
-        left: calc(2rem + env(safe-area-inset-left));
+        left: calc(5.375rem + env(safe-area-inset-left));
         bottom: calc(2rem + env(safe-area-inset-bottom));
         width: 20rem;
         font-size: 1rem;
         @media all and (max-width: 1200px) {
-          left: calc(1rem + env(safe-area-inset-left));
+          left: calc(4.375rem + env(safe-area-inset-left));
           bottom: calc(1rem + env(safe-area-inset-bottom));
         }
         .mainchat-msgs {

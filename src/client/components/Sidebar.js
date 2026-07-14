@@ -119,41 +119,15 @@ export function Sidebar({ world, ui }) {
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
+            align-self: stretch;
             gap: 0.625rem;
+          }
+          .sidebar-sections-bottom {
+            margin-top: auto;
           }
         `}
       >
         <div className='sidebar-sections'>
-          <Section active={activePane} bottom>
-            {isTouch && (
-              <Btn
-                onClick={() => {
-                  world.emit('sidebar-chat-toggle')
-                }}
-              >
-                <MessageSquareTextIcon size='1.25rem' />
-              </Btn>
-            )}
-            {livekit.available && !livekit.connected && (
-              <Btn disabled>
-                <MicOffIcon size='1.25rem' />
-              </Btn>
-            )}
-            {livekit.available && livekit.connected && (
-              <Btn
-                muted={livekit.mic && (livekit.level === 'disabled' || livekit.muted)}
-                onClick={() => {
-                  world.livekit.setMicrophoneEnabled()
-                }}
-              >
-                {livekit.mic && livekit.level !== 'disabled' && !livekit.muted ? (
-                  <MicIcon size='1.25rem' />
-                ) : (
-                  <MicOffIcon size='1.25rem' />
-                )}
-              </Btn>
-            )}
-          </Section>
           {isBuilder && (
             <Section active={activePane} top bottom>
               <Btn
@@ -218,6 +192,36 @@ export function Sidebar({ world, ui }) {
               </Btn>
             </Section>
           )}
+          <Section active={activePane} top className='sidebar-sections-bottom'>
+            {isTouch && (
+              <Btn
+                onClick={() => {
+                  world.emit('sidebar-chat-toggle')
+                }}
+              >
+                <MessageSquareTextIcon size='1.25rem' />
+              </Btn>
+            )}
+            {livekit.available && !livekit.connected && (
+              <Btn disabled>
+                <MicOffIcon size='1.25rem' />
+              </Btn>
+            )}
+            {livekit.available && livekit.connected && (
+              <Btn
+                muted={livekit.mic && (livekit.level === 'disabled' || livekit.muted)}
+                onClick={() => {
+                  world.livekit.setMicrophoneEnabled()
+                }}
+              >
+                {livekit.mic && livekit.level !== 'disabled' && !livekit.muted ? (
+                  <MicIcon size='1.25rem' />
+                ) : (
+                  <MicOffIcon size='1.25rem' />
+                )}
+              </Btn>
+            )}
+          </Section>
         </div>
         {ui.pane === 'prefs' && <Prefs world={world} hidden={!ui.active} />}
         {ui.pane === 'world' && <World world={world} hidden={!ui.active} />}
@@ -233,10 +237,10 @@ export function Sidebar({ world, ui }) {
   )
 }
 
-function Section({ active, top, bottom, children }) {
+function Section({ active, top, bottom, className, children }) {
   return (
     <div
-      className={cls('sidebar-section', { active, top, bottom })}
+      className={cls('sidebar-section', { active, top, bottom }, className)}
       css={css`
         background: rgba(11, 10, 21, 0.2);
         border: 1px solid rgba(255, 255, 255, 0.05);
