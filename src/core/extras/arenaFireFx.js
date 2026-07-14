@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 export const ARENA_FIRE_SRC = 'asset://animated_fire.glb'
 export const BARRIZER_IDS = ['barrizer', 'barrizer_2']
-const FIRE_Y_OFFSET = 0.85
+const FIRE_Y_OFFSET = 0.55
 const FIRE_TILT_X = -Math.PI / 2
 const FIRE_SPIN_Y = Math.PI / 2
 
