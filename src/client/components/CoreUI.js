@@ -438,7 +438,7 @@ function Chat({ world }) {
         position: absolute;
         left: calc(5.375rem + env(safe-area-inset-left));
         bottom: calc(2rem + env(safe-area-inset-bottom));
-        width: ${isTouch ? '18rem' : '20rem'};
+        width: ${isTouch ? '16.2rem' : '20rem'};
         font-size: 1rem;
         @media all and (max-width: 1200px) {
           left: calc(4.375rem + env(safe-area-inset-left));
@@ -477,6 +477,8 @@ function Chat({ world }) {
           opacity: 1; */
 
           input {
+            flex: 1;
+            min-width: 0;
             font-size: 0.9375rem;
             line-height: 1;
             &::selection {
@@ -505,8 +507,7 @@ function Chat({ world }) {
       `}
     >
       <div className='mainchat-msgs'>
-        {isTouch && !active && <MiniMessages world={world} />}
-        {(!isTouch || active) && <Messages world={world} active={active} />}
+        <Messages world={world} active={active} />
       </div>
       <div
         className='mainchat-btn'
@@ -548,30 +549,6 @@ function Chat({ world }) {
       </label>
     </div>
   )
-}
-
-function MiniMessages({ world }) {
-  const [msg, setMsg] = useState(null)
-  useEffect(() => {
-    let init
-    return world.chat.subscribe(msgs => {
-      if (!init) {
-        init = true
-        return // skip first
-      }
-      const msg = msgs[msgs.length - 1]
-      if (msg.fromId === world.network.id) return
-      setMsg(msg)
-    })
-  }, [])
-  useEffect(() => {
-    const timerId = setTimeout(() => {
-      setMsg(null)
-    }, 4000)
-    return () => clearTimeout(timerId)
-  }, [msg])
-  if (!msg) return null
-  return <Message msg={msg} />
 }
 
 const MESSAGES_REFRESH_RATE = 30 // every x seconds
@@ -679,11 +656,16 @@ function Message({ msg, now }) {
         font-size: 1rem;
         paint-order: stroke fill;
         -webkit-text-stroke: 0.25rem rgba(0, 0, 0, 0.2);
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-wrap: anywhere;
         .message-from {
           margin-right: 0.25rem;
         }
         .message-body {
-          // ...
+          white-space: pre-wrap;
+          word-break: break-word;
+          overflow-wrap: anywhere;
         }
       `}
     >
