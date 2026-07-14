@@ -805,15 +805,15 @@ export function PlayerQueueList({ world }) {
                     <div className='arena-tutorial'>
                       <div className='arena-tutorial-row'>
                         <span className='arena-tutorial-key'>Attack</span>
-                        <span>Hold left click and drag left, right, up, or down to swing from that direction.</span>
+                        <span>LEFT CLICK (hold and drag in any direction)</span>
                       </div>
                       <div className='arena-tutorial-row'>
                         <span className='arena-tutorial-key'>Block</span>
-                        <span>Hold right click and drag a direction to hold a block on that side. Release to lower it.</span>
+                        <span>RIGHT CLICK (hold and drag in any direction)</span>
                       </div>
                       <div className='arena-tutorial-row'>
                         <span className='arena-tutorial-key'>Kick</span>
-                        <span>Press F to kick and break an opponent’s block.</span>
+                        <span>F KEY (breaks an opponent's block)</span>
                       </div>
                     </div>
                   </div>

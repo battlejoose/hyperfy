@@ -897,21 +897,23 @@ function LoadingOverlay({ world }) {
               <span className='loading-howto-key'>Attack</span>
               <span>
                 {isTouch
-                  ? 'Use the ATK stick: tap to start, drag left, right, up, or down to swing from that direction, then release.'
-                  : 'Hold left click and drag left, right, up, or down to swing from that direction.'}
+                  ? 'ATK STICK (hold and drag in any direction)'
+                  : 'LEFT CLICK (hold and drag in any direction)'}
               </span>
             </div>
             <div className='loading-howto-row'>
               <span className='loading-howto-key'>Block</span>
               <span>
                 {isTouch
-                  ? 'Use the BLK stick: tap to raise a block, drag to choose the side, then release to lower it.'
-                  : 'Hold right click and drag a direction to hold a block on that side. Release to lower it.'}
+                  ? 'BLK STICK (hold and drag in any direction)'
+                  : 'RIGHT CLICK (hold and drag in any direction)'}
               </span>
             </div>
             <div className='loading-howto-row'>
               <span className='loading-howto-key'>Kick</span>
-              <span>{isTouch ? 'Tap the kick control to break an opponent’s block.' : 'Press F to kick and break an opponent’s block.'}</span>
+              <span>
+                {isTouch ? 'KICK BUTTON (breaks an opponent\'s block)' : 'F KEY (breaks an opponent\'s block)'}
+              </span>
             </div>
           </div>
         </div>
