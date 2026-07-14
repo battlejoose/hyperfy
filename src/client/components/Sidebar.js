@@ -84,16 +84,17 @@ backdrop-filter: blur(5px);
 export function Sidebar({ world, ui }) {
   const player = world.entities.player
   const { isAdmin, isBuilder } = useRank(world, player)
-  const [livekit, setLiveKit] = useState(() => world.livekit.status)
-  useEffect(() => {
-    const onLiveKitStatus = status => {
-      setLiveKit({ ...status })
-    }
-    world.livekit.on('status', onLiveKitStatus)
-    return () => {
-      world.livekit.off('status', onLiveKitStatus)
-    }
-  }, [])
+  // Voice chat / LiveKit UI disabled
+  // const [livekit, setLiveKit] = useState(() => world.livekit.status)
+  // useEffect(() => {
+  //   const onLiveKitStatus = status => {
+  //     setLiveKit({ ...status })
+  //   }
+  //   world.livekit.on('status', onLiveKitStatus)
+  //   return () => {
+  //     world.livekit.off('status', onLiveKitStatus)
+  //   }
+  // }, [])
   const activePane = ui.active ? ui.pane : null
   return (
     <HintProvider>
@@ -192,16 +193,8 @@ export function Sidebar({ world, ui }) {
               </Btn>
             </Section>
           )}
+          {/* Voice chat / LiveKit mic button disabled
           <Section active={activePane} top className='sidebar-sections-bottom'>
-            {isTouch && (
-              <Btn
-                onClick={() => {
-                  world.emit('sidebar-chat-toggle')
-                }}
-              >
-                <MessageSquareTextIcon size='1.25rem' />
-              </Btn>
-            )}
             {livekit.available && !livekit.connected && (
               <Btn disabled>
                 <MicOffIcon size='1.25rem' />
@@ -222,6 +215,18 @@ export function Sidebar({ world, ui }) {
               </Btn>
             )}
           </Section>
+          */}
+          {isTouch && (
+            <Section active={activePane} top className='sidebar-sections-bottom'>
+              <Btn
+                onClick={() => {
+                  world.emit('sidebar-chat-toggle')
+                }}
+              >
+                <MessageSquareTextIcon size='1.25rem' />
+              </Btn>
+            </Section>
+          )}
         </div>
         {ui.pane === 'prefs' && <Prefs world={world} hidden={!ui.active} />}
         {ui.pane === 'world' && <World world={world} hidden={!ui.active} />}

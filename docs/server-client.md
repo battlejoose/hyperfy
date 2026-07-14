@@ -99,7 +99,7 @@ Sent once to each client on join:
   settings: { ... },
   blueprints: [{ ... }],    // all blueprint templates
   entities: [{ ... }],      // all live entities (players + apps)
-  livekit: { ... },
+  livekit: null,            // voice disabled; was LiveKit token payload when enabled
   authToken: JWT,
 }
 ```

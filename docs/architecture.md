@@ -80,7 +80,7 @@ Registered in `src/core/createServerWorld.js`:
 | `server` | 30 Hz game loop |
 | `network` | Client connections, packet routing, combat health validation |
 | `loader` | Server-side asset loading |
-| `livekit` | Voice chat tokens |
+| `livekit` | Voice chat tokens (**currently disabled** — no tokens issued) |
 | `monitor` | CPU/memory stats |
 | `ai` | AI agent integration |
 
@@ -100,7 +100,7 @@ Registered in `src/core/createClientWorld.js`:
 | `environment` | Sky, HDR, CSM shadows, fog |
 | `audio` | Spatial audio groups |
 | `builder` | In-world editing tools |
-| `livekit` | Voice chat client |
+| `livekit` | Voice chat client (**currently disabled** — does not connect) |
 | `ui` | React overlay state |
 
 ### Shared systems (run on both sides)

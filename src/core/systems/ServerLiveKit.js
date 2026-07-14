@@ -17,7 +17,9 @@ export class ServerLiveKit extends System {
     this.wsUrl = process.env.LIVEKIT_WS_URL
     this.apiKey = process.env.LIVEKIT_API_KEY
     this.apiSecret = process.env.LIVEKIT_API_SECRET
-    this.enabled = this.wsUrl && this.apiKey && this.apiSecret
+    // Voice chat disabled — do not issue tokens or bill LiveKit connection minutes.
+    // Re-enable with: this.enabled = !!(this.wsUrl && this.apiKey && this.apiSecret)
+    this.enabled = false
     this.modifiers = {} // [playerId] => Set({ level })
     this.levels = {} // [playerId] => level (disabled, spatial, global)
     this.muted = new Set()

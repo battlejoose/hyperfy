@@ -53,7 +53,10 @@ export class ClientLiveKit extends System {
   }
 
   async deserialize(opts) {
+    // Voice chat / LiveKit disabled — never connect (server also returns null).
     if (!opts) return
+    return
+    /* Voice chat re-enable: remove the early return above.
     this.status.available = true
     this.status.muted = opts.muted.has(this.world.network.id)
     this.levels = opts.levels
@@ -83,6 +86,7 @@ export class ClientLiveKit extends System {
       this.status.connected = true
       this.emit('status', this.status)
     })
+    */
   }
 
   setMuted(playerId, muted) {
