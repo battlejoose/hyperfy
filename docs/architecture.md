@@ -186,7 +186,7 @@ asset://avatar.vrm      → resolved to assets server path
 https://...             → passthrough
 ```
 
-Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. `preload` flag causes download at world join to prevent in-game stalls. Large-asset fetch retries (attempts 2–3, and the Retry button) use `cache: 'no-store'` plus a cache-buster query so a bad browser `304` entry cannot block loading.
+Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. `preload` flag causes download at world join to prevent in-game stalls. Large assets use XHR with longer backoffs (Heroku often drops mid-body transfers as `ERR_FAILED` even with HTTP 200). The loading-screen Retry button restarts arena loading in-place (same session/username), busting the arena cache first.
 
 ---
 

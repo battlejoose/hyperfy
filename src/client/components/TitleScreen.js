@@ -162,7 +162,13 @@ function startProximoClip() {
 }
 
 export function TitleScreen({ onStart }) {
-  const [name, setName] = useState('')
+  const [name, setName] = useState(() => {
+    try {
+      return sessionStorage.getItem('proximo.playerName') || ''
+    } catch {
+      return ''
+    }
+  })
   const [scrollReady, setScrollReady] = useState(false)
   const [showTitle, setShowTitle] = useState(false)
   const titleMusicRef = useRef(null)
@@ -243,8 +249,14 @@ export function TitleScreen({ onStart }) {
     stopAudio(titleMusicRef.current)
     titleMusicRef.current = null
 
+    const playerName = trimmedName.slice(0, MAX_NAME_LENGTH)
+    try {
+      sessionStorage.setItem('proximo.playerName', playerName)
+    } catch {
+      // ignore quota / private mode
+    }
     onStart({
-      name: trimmedName.slice(0, MAX_NAME_LENGTH),
+      name: playerName,
       avatar: AVATAR_CRUSADER,
     })
   }

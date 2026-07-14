@@ -59,16 +59,16 @@ export async function prepareClientGameAssets(world, data) {
   const emitProgress = pct => world.emit('progress', pct)
   emitProgress(3)
 
+  // Loader already retries with backoff; one extra outer attempt after a longer pause
+  // so we don't hammer Heroku with 9 rapid 33MB downloads.
   let lastErr = null
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       if (attempt > 1) {
-        // Bypass HTTP cache — retries after a dropped download often get stuck on
-        // net::ERR_FAILED 304 (Not Modified) until a full page refresh.
         clearPrefetch(ARENA_SRC)
         world.loader.bust(ARENA_SRC)
         emitProgress(5)
-        await new Promise(r => setTimeout(r, 500 * attempt))
+        await new Promise(r => setTimeout(r, 4000))
       }
       emitProgress(8)
       await world.loader.load('model', ARENA_SRC)
@@ -81,7 +81,7 @@ export async function prepareClientGameAssets(world, data) {
       lastErr = err
       clearPrefetch(ARENA_SRC)
       world.loader.bust(ARENA_SRC)
-      console.warn(`[gameAssets] arena setup attempt ${attempt}/3 failed:`, err.message || err)
+      console.warn(`[gameAssets] arena setup attempt ${attempt}/2 failed:`, err.message || err)
     }
   }
   if (lastErr) {

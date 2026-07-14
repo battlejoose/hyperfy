@@ -121,15 +121,21 @@ export class ClientNetwork extends System {
       })
   }
 
-  /** Retry asset load + world enter after a critical load failure. */
+  /**
+   * Restart arena asset load only — stay on the loading screen with the same
+   * websocket session / username (do not bounce back to the title form).
+   */
   retryBootstrap() {
     if (this.bootstrapping || !this.pendingSnapshot) return
     this.world.emit('loadError', null)
     this.world.emit('progress', 0)
-    // Force a fresh arena download — retry after ERR_FAILED often sticks on a bad 304 cache entry.
     clearPrefetch(ARENA_SRC)
     this.world.loader.bust(ARENA_SRC)
-    this.bootstrapping = this.bootstrapGame(this.pendingSnapshot)
+    this.bootstrapping = (async () => {
+      // Brief pause so Heroku can recover before another ~33MB pull
+      await new Promise(r => setTimeout(r, 1500))
+      await this.bootstrapGame(this.pendingSnapshot)
+    })()
       .catch(err => {
         console.error('[ClientNetwork] bootstrap retry failed:', err)
         this.world.emit('loadError', { message: err.message || 'Failed to load the arena' })

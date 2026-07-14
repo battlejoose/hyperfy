@@ -17,6 +17,43 @@ import Hls from 'hls.js/dist/hls.js'
 // THREE.Cache.enabled = true
 
 /**
+ * XHR download for large binaries. fetch() on Heroku often reports
+ * net::ERR_FAILED with HTTP 200/304 when the body transfer dies mid-stream.
+ */
+function fetchBlobXHR(url, { timeoutMs = 180000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', url, true)
+    xhr.responseType = 'blob'
+    xhr.timeout = timeoutMs
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const blob = xhr.response
+        if (!blob || !blob.size) {
+          reject(new Error('empty response'))
+          return
+        }
+        const lenHeader = xhr.getResponseHeader('Content-Length')
+        if (lenHeader) {
+          const expected = parseInt(lenHeader, 10)
+          if (Number.isFinite(expected) && expected > 0 && blob.size < expected) {
+            reject(new Error(`incomplete download (${blob.size}/${expected} bytes)`))
+            return
+          }
+        }
+        resolve(blob)
+        return
+      }
+      reject(new Error(`HTTP ${xhr.status}`))
+    }
+    xhr.onerror = () => reject(new Error('network error'))
+    xhr.ontimeout = () => reject(new Error('timeout'))
+    xhr.onabort = () => reject(new Error('aborted'))
+    xhr.send()
+  })
+}
+
+/**
  * Client Loader System
  *
  * - Runs on the client
@@ -146,38 +183,30 @@ export class ClientLoader extends System {
     }
     try {
       const prefetched = await getPrefetchedBlob(url)
-      if (prefetched) {
+      if (prefetched?.size) {
         const file = new File([prefetched], url.split('/').pop(), { type: prefetched.type })
         this.files.set(url, file)
         return file
       }
     } catch {
-      // fall through to fetch
+      // fall through to download
     }
 
-    // Heroku can drop large asset transfers under load — retry briefly.
-    // After a failed/aborted download, Chrome often revalidates with 304 and then
-    // fails (net::ERR_FAILED 304). Automatic retries 2–3 bypass HTTP cache entirely.
+    // Large assets (arena ~33MB) often die mid-transfer on Heroku: Chrome reports
+    // net::ERR_FAILED with status 200/304. Use XHR + longer backoff; retries bust cache.
+    const backoffsMs = [0, 2000, 5000]
     let lastErr
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < backoffsMs.length; attempt++) {
       try {
-        if (attempt > 0) {
+        if (backoffsMs[attempt] > 0) {
           clearPrefetch(url)
           this.forceReloadUrls.add(url)
-          await new Promise(r => setTimeout(r, 400 * attempt))
+          await new Promise(r => setTimeout(r, backoffsMs[attempt]))
         }
         const bustCache = this.forceReloadUrls.has(url) || attempt > 0
-        // no-store + cache-buster query: avoids sticky 304 / corrupt cache entries
         const fetchUrl = bustCache ? `${url}${url.includes('?') ? '&' : '?'}_retry=${Date.now()}` : url
-        const resp = await fetch(fetchUrl, { cache: bustCache ? 'no-store' : 'default' })
-        if (!resp.ok) {
-          throw new Error(`failed to load ${url} (${resp.status})`)
-        }
-        const blob = await resp.blob()
-        if (!blob.size) {
-          throw new Error(`empty response for ${url}`)
-        }
-        const file = new File([blob], url.split('/').pop(), { type: blob.type })
+        const blob = await fetchBlobXHR(fetchUrl, { timeoutMs: 180000 })
+        const file = new File([blob], url.split('/').pop(), { type: blob.type || 'application/octet-stream' })
         this.files.set(url, file)
         this.forceReloadUrls.delete(url)
         return file
@@ -185,7 +214,7 @@ export class ClientLoader extends System {
         lastErr = err
         this.forceReloadUrls.add(url)
         clearPrefetch(url)
-        console.warn(`[loader] attempt ${attempt + 1}/3 failed for ${url}:`, err.message || err)
+        console.warn(`[loader] attempt ${attempt + 1}/${backoffsMs.length} failed for ${url}:`, err.message || err)
       }
     }
     throw lastErr
