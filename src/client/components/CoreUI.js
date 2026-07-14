@@ -436,16 +436,22 @@ function Chat({ world }) {
       className={cls('mainchat', { active })}
       css={css`
         position: absolute;
-        left: calc(2rem + env(safe-area-inset-left));
+        left: calc(5.375rem + env(safe-area-inset-left));
         bottom: calc(2rem + env(safe-area-inset-bottom));
         width: ${isTouch ? '16.2rem' : '20rem'};
         font-size: 1rem;
         @media all and (max-width: 1200px) {
-          left: calc(1rem + env(safe-area-inset-left));
+          left: calc(4.375rem + env(safe-area-inset-left));
           bottom: calc(1rem + env(safe-area-inset-bottom));
         }
         .mainchat-msgs {
+          /* Pull history to the screen's left edge; input bubble stays offset for the chat button */
+          position: absolute;
+          left: -3.375rem;
+          bottom: 2.875rem;
+          width: ${isTouch ? '16.2rem' : '20rem'};
           padding: 0 0 0.5rem 0.4rem;
+          box-sizing: border-box;
         }
         .mainchat-btn {
           pointer-events: auto;
@@ -470,8 +476,6 @@ function Chat({ world }) {
           border-radius: 2rem;
           display: flex;
           align-items: center;
-          /* Keep type bubble clear of the mobile chat button; history stays left-aligned */
-          ${isTouch ? 'margin-left: 3.375rem; width: calc(100% - 3.375rem);' : ''}
 
           // debug
           display: none;
