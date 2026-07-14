@@ -1248,7 +1248,7 @@ function TouchBtns({ world }) {
           &.jump {
             width: 4rem;
             height: 4rem;
-            bottom: 1rem;
+            bottom: calc(1rem - 20px);
             right: 1rem;
           }
           &.action {
@@ -1400,7 +1400,7 @@ function TouchCombatSticks({ world }) {
       css={css`
         position: absolute;
         right: calc(1rem + env(safe-area-inset-right));
-        bottom: calc(5.75rem + ${COMBAT_STICK_LIFT}px + env(safe-area-inset-bottom));
+        bottom: calc(5.75rem + ${COMBAT_STICK_LIFT}px + env(safe-area-inset-bottom) - 20px);
         display: flex;
         flex-direction: row;
         align-items: center;
