@@ -3,6 +3,7 @@ import { css } from '@firebolt-dev/css'
 
 import { AVATAR_CRUSADER } from '../../core/extras/playerAvatars'
 import { prefetchGameAssets } from '../../core/extras/assetPrefetch'
+import { isTouch } from '../utils'
 import { TitleArenaRankings } from './ArenaRankings'
 
 export { AVATAR_CRUSADER }
@@ -125,6 +126,9 @@ function startProximoClip() {
     video.playsInline = true
     video.setAttribute('playsinline', '')
     video.preload = 'auto'
+    // HTML media plays much louder than Web Audio on mobile — halve so the
+    // intro clip sits closer to in-game levels
+    if (isTouch) video.volume = 0.5
     video.style.cssText = [
       'position: fixed',
       'left: calc(1rem + 50px)',
