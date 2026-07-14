@@ -687,7 +687,7 @@ export function PlayerQueueList({ world }) {
                   <span>Next</span>
                   <span>Battle</span>
                 </div>
-                <div className='arena-countdown-colon'>:</div>
+                <div className='arena-countdown-colon'>/</div>
                 <div className='arena-countdown-time'>{formatTime(remaining)}</div>
               </div>
               {isQueued ? (
@@ -738,7 +738,7 @@ export function PlayerQueueList({ world }) {
                 </button>
               ) : (
                 <button type='button' className='arena-enter-test' onClick={becomeSpectator} disabled={pending}>
-                  Become Spectator
+                  Spectate
                 </button>
               )}
               <div className='arena-howto-wrap'>
