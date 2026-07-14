@@ -32,7 +32,7 @@ const CHEER_DURATION_MS = 5000
 const FADE_SECONDS = 0.35
 /** Ambient crowd noise, loops the whole time in the arena. */
 const CROWD_YELL_SRC = 'asset://crowdyell.mp3'
-const CROWD_YELL_VOLUME = 0.1
+const CROWD_YELL_VOLUME = 0.05
 /** Only the middle of the yell track loops — the ends fade and don't blend. */
 const CROWD_YELL_LOOP_SECONDS = 30
 /** One-shot crowd roar when everyone stands up after a death. */
@@ -306,7 +306,9 @@ export async function addArenaCrowd(world, arenaRoot) {
       yellGain = audio.ctx.createGain()
       yellGain.gain.value = CROWD_YELL_VOLUME
       yellSource.connect(yellGain)
-      yellGain.connect(audio.groupGains.sfx)
+      // music bus with desertwind/drums — keeps the loop out of the sfx mix
+      // so hit/block/grunt one-shots aren't fighting a constant crowd bed
+      yellGain.connect(audio.groupGains.music)
 
       const source = yellSource
       audio.ready(() => {
