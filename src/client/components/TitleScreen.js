@@ -3,7 +3,13 @@ import { css } from '@firebolt-dev/css'
 
 import { AVATAR_CRUSADER } from '../../core/extras/playerAvatars'
 import { prefetchGameAssets } from '../../core/extras/assetPrefetch'
+import { isTouch } from '../utils'
 import { TitleArenaRankings } from './ArenaRankings'
+
+/** Desktop HTML/WebAudio clip level. */
+const PROXIMO_CLIP_VOLUME = 0.25
+/** Mobile is half of desktop — iOS also ignores video.volume, so we use a GainNode. */
+const PROXIMO_CLIP_VOLUME_MOBILE = PROXIMO_CLIP_VOLUME * 0.5
 
 export { AVATAR_CRUSADER }
 
@@ -55,10 +61,54 @@ function stopAudio(audio) {
 let proximoClipVideo = null
 let proximoClipFinished = false
 let proximoClipRetryAttached = false
+let proximoClipAudioCtx = null
+let proximoClipGain = null
+
+function getProximoClipVolume() {
+  return isTouch ? PROXIMO_CLIP_VOLUME_MOBILE : PROXIMO_CLIP_VOLUME
+}
+
+/** iOS Safari ignores HTMLMediaElement.volume — route through a GainNode. */
+function attachProximoClipVolume(video) {
+  const target = getProximoClipVolume()
+  // Keep element volume at 1 when Web Audio owns the mix so we don't double-duck.
+  video.volume = 1
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) {
+      video.volume = target
+      return
+    }
+    proximoClipAudioCtx = new Ctx()
+    const source = proximoClipAudioCtx.createMediaElementSource(video)
+    proximoClipGain = proximoClipAudioCtx.createGain()
+    proximoClipGain.gain.value = target
+    source.connect(proximoClipGain)
+    proximoClipGain.connect(proximoClipAudioCtx.destination)
+  } catch (err) {
+    console.warn('[title] video Web Audio volume unavailable:', err)
+    video.volume = target
+  }
+}
+
+function resumeProximoClipAudio() {
+  if (!proximoClipAudioCtx) return
+  if (proximoClipAudioCtx.state === 'suspended') {
+    proximoClipAudioCtx.resume().catch(() => {})
+  }
+}
 
 function endProximoClip() {
   proximoClipFinished = true
   removeProximoClipRetry()
+  try {
+    proximoClipGain?.disconnect()
+    proximoClipAudioCtx?.close()
+  } catch {
+    // ignore teardown errors
+  }
+  proximoClipGain = null
+  proximoClipAudioCtx = null
   proximoClipVideo?.remove()
   proximoClipVideo = null
 }
@@ -102,9 +152,13 @@ function tryPlayProximoClip() {
     removeProximoClipRetry()
     return
   }
+  resumeProximoClipAudio()
   video
     .play()
-    .then(() => removeProximoClipRetry())
+    .then(() => {
+      resumeProximoClipAudio()
+      removeProximoClipRetry()
+    })
     .catch(() => addProximoClipRetry())
 }
 
@@ -125,8 +179,8 @@ function startProximoClip() {
     video.playsInline = true
     video.setAttribute('playsinline', '')
     video.preload = 'auto'
-    // HTML media is loud vs Web Audio in-game — keep at 25% of full
-    video.volume = 0.25
+    video.crossOrigin = 'anonymous'
+    attachProximoClipVolume(video)
     video.style.cssText = [
       'position: fixed',
       'left: calc(1rem + 50px)',
