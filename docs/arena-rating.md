@@ -46,6 +46,7 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 - Leaderboard fetch uses `PUBLIC_API_URL` correctly when it already ends in `/api` (e.g. `https://host/api/arena/leaderboard`)
 - Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)
 - Proximo title clip stops when the arena becomes ready
+- Battle Royale victory: server broadcasts `brVictory` to everyone when a match ends (`pending` → `complete`/`failed`). Client shows a shared victory sheet with winner name, abbreviated wallet, payout amount, a progress bar/spinner while the Solana payout is pending, then the tx hash + Solscan link when confirmed ([`BattleRoyaleVictory.js`](../src/client/components/BattleRoyaleVictory.js)). The old winner-only chat “You won X SOL!” message is removed.
 
 ## Heroku / database
 

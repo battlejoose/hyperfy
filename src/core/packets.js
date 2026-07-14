@@ -37,6 +37,7 @@ const names = [
   'leaveArena',
   'joinBattleRoyale',
   'joinBattleRoyaleResult',
+  'brVictory',
   'setSolanaWallet',
   'attackCanceled',
   'hitBlocked',

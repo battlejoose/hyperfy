@@ -264,6 +264,10 @@ export class ClientNetwork extends System {
     this.world.emit('joinBattleRoyaleResult', data)
   }
 
+  onBrVictory = data => {
+    this.world.emit('brVictory', data)
+  }
+
   onEntityEvent = event => {
     const [id, version, name, data] = event
     const entity = this.world.entities.get(id)

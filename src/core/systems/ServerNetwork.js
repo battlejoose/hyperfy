@@ -285,27 +285,56 @@ export class ServerNetwork extends System {
       const winnerPlayer = this.world.entities.get(winnerId)
       const winnerName = winnerPlayer?.data?.name || 'A gladiator'
       this.announce(`${winnerName} wins the battle royale and takes ${payoutSol} SOL!`)
+
+      const victoryBase = {
+        winnerId,
+        winnerName,
+        wallet: wallet || null,
+        payoutSol,
+      }
+
       if (wallet) {
         applyArenaWinRating(this.db, wallet, winnerName).catch(err =>
           console.error('[arena-rating] win update failed:', err)
         )
+        // Everyone sees the victory sheet immediately; payout status streams in after.
+        this.send('brVictory', {
+          ...victoryBase,
+          status: 'pending',
+          signature: null,
+        })
         sendPayout(wallet, payoutLamports, winnerId, 'br_win')
           .then(signature => {
             if (!signature) {
               console.error('[solana] Battle royale payout did not complete for', winnerId)
+              this.send('brVictory', {
+                ...victoryBase,
+                status: 'failed',
+                signature: null,
+              })
               return
             }
-            this.sendTo(winnerId, 'chatAdded', {
-              id: uuid(),
-              from: null,
-              fromId: null,
-              body: `You won ${payoutSol} SOL!`,
-              createdAt: moment().toISOString(),
+            this.send('brVictory', {
+              ...victoryBase,
+              status: 'complete',
+              signature,
             })
           })
-          .catch(err => console.error('[solana] Battle royale payout failed:', err))
+          .catch(err => {
+            console.error('[solana] Battle royale payout failed:', err)
+            this.send('brVictory', {
+              ...victoryBase,
+              status: 'failed',
+              signature: null,
+            })
+          })
       } else {
         console.error('[solana] Battle royale winner has no wallet on file:', winnerId)
+        this.send('brVictory', {
+          ...victoryBase,
+          status: 'failed',
+          signature: null,
+        })
       }
     } else {
       this.announce('The battle royale ended with no one left standing. The pot goes to the arena.')
