@@ -1,6 +1,7 @@
 import * as THREE from '../extras/three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { VRMLoaderPlugin } from '@pixiv/three-vrm'
 
 import { System } from './System'
@@ -11,47 +12,11 @@ import { createEmoteFactory } from '../extras/createEmoteFactory'
 import { TextureLoader } from 'three'
 import { formatBytes } from '../extras/formatBytes'
 import { clearPrefetch, getPrefetchedBlob } from '../extras/assetPrefetch'
+import { downloadBlob } from '../extras/downloadBlob'
 import { emoteUrls } from '../extras/playerEmotes'
 import Hls from 'hls.js/dist/hls.js'
 
 // THREE.Cache.enabled = true
-
-/**
- * XHR download for large binaries. fetch() on Heroku often reports
- * net::ERR_FAILED with HTTP 200/304 when the body transfer dies mid-stream.
- */
-function fetchBlobXHR(url, { timeoutMs = 180000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('GET', url, true)
-    xhr.responseType = 'blob'
-    xhr.timeout = timeoutMs
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const blob = xhr.response
-        if (!blob || !blob.size) {
-          reject(new Error('empty response'))
-          return
-        }
-        const lenHeader = xhr.getResponseHeader('Content-Length')
-        if (lenHeader) {
-          const expected = parseInt(lenHeader, 10)
-          if (Number.isFinite(expected) && expected > 0 && blob.size < expected) {
-            reject(new Error(`incomplete download (${blob.size}/${expected} bytes)`))
-            return
-          }
-        }
-        resolve(blob)
-        return
-      }
-      reject(new Error(`HTTP ${xhr.status}`))
-    }
-    xhr.onerror = () => reject(new Error('network error'))
-    xhr.ontimeout = () => reject(new Error('timeout'))
-    xhr.onabort = () => reject(new Error('aborted'))
-    xhr.send()
-  })
-}
 
 /**
  * Client Loader System
@@ -71,6 +36,7 @@ export class ClientLoader extends System {
     this.rgbeLoader = new RGBELoader()
     this.texLoader = new TextureLoader()
     this.gltfLoader = new GLTFLoader()
+    this.gltfLoader.setMeshoptDecoder(MeshoptDecoder)
     this.gltfLoader.register(parser => new VRMLoaderPlugin(parser))
     this.preloadItems = []
   }
@@ -192,32 +158,24 @@ export class ClientLoader extends System {
       // fall through to download
     }
 
-    // Large assets (arena ~33MB) often die mid-transfer on Heroku: Chrome reports
-    // net::ERR_FAILED with status 200/304. Use XHR + longer backoff; retries bust cache.
-    const backoffsMs = [0, 2000, 5000]
-    let lastErr
-    for (let attempt = 0; attempt < backoffsMs.length; attempt++) {
-      try {
-        if (backoffsMs[attempt] > 0) {
-          clearPrefetch(url)
-          this.forceReloadUrls.add(url)
-          await new Promise(r => setTimeout(r, backoffsMs[attempt]))
-        }
-        const bustCache = this.forceReloadUrls.has(url) || attempt > 0
-        const fetchUrl = bustCache ? `${url}${url.includes('?') ? '&' : '?'}_retry=${Date.now()}` : url
-        const blob = await fetchBlobXHR(fetchUrl, { timeoutMs: 180000 })
-        const file = new File([blob], url.split('/').pop(), { type: blob.type || 'application/octet-stream' })
-        this.files.set(url, file)
-        this.forceReloadUrls.delete(url)
-        return file
-      } catch (err) {
-        lastErr = err
-        this.forceReloadUrls.add(url)
-        clearPrefetch(url)
-        console.warn(`[loader] attempt ${attempt + 1}/${backoffsMs.length} failed for ${url}:`, err.message || err)
-      }
+    // Streaming download that resumes from the last received byte if the
+    // transfer dies mid-stream (common on Heroku for large files).
+    try {
+      const blob = await downloadBlob(url, {
+        noCache: this.forceReloadUrls.has(url),
+        onProgress: (received, total) => {
+          this.world.emit('file-progress', { url, received, total })
+        },
+      })
+      const file = new File([blob], url.split('/').pop(), { type: blob.type || 'application/octet-stream' })
+      this.files.set(url, file)
+      this.forceReloadUrls.delete(url)
+      return file
+    } catch (err) {
+      this.forceReloadUrls.add(url)
+      clearPrefetch(url)
+      throw err
     }
-    throw lastErr
   }
 
   async load(type, url) {

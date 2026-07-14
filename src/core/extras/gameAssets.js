@@ -52,37 +52,48 @@ export function queueClientGamePreloads(world, data) {
 }
 
 export async function prepareClientGameAssets(world, data) {
-  // Load the large arena model alone first — concurrent fetches of this + VRMs
+  // Load the arena model alone first — concurrent fetches of this + VRMs
   // on a Heroku dyno often fail with net::ERR_FAILED and leave an empty desert.
-  // Progress: 0–55% is the arena (previously silent, so the bar looked stuck
-  // until the video finished); 55–100% is the remaining preload queue.
+  // Progress: 0–55% is the arena (8–40% tracks real download bytes);
+  // 55–100% is the remaining preload queue.
   const emitProgress = pct => world.emit('progress', pct)
   emitProgress(3)
 
-  // Loader already retries with backoff; one extra outer attempt after a longer pause
-  // so we don't hammer Heroku with 9 rapid 33MB downloads.
+  const resolvedArena = world.resolveURL(ARENA_SRC)
+  const onFileProgress = ({ url, received, total }) => {
+    if (url !== resolvedArena || !total) return
+    emitProgress(8 + (received / total) * 32)
+  }
+  world.on('file-progress', onFileProgress)
+
+  // The downloader already retries + resumes mid-stream; one extra outer attempt
+  // after a pause covers parse failures / total connection loss.
   let lastErr = null
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      if (attempt > 1) {
+  try {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        if (attempt > 1) {
+          clearPrefetch(ARENA_SRC)
+          world.loader.bust(ARENA_SRC)
+          emitProgress(5)
+          await new Promise(r => setTimeout(r, 3000))
+        }
+        emitProgress(8)
+        await world.loader.load('model', ARENA_SRC)
+        emitProgress(40)
+        await loadArenaEnvironment(world)
+        emitProgress(55)
+        lastErr = null
+        break
+      } catch (err) {
+        lastErr = err
         clearPrefetch(ARENA_SRC)
         world.loader.bust(ARENA_SRC)
-        emitProgress(5)
-        await new Promise(r => setTimeout(r, 4000))
+        console.warn(`[gameAssets] arena setup attempt ${attempt}/2 failed:`, err.message || err)
       }
-      emitProgress(8)
-      await world.loader.load('model', ARENA_SRC)
-      emitProgress(40)
-      await loadArenaEnvironment(world)
-      emitProgress(55)
-      lastErr = null
-      break
-    } catch (err) {
-      lastErr = err
-      clearPrefetch(ARENA_SRC)
-      world.loader.bust(ARENA_SRC)
-      console.warn(`[gameAssets] arena setup attempt ${attempt}/2 failed:`, err.message || err)
     }
+  } finally {
+    world.off('file-progress', onFileProgress)
   }
   if (lastErr) {
     throw new Error(

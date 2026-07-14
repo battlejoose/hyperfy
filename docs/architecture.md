@@ -186,7 +186,7 @@ asset://avatar.vrm      → resolved to assets server path
 https://...             → passthrough
 ```
 
-Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. `preload` flag causes download at world join to prevent in-game stalls. Large assets use XHR with longer backoffs (Heroku often drops mid-body transfers as `ERR_FAILED` even with HTTP 200). The loading-screen Retry button restarts arena loading in-place (same session/username), busting the arena cache first.
+Assets are downloaded, parsed (GLTF/VRM), and cached by `ClientLoader`. `preload` flag causes download at world join to prevent in-game stalls. All downloads go through `extras/downloadBlob.js`: a streaming fetch that keeps received chunks and resumes from the last byte with an HTTP Range request when Heroku drops the body mid-transfer (`ERR_FAILED` with HTTP 200), instead of restarting from byte 0. It also emits byte-level `file-progress` events which drive the loading bar during the arena download. The arena environment ships as `arena-rome.glb` (~13MB), compressed with meshopt (`EXT_meshopt_compression`) + WebP textures — both client and server GLTF loaders register `MeshoptDecoder`. The loading-screen Retry button restarts arena loading in-place (same session/username), busting the arena cache first.
 
 ---
 

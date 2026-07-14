@@ -4,7 +4,9 @@ import { addArenaFireFx, clearArenaFireFx } from './arenaFireFx.js'
 import { addArenaGeneral } from './arenaGeneral.js'
 import { addArenaCrowd, clearArenaCrowd } from './arenaCrowd.js'
 
-export const ARENA_SRC = 'asset://smallarenarome.glb'
+// meshopt + WebP compressed (13MB, was smallarenarome.glb at 34MB) — new
+// filename so clients never hit a stale immutable-cached copy of the old file
+export const ARENA_SRC = 'asset://arena-rome.glb'
 
 /** Separates gladiator floor (inside) from spectator ring (outside). */
 export const ARENA_RING_WALL_RADIUS = 12.2

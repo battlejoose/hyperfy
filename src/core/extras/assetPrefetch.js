@@ -1,6 +1,7 @@
 import { AVATAR_CRUSADER, AVATAR_SARACEN } from './playerAvatars'
 import { ARENA_SRC } from './arenaEnvironment'
 import { BLOOD_SPLATTER_SRC } from './bloodEffects'
+import { downloadBlob } from './downloadBlob'
 
 const SWORD_SRC = 'asset://sword.glb'
 
@@ -17,11 +18,7 @@ export function prefetchAsset(url) {
   const path = assetUrlToPath(url)
   if (prefetchCache.has(path)) return prefetchCache.get(path)
 
-  const promise = fetch(path)
-    .then(resp => {
-      if (!resp.ok) throw new Error(`prefetch failed: ${path} (${resp.status})`)
-      return resp.blob()
-    })
+  const promise = downloadBlob(path)
     .catch(err => {
       prefetchCache.delete(path)
       console.warn('[prefetch]', path, err.message || err)

@@ -132,7 +132,7 @@ export class ClientNetwork extends System {
     clearPrefetch(ARENA_SRC)
     this.world.loader.bust(ARENA_SRC)
     this.bootstrapping = (async () => {
-      // Brief pause so Heroku can recover before another ~33MB pull
+      // Brief pause so Heroku can recover before another arena pull
       await new Promise(r => setTimeout(r, 1500))
       await this.bootstrapGame(this.pendingSnapshot)
     })()
