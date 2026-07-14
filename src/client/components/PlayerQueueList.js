@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { css } from '@firebolt-dev/css'
 import { isSpectatorSessionAvatar } from '../../core/extras/playerAvatars'
 import { BR_ENTRY_FEE_LAMPORTS, BR_HOUSE_FEE_PERCENT, LAMPORTS_PER_SOL } from '../../core/extras/solanaConfig.js'
@@ -39,7 +39,11 @@ function formatTime(seconds) {
   return `${mins}:${String(secs).padStart(2, '0')}`
 }
 
+const MOBILE_QUEUE_MQ = '(max-width: 640px), (orientation: landscape) and (max-height: 500px)'
+
 export function PlayerQueueList({ world }) {
+  const rootRef = useRef(null)
+  const portraitWidthRef = useRef(null)
   const [isSpectator, setIsSpectator] = useState(() => {
     const p = world.entities?.player
     return !!(p && isSpectatorSessionAvatar(p.data.sessionAvatar))
@@ -53,6 +57,47 @@ export function PlayerQueueList({ world }) {
   const [notice, setNotice] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
   const [remaining, setRemaining] = useState(0)
+
+  // Lock mobile queue to portrait width so landscape stays the same physical size
+  // (100vmin shrinks under landscape browser chrome and makes the panel taller).
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const apply = () => {
+      const compact = window.matchMedia(MOBILE_QUEUE_MQ).matches
+      if (!compact) {
+        portraitWidthRef.current = null
+        root.style.width = ''
+        root.style.maxWidth = ''
+        return
+      }
+      const landscape = window.matchMedia('(orientation: landscape)').matches
+      if (!landscape) {
+        portraitWidthRef.current = Math.round(window.innerWidth - 16)
+      }
+      const width =
+        portraitWidthRef.current || Math.round(Math.min(window.screen.width, window.screen.height) - 16)
+      root.style.width = `${width}px`
+      root.style.maxWidth = `${width}px`
+    }
+    apply()
+    let orientTimer
+    const onOrient = () => {
+      apply()
+      clearTimeout(orientTimer)
+      orientTimer = setTimeout(apply, 150)
+    }
+    window.addEventListener('resize', apply)
+    window.addEventListener('orientationchange', onOrient)
+    const mq = window.matchMedia(MOBILE_QUEUE_MQ)
+    mq.addEventListener?.('change', apply)
+    return () => {
+      clearTimeout(orientTimer)
+      window.removeEventListener('resize', apply)
+      window.removeEventListener('orientationchange', onOrient)
+      mq.removeEventListener?.('change', apply)
+    }
+  }, [])
 
   useEffect(() => {
     const syncRole = () => {
@@ -268,6 +313,7 @@ export function PlayerQueueList({ world }) {
 
   return (
     <div
+      ref={rootRef}
       css={css`
         position: absolute;
         top: 0.75rem;
@@ -524,6 +570,7 @@ export function PlayerQueueList({ world }) {
           font-size: 0.82rem;
           font-weight: 600;
           cursor: pointer;
+          white-space: nowrap;
           transition: background 0.15s;
           &:hover {
             background: rgba(255, 248, 240, 0.9);
@@ -575,11 +622,11 @@ export function PlayerQueueList({ world }) {
           text-align: center;
           max-width: 14rem;
         }
-        /* Portrait phones + landscape phones (short height). Use vmin so landscape
-           keeps the same physical width as portrait instead of stretching to 100vw. */
+        /* Portrait phones + landscape phones (short height). Width is locked in JS to
+           the portrait size so landscape matches exactly (see portraitWidthRef). */
         @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
-          width: calc(100vmin - 1rem);
-          max-width: calc(100vmin - 1rem);
+          width: calc(100vw - 1rem);
+          max-width: calc(100vw - 1rem);
           .arena-panel {
             display: block;
             width: 100%;
@@ -604,7 +651,7 @@ export function PlayerQueueList({ world }) {
           .arena-col-left .rank-open-btn {
             font-size: 0.58rem;
             padding: 0.28rem 0.35rem;
-            white-space: normal;
+            white-space: nowrap;
             line-height: 1.2;
             width: 100%;
           }
@@ -632,7 +679,7 @@ export function PlayerQueueList({ world }) {
           .arena-enter-test {
             font-size: 0.66rem;
             padding: 0.32rem 0.4rem;
-            white-space: normal;
+            white-space: nowrap;
             text-align: center;
             line-height: 1.2;
             width: 100%;
@@ -641,7 +688,7 @@ export function PlayerQueueList({ world }) {
           .arena-howto {
             font-size: 0.64rem;
             padding: 0.28rem 0.38rem;
-            white-space: normal;
+            white-space: nowrap;
             text-align: center;
             line-height: 1.2;
             width: 100%;
