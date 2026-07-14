@@ -851,8 +851,17 @@ function LoadingOverlay({ world }) {
           flex-shrink: 0;
           width: 1.75rem;
           height: 1.75rem;
+          padding: 0.2rem;
+          box-sizing: content-box;
           object-fit: contain;
           display: block;
+          border-radius: 0.4rem;
+          background: radial-gradient(
+            circle at center,
+            rgba(255, 255, 255, 0.85) 35%,
+            rgba(255, 255, 255, 0.35) 70%,
+            rgba(255, 255, 255, 0) 100%
+          );
         }
         .loading-track {
           width: min(28rem, 100%);
