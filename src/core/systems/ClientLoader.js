@@ -10,7 +10,7 @@ import { glbToNodes } from '../extras/glbToNodes'
 import { createEmoteFactory } from '../extras/createEmoteFactory'
 import { TextureLoader } from 'three'
 import { formatBytes } from '../extras/formatBytes'
-import { getPrefetchedBlob } from '../extras/assetPrefetch'
+import { clearPrefetch, getPrefetchedBlob } from '../extras/assetPrefetch'
 import { emoteUrls } from '../extras/playerEmotes'
 import Hls from 'hls.js/dist/hls.js'
 
@@ -29,11 +29,34 @@ export class ClientLoader extends System {
     this.files = new Map()
     this.promises = new Map()
     this.results = new Map()
+    /** Resolved URLs that must bypass HTTP cache on the next fetch (corrupt 304 / aborted download). */
+    this.forceReloadUrls = new Set()
     this.rgbeLoader = new RGBELoader()
     this.texLoader = new TextureLoader()
     this.gltfLoader = new GLTFLoader()
     this.gltfLoader.register(parser => new VRMLoaderPlugin(parser))
     this.preloadItems = []
+  }
+
+  /**
+   * Drop in-memory + HTTP cache for a URL so the next load re-downloads.
+   * Needed when Chrome returns net::ERR_FAILED with 304 after a dropped large asset.
+   */
+  bust(url) {
+    const unresolved = url
+    const resolved = this.world.resolveURL(url)
+    this.files.delete(resolved)
+    this.forceReloadUrls.add(resolved)
+    for (const key of [...this.promises.keys()]) {
+      if (key.endsWith(`/${unresolved}`) || key.endsWith(`/${resolved}`)) {
+        this.promises.delete(key)
+      }
+    }
+    for (const key of [...this.results.keys()]) {
+      if (key.endsWith(`/${unresolved}`) || key.endsWith(`/${resolved}`)) {
+        this.results.delete(key)
+      }
+    }
   }
 
   start() {
@@ -132,23 +155,36 @@ export class ClientLoader extends System {
       // fall through to fetch
     }
 
-    // Heroku can drop large asset transfers under load — retry briefly
+    // Heroku can drop large asset transfers under load — retry briefly.
+    // After a failed/aborted download, Chrome often revalidates with 304 and then
+    // fails (net::ERR_FAILED 304). Automatic retries 2–3 bypass HTTP cache entirely.
     let lastErr
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         if (attempt > 0) {
+          clearPrefetch(url)
+          this.forceReloadUrls.add(url)
           await new Promise(r => setTimeout(r, 400 * attempt))
         }
-        const resp = await fetch(url)
+        const bustCache = this.forceReloadUrls.has(url) || attempt > 0
+        // no-store + cache-buster query: avoids sticky 304 / corrupt cache entries
+        const fetchUrl = bustCache ? `${url}${url.includes('?') ? '&' : '?'}_retry=${Date.now()}` : url
+        const resp = await fetch(fetchUrl, { cache: bustCache ? 'no-store' : 'default' })
         if (!resp.ok) {
           throw new Error(`failed to load ${url} (${resp.status})`)
         }
         const blob = await resp.blob()
+        if (!blob.size) {
+          throw new Error(`empty response for ${url}`)
+        }
         const file = new File([blob], url.split('/').pop(), { type: blob.type })
         this.files.set(url, file)
+        this.forceReloadUrls.delete(url)
         return file
       } catch (err) {
         lastErr = err
+        this.forceReloadUrls.add(url)
+        clearPrefetch(url)
         console.warn(`[loader] attempt ${attempt + 1}/3 failed for ${url}:`, err.message || err)
       }
     }

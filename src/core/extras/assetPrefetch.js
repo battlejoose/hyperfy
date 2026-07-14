@@ -57,3 +57,16 @@ export async function getPrefetchedBlob(resolvedUrl) {
     return null
   }
 }
+
+/** Drop a failed/stale prefetch so the next load hits the network. */
+export function clearPrefetch(url) {
+  const path = assetUrlToPath(url)
+  prefetchCache.delete(path)
+  // Also clear when called with a fully resolved https://…/assets/… URL
+  try {
+    const pathname = new URL(url, typeof location !== 'undefined' ? location.origin : 'http://local').pathname
+    prefetchCache.delete(pathname)
+  } catch {
+    // ignore invalid URLs
+  }
+}

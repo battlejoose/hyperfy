@@ -1,4 +1,6 @@
 import moment from 'moment'
+import { ARENA_SRC } from '../extras/arenaEnvironment'
+import { clearPrefetch } from '../extras/assetPrefetch'
 import { replayBloodSplatters } from '../extras/bloodEffects'
 import { prepareClientGameAssets } from '../extras/gameAssets'
 import { replayCorpses, spawnCorpse } from '../extras/playerCorpse'
@@ -124,6 +126,9 @@ export class ClientNetwork extends System {
     if (this.bootstrapping || !this.pendingSnapshot) return
     this.world.emit('loadError', null)
     this.world.emit('progress', 0)
+    // Force a fresh arena download — retry after ERR_FAILED often sticks on a bad 304 cache entry.
+    clearPrefetch(ARENA_SRC)
+    this.world.loader.bust(ARENA_SRC)
     this.bootstrapping = this.bootstrapGame(this.pendingSnapshot)
       .catch(err => {
         console.error('[ClientNetwork] bootstrap retry failed:', err)

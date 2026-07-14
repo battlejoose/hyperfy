@@ -2,6 +2,7 @@ import { AVATAR_CRUSADER, AVATAR_SARACEN } from './playerAvatars'
 import { ARENA_SRC, loadArenaEnvironment } from './arenaEnvironment'
 import { ARENA_FIRE_SRC } from './arenaFireFx.js'
 import { ARENA_GENERAL_SRC } from './arenaGeneral.js'
+import { clearPrefetch } from './assetPrefetch'
 import { BLOOD_SPLATTER_SRC } from './bloodEffects'
 import { emoteUrls } from './playerEmotes'
 
@@ -62,6 +63,10 @@ export async function prepareClientGameAssets(world, data) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       if (attempt > 1) {
+        // Bypass HTTP cache — retries after a dropped download often get stuck on
+        // net::ERR_FAILED 304 (Not Modified) until a full page refresh.
+        clearPrefetch(ARENA_SRC)
+        world.loader.bust(ARENA_SRC)
         emitProgress(5)
         await new Promise(r => setTimeout(r, 500 * attempt))
       }
@@ -74,6 +79,8 @@ export async function prepareClientGameAssets(world, data) {
       break
     } catch (err) {
       lastErr = err
+      clearPrefetch(ARENA_SRC)
+      world.loader.bust(ARENA_SRC)
       console.warn(`[gameAssets] arena setup attempt ${attempt}/3 failed:`, err.message || err)
     }
   }
