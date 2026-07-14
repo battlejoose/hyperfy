@@ -294,8 +294,8 @@ export function PlayerQueueList({ world }) {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.5rem;
-          padding: 1.4rem 3rem 1.6rem;
+          gap: 0.35rem;
+          padding: 1.05rem 3rem 1.15rem;
         }
         .arena-row {
           display: flex;
@@ -315,24 +315,27 @@ export function PlayerQueueList({ world }) {
           align-items: center;
           justify-content: flex-start;
           min-width: 11rem;
+          gap: 0.18rem;
         }
         .arena-col-center {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.4rem;
-          padding-top: 0.15rem;
+          gap: 0.28rem;
+          padding-top: 0;
         }
         .arena-countdown-label {
-          font-size: 0.85rem;
+          font-size: 0.8rem;
           font-weight: 700;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
           color: #5c4033;
           text-align: center;
+          white-space: nowrap;
+          line-height: 1.15;
         }
         .arena-countdown-time {
-          font-size: 2.1rem;
+          font-size: 1.95rem;
           font-weight: 700;
           font-variant-numeric: tabular-nums;
           line-height: 1;
@@ -446,6 +449,7 @@ export function PlayerQueueList({ world }) {
           font-weight: 600;
           color: #5c4033;
           text-align: center;
+          line-height: 1.2;
         }
         .arena-enter {
           padding: 0.4rem 0.75rem;
@@ -538,6 +542,7 @@ export function PlayerQueueList({ world }) {
           font-weight: 600;
           color: #5c4033;
           text-align: center;
+          line-height: 1.2;
         }
         .arena-notice {
           font-size: 0.75rem;
@@ -556,7 +561,7 @@ export function PlayerQueueList({ world }) {
             max-width: 100%;
           }
           .arena-panel-content {
-            padding: 1rem 3.5rem 1.25rem;
+            padding: 0.75rem 3.5rem 0.9rem;
           }
           .arena-row {
             gap: 0.35rem;
@@ -651,7 +656,7 @@ export function PlayerQueueList({ world }) {
               <QueueArenaRankings />
             </div>
             <div className='arena-col-center'>
-              <div className='arena-countdown-label'>Battle Royal begins in:</div>
+              <div className='arena-countdown-label'>Battle Royal begins:</div>
               <div className='arena-countdown-time'>{formatTime(remaining)}</div>
               {isQueued ? (
                 <div className='arena-queued'>You are in the battle royale queue!</div>
@@ -688,7 +693,7 @@ export function PlayerQueueList({ world }) {
                 </div>
               ) : (
                 <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
-                  {pending ? 'Verifying payment…' : `Enter Queue (${BR_ENTRY_FEE_SOL} SOL)`}
+                  {pending ? 'Verifying payment…' : `Join Battle Royal (${BR_ENTRY_FEE_SOL} SOL)`}
                 </button>
               )}
               {notice ? <div className='arena-notice'>{notice}</div> : null}

@@ -282,7 +282,7 @@ export function QueueArenaRankings() {
       css={css`
         width: 100%;
         max-width: 11rem;
-        margin-top: 0.35rem;
+        margin-top: 0.15rem;
         display: flex;
         flex-direction: column;
         align-items: center;
