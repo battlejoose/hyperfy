@@ -1,6 +1,3 @@
-import * as THREE from './three'
-import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-
 const cache = new Map() // id -> { id, pmesh, refs }
 
 class PMeshHandle {
@@ -42,19 +39,24 @@ export function geometryToPxMesh(world, geometry, convex) {
   // console.log('geometry', geometry)
   // console.log('convex', convex)
 
-  let position = geometry.attributes.position
+  const position = geometry.attributes.position
   const index = geometry.index
 
-  if (position.isInterleavedBufferAttribute) {
-    // deinterleave!
-    position = BufferGeometryUtils.deinterleaveAttribute(position)
-    position = new THREE.BufferAttribute(new Float32Array(position.array), position.itemSize, false)
+  // PhysX needs plain float32 vertices. Quantized geometry (KHR_mesh_quantization,
+  // e.g. meshopt-compressed GLBs) stores positions as normalized int16, and may be
+  // interleaved — read through the attribute accessors, which denormalize and
+  // de-interleave, instead of casting the raw array.
+  let positions
+  if (position.array instanceof Float32Array && !position.isInterleavedBufferAttribute && !position.normalized) {
+    positions = position.array
+  } else {
+    positions = new Float32Array(position.count * 3)
+    for (let i = 0; i < position.count; i++) {
+      positions[i * 3] = position.getX(i)
+      positions[i * 3 + 1] = position.getY(i)
+      positions[i * 3 + 2] = position.getZ(i)
+    }
   }
-
-  // console.log('position', position)
-  // console.log('index', index)
-
-  const positions = position.array
   const floatBytes = positions.length * positions.BYTES_PER_ELEMENT
   const pointsPtr = PHYSX._webidl_malloc(floatBytes)
   PHYSX.HEAPF32.set(positions, pointsPtr >> 2)
