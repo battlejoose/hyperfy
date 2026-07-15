@@ -70,14 +70,15 @@ export function isMwaSupported() {
 }
 
 /**
- * Chrome/Android gates MWA's localhost WebSocket behind Local Network /
- * "Apps on your device" permission. Opening the wallet before that is granted
- * races the system prompt and breaks the session.
+ * Chrome/Android now gates MWA's localhost WebSocket behind Local Network /
+ * "Apps on your device" permission. If we open the wallet before that is
+ * granted, the system prompt and wallet race and the session fails.
  *
- * After the browser permission dialog, Chrome has consumed the user gesture, so
- * `transact()` cannot be started automatically — it must run from a fresh tap.
- * We keep that second tap on the same sheet as "Select wallet" (not a
- * permission-confirmed interstitial).
+ * Flow matches @solana-mobile/wallet-standard-mobile:
+ * 1) query permission  2) if prompt, show Continue → fetch localhost to
+ * trigger the browser prompt while we're still foreground  3) wait for
+ * grant  4) require a fresh click before returning so `transact()` can
+ * launch the wallet from a trusted gesture.
  */
 async function queryLoopbackPermission() {
   if (typeof navigator === 'undefined' || !navigator.permissions?.query) return null
@@ -91,99 +92,117 @@ async function queryLoopbackPermission() {
   return null
 }
 
-function createMwaSheet() {
-  const overlay = document.createElement('div')
-  overlay.setAttribute('data-mwa-lna', '1')
-  overlay.style.cssText = [
-    'position:fixed',
-    'inset:0',
-    'z-index:10050',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'padding:1.25rem',
-    'box-sizing:border-box',
-    'background:rgba(4,6,10,0.72)',
-    'backdrop-filter:blur(2px)',
-    'font-family:ui-monospace,SF Mono,Menlo,Consolas,monospace',
-  ].join(';')
+function showMwaPermissionSheet({ title, body, actionLabel, runOnAction }) {
+  return new Promise((resolve, reject) => {
+    const overlay = document.createElement('div')
+    overlay.setAttribute('data-mwa-lna', '1')
+    overlay.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:10050',
+      'display:flex',
+      'align-items:center',
+      'justify-content:center',
+      'padding:1.25rem',
+      'box-sizing:border-box',
+      'background:rgba(4,6,10,0.72)',
+      'backdrop-filter:blur(2px)',
+      'font-family:ui-monospace,SF Mono,Menlo,Consolas,monospace',
+    ].join(';')
 
-  const card = document.createElement('div')
-  card.style.cssText = [
-    'width:min(22rem,100%)',
-    'padding:1.25rem 1.3rem 1.15rem',
-    'border-radius:0.35rem',
-    'border:1px solid rgba(212,175,95,0.35)',
-    'background:linear-gradient(180deg,rgba(18,20,26,0.98),rgba(10,12,16,0.99))',
-    'color:rgba(240,240,240,0.95)',
-    'box-shadow:0 18px 48px rgba(0,0,0,0.55)',
-  ].join(';')
+    const card = document.createElement('div')
+    card.style.cssText = [
+      'width:min(22rem,100%)',
+      'padding:1.25rem 1.3rem 1.15rem',
+      'border-radius:0.35rem',
+      'border:1px solid rgba(212,175,95,0.35)',
+      'background:linear-gradient(180deg,rgba(18,20,26,0.98),rgba(10,12,16,0.99))',
+      'color:rgba(240,240,240,0.95)',
+      'box-shadow:0 18px 48px rgba(0,0,0,0.55)',
+    ].join(';')
 
-  const kicker = document.createElement('div')
-  kicker.textContent = 'WALLET ACCESS'
-  kicker.style.cssText =
-    'font-size:0.65rem;letter-spacing:0.16em;color:rgba(212,175,95,0.9);margin-bottom:0.4rem'
+    const kicker = document.createElement('div')
+    kicker.textContent = 'WALLET ACCESS'
+    kicker.style.cssText =
+      'font-size:0.65rem;letter-spacing:0.16em;color:rgba(212,175,95,0.9);margin-bottom:0.4rem'
 
-  const heading = document.createElement('div')
-  heading.style.cssText =
-    'font-size:1.15rem;font-weight:700;letter-spacing:0.03em;color:#f5e6c8;margin-bottom:0.55rem'
+    const heading = document.createElement('div')
+    heading.textContent = title
+    heading.style.cssText =
+      'font-size:1.15rem;font-weight:700;letter-spacing:0.03em;color:#f5e6c8;margin-bottom:0.55rem'
 
-  const text = document.createElement('div')
-  text.style.cssText =
-    'font-size:0.78rem;line-height:1.45;color:rgba(255,255,255,0.7);margin-bottom:1.1rem'
+    const text = document.createElement('div')
+    text.textContent = body
+    text.style.cssText =
+      'font-size:0.78rem;line-height:1.45;color:rgba(255,255,255,0.7);margin-bottom:1.1rem'
 
-  const actions = document.createElement('div')
-  actions.style.cssText = 'display:flex;gap:0.5rem'
+    const actions = document.createElement('div')
+    actions.style.cssText = 'display:flex;gap:0.5rem'
 
-  const cancelBtn = document.createElement('button')
-  cancelBtn.type = 'button'
-  cancelBtn.textContent = 'Cancel'
-  cancelBtn.style.cssText = [
-    'flex:0 0 auto',
-    'padding:0.7rem 0.9rem',
-    'border-radius:0.25rem',
-    'border:1px solid rgba(255,255,255,0.18)',
-    'background:rgba(255,255,255,0.04)',
-    'color:rgba(255,255,255,0.8)',
-    'font:inherit',
-    'font-size:0.78rem',
-    'cursor:pointer',
-  ].join(';')
+    const cancelBtn = document.createElement('button')
+    cancelBtn.type = 'button'
+    cancelBtn.textContent = 'Cancel'
+    cancelBtn.style.cssText = [
+      'flex:0 0 auto',
+      'padding:0.7rem 0.9rem',
+      'border-radius:0.25rem',
+      'border:1px solid rgba(255,255,255,0.18)',
+      'background:rgba(255,255,255,0.04)',
+      'color:rgba(255,255,255,0.8)',
+      'font:inherit',
+      'font-size:0.78rem',
+      'cursor:pointer',
+    ].join(';')
 
-  const actionBtn = document.createElement('button')
-  actionBtn.type = 'button'
-  actionBtn.style.cssText = [
-    'flex:1 1 auto',
-    'padding:0.7rem 0.9rem',
-    'border-radius:0.25rem',
-    'border:1px solid rgba(251,191,36,0.45)',
-    'background:rgba(251,191,36,0.14)',
-    'color:#fbbf24',
-    'font:inherit',
-    'font-size:0.78rem',
-    'font-weight:700',
-    'letter-spacing:0.04em',
-    'cursor:pointer',
-  ].join(';')
+    const actionBtn = document.createElement('button')
+    actionBtn.type = 'button'
+    actionBtn.textContent = actionLabel
+    actionBtn.style.cssText = [
+      'flex:1 1 auto',
+      'padding:0.7rem 0.9rem',
+      'border-radius:0.25rem',
+      'border:1px solid rgba(251,191,36,0.45)',
+      'background:rgba(251,191,36,0.14)',
+      'color:#fbbf24',
+      'font:inherit',
+      'font-size:0.78rem',
+      'font-weight:700',
+      'letter-spacing:0.04em',
+      'cursor:pointer',
+    ].join(';')
 
-  actions.append(cancelBtn, actionBtn)
-  card.append(kicker, heading, text, actions)
-  overlay.append(card)
-  document.body.append(overlay)
+    const cleanup = () => overlay.remove()
 
-  return {
-    overlay,
-    heading,
-    text,
-    cancelBtn,
-    actionBtn,
-    dismiss: () => overlay.remove(),
-  }
+    cancelBtn.onclick = () => {
+      cleanup()
+      reject(new Error('Wallet connection cancelled'))
+    }
+    actionBtn.onclick = async () => {
+      actionBtn.disabled = true
+      cancelBtn.disabled = true
+      try {
+        // Keep runOnAction inside this click so Chrome still treats wallet
+        // launch as a trusted user gesture.
+        const result = runOnAction ? await runOnAction() : undefined
+        cleanup()
+        resolve(result)
+      } catch (err) {
+        cleanup()
+        reject(err)
+      }
+    }
+
+    actions.append(cancelBtn, actionBtn)
+    card.append(kicker, heading, text, actions)
+    overlay.append(card)
+    document.body.append(overlay)
+  })
 }
 
 /**
- * Ensure Local Network / Apps-on-device permission is granted, then run
- * `runAfterGranted` from a trusted tap so MWA can open and connect.
+ * Ensure Local Network / Apps-on-device permission is granted.
+ * When a follow-up wallet launch is needed, pass `runAfterGranted` — it is
+ * invoked from the "Open Wallet" click (trusted gesture).
  */
 async function ensureLoopbackNetworkAccess(runAfterGranted) {
   const status = await queryLoopbackPermission()
@@ -197,71 +216,38 @@ async function ensureLoopbackNetworkAccess(runAfterGranted) {
     )
   }
 
-  // Same sheet: Continue → browser permission → Select wallet (fresh gesture).
-  return new Promise((resolve, reject) => {
-    const sheet = createMwaSheet()
-    sheet.heading.textContent = 'Allow wallet connections'
-    sheet.text.textContent =
-      'Your browser will ask to allow apps on your device. Tap Allow, then choose your wallet.'
-    sheet.actionBtn.textContent = 'Continue'
-
-    const fail = err => {
-      sheet.dismiss()
-      reject(err)
-    }
-
-    sheet.cancelBtn.onclick = () => fail(new Error('Wallet connection cancelled'))
-
-    sheet.actionBtn.onclick = async () => {
-      sheet.actionBtn.disabled = true
-      sheet.cancelBtn.disabled = true
-      sheet.heading.textContent = 'Waiting for permission'
-      sheet.text.textContent = 'Approve the browser prompt to continue…'
-
-      const granted = new Promise((res, rej) => {
+  // "prompt" — grant permission first, then open wallet from a new click.
+  await showMwaPermissionSheet({
+    title: 'Allow wallet connections',
+    body: 'Your browser will ask to allow apps on your device. Tap Allow so we can open your Solana wallet.',
+    actionLabel: 'Continue',
+    runOnAction: async () => {
+      const granted = new Promise((resolve, reject) => {
         const finish = () => {
           status.onchange = null
           clearTimeout(timer)
-          if (status.state === 'granted') res()
-          else rej(new Error('Allow local network access to connect your wallet.'))
+          if (status.state === 'granted') resolve()
+          else reject(new Error('Allow local network access to connect your wallet.'))
         }
         status.onchange = finish
         const timer = setTimeout(finish, 120000)
       })
-
+      // Triggers the browser permission dialog while Chrome is still foreground.
       try {
-        // Triggers the browser permission dialog while Chrome is still foreground.
-        try {
-          await fetch('http://localhost/', { mode: 'no-cors', cache: 'no-store' })
-        } catch {
-          // expected — we only need the permission side-effect
-        }
-        await granted
-      } catch (err) {
-        fail(err)
-        return
+        await fetch('http://localhost/', { mode: 'no-cors', cache: 'no-store' })
+      } catch {
+        // expected — we only need the permission side-effect
       }
+      await granted
+    },
+  })
 
-      // Chrome consumed the Continue gesture on the permission dialog.
-      // A fresh tap is required or the wallet opens but never establishes MWA.
-      sheet.heading.textContent = 'Select your wallet'
-      sheet.text.textContent = 'Open wallet selection to authorize the battle entry payment.'
-      sheet.actionBtn.textContent = 'Select wallet'
-      sheet.actionBtn.disabled = false
-      sheet.cancelBtn.disabled = false
-
-      sheet.actionBtn.onclick = async () => {
-        sheet.actionBtn.disabled = true
-        sheet.cancelBtn.disabled = true
-        // Dismiss before launching so the sheet cannot block the return path.
-        sheet.dismiss()
-        try {
-          resolve(runAfterGranted ? await runAfterGranted() : undefined)
-        } catch (err) {
-          reject(err)
-        }
-      }
-    }
+  if (!runAfterGranted) return
+  return showMwaPermissionSheet({
+    title: 'Ready to connect',
+    body: 'Permission granted. Open your wallet to authorize the battle entry payment.',
+    actionLabel: 'Open Wallet',
+    runOnAction: runAfterGranted,
   })
 }
 
