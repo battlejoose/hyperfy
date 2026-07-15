@@ -56,6 +56,7 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 - Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)
 - Proximo title clip stops when the arena becomes ready
 - Battle Royale victory: server broadcasts `brVictory` to everyone when a match ends (`pending` → `complete`/`failed`). Client shows a shared victory sheet with winner name, abbreviated wallet, payout amount, a progress bar/spinner while the Solana payout is pending, then the tx hash + Solscan link when confirmed ([`BattleRoyaleVictory.js`](../src/client/components/BattleRoyaleVictory.js)). The old winner-only chat “You won X SOL!” message is removed.
+- Final 10s before a battle starts (queue phase, ≥2 queued): full-screen center countdown in [`MatchRound.js`](../src/client/components/MatchRound.js) with `timerclap.mp3` each second, last 4s of `proximospeech.mp3` at full volume when the countdown hits 10, and `horns.mp3` once when it hits 6. Skipped if the queue would roll over (<2 queued).
 - Android MWA entry payments call `ensureLoopbackNetworkAccess()` first ([`solanaWallet.js`](../src/client/extras/solanaWallet.js)): Continue → browser Allow → Select wallet on one sheet, so Local Network permission is granted before MWA connects.
 
 ## Heroku / database
