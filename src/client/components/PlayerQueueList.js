@@ -5,6 +5,7 @@ import { BR_ENTRY_FEE_LAMPORTS, BR_HOUSE_FEE_PERCENT, LAMPORTS_PER_SOL } from '.
 import {
   connectWallet,
   connectWalletEager,
+  getConnectedPubkey,
   getInjectedSolanaWallets,
   getTreasuryPubkey,
   getWalletBrowserLinks,
@@ -186,6 +187,17 @@ export function PlayerQueueList({ world }) {
     }
   }, [world])
 
+  // Never leave Join Battle stuck disabled if the wallet session or LNA prompt
+  // hangs (Chrome Android can sit forever without a user-visible failure).
+  useEffect(() => {
+    if (!pending) return
+    const id = setTimeout(() => {
+      setPending(false)
+      setError('Wallet request timed out. Tap Join Battle to try again.')
+    }, 50000)
+    return () => clearTimeout(id)
+  }, [pending])
+
   const phase = match?.phase ?? 'queue'
   const isBattle = phase === 'battle'
 
@@ -215,11 +227,15 @@ export function PlayerQueueList({ world }) {
   const payAndJoin = async activeWallet => {
     setPending(true)
     try {
+      if (!getConnectedPubkey()) {
+        throw new Error('Connect your wallet first')
+      }
       let signature = null
       try {
         signature = await payEntryFee(getTreasuryPubkey(), BR_ENTRY_FEE_LAMPORTS)
       } catch (err) {
         if (isUserRejection(err)) throw err
+        if (/connect your wallet/i.test(err.message || '')) throw err
         // the wallet can die after broadcasting the transaction —
         // ask the server to find the payment on-chain instead of losing it
         console.warn('[solana] payEntryFee failed, attempting on-chain recovery:', err)
@@ -280,26 +296,33 @@ export function PlayerQueueList({ world }) {
       setError('Arena payments are not configured')
       return
     }
-    if (wallet) {
-      await payAndJoin(wallet)
+
+    const injected = getInjectedSolanaWallets()
+    const activeStandard = getConnectedPubkey()
+
+    // Only use the standard pay path when we have a live Wallet Standard
+    // session. A pubkey left in React state after an earlier MWA payment is
+    // NOT enough — payAndJoin would skip the wallet UI and hang on server-side
+    // recover (common after leaving/reopening the tab without a full refresh).
+    if (activeStandard) {
+      setWallet(activeStandard)
+      await payAndJoin(activeStandard)
+      return
+    }
+
+    // Android Chrome without an injected provider: always MWA
+    if (isMwaSupported() && injected.length === 0) {
+      await payWithMwa()
       return
     }
 
     // wallets injected into the page (extension or wallet in-app browser)
-    // are the reliable path — connect and pay directly
-    const injected = getInjectedSolanaWallets()
     if (injected.length === 1) {
       await connectAndPay(injected[0].name)
       return
     }
     if (injected.length > 1) {
       setWalletChoices(injected.map(({ name, icon }) => ({ type: 'wallet', name, icon })))
-      return
-    }
-
-    // Android: Mobile Wallet Adapter connects to the native wallet app
-    if (isMwaSupported()) {
-      await payWithMwa()
       return
     }
 

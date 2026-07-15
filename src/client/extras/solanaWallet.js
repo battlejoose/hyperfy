@@ -15,9 +15,59 @@ const SOLANA_CHAIN = 'solana:mainnet'
 const LAST_WALLET_KEY = 'hyperfy:lastSolanaWallet'
 const MWA_AUTH_TOKEN_KEY = 'hyperfy:mwaAuthToken'
 
+// Solana Mobile / Chrome Android: LNA prompt + MWA association can hang if we
+// wait forever. Keep these short so Join Battle unlocks for a retry.
+const LNA_PERMISSION_TIMEOUT_MS = 25000
+const MWA_SESSION_TIMEOUT_MS = 45000
+
 const MWA_APP_IDENTITY = {
   name: 'Hyperfy Arena',
+  // icon must be a relative URI resolved against uri (absolute URLs are rejected)
   uri: typeof window !== 'undefined' ? window.location.origin : undefined,
+  icon: '/particle.png',
+}
+
+// After the tab/app is backgrounded, Chrome may drop the user-activation needed
+// to launch the wallet Intent. Force a fresh "Open Wallet" tap in that case.
+let pageWasBackgrounded = false
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') pageWasBackgrounded = true
+  })
+  window.addEventListener('pagehide', () => {
+    pageWasBackgrounded = true
+  })
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) pageWasBackgrounded = true
+  })
+}
+
+function consumeNeedsFreshWalletGesture() {
+  const needs = pageWasBackgrounded
+  pageWasBackgrounded = false
+  return needs
+}
+
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise.then(
+      value => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      err => {
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
+function clearMwaAuthToken() {
+  try {
+    localStorage.removeItem(MWA_AUTH_TOKEN_KEY)
+  } catch {}
 }
 
 function getRpcUrl() {
@@ -200,55 +250,80 @@ function showMwaPermissionSheet({ title, body, actionLabel, runOnAction }) {
 }
 
 /**
- * Ensure Local Network / Apps-on-device permission is granted.
- * When a follow-up wallet launch is needed, pass `runAfterGranted` — it is
- * invoked from the "Open Wallet" click (trusted gesture).
+ * Ensure Local Network / Apps-on-device permission is granted, then launch the
+ * wallet from a trusted click ("Open Wallet").
+ *
+ * Per Solana Mobile web guidance: MWA association must start from a user
+ * gesture, and LNA must be granted before the localhost WebSocket opens —
+ * otherwise Chrome races the system prompt with the wallet Intent and the
+ * session silently fails (especially after the tab was backgrounded).
  */
 async function ensureLoopbackNetworkAccess(runAfterGranted) {
+  if (!runAfterGranted) return
+
+  const needsFreshGesture = consumeNeedsFreshWalletGesture()
   const status = await queryLoopbackPermission()
-  if (!status || status.state === 'granted') {
-    // Already allowed (or API unsupported) — open wallet on the current path.
-    return runAfterGranted ? runAfterGranted() : undefined
-  }
-  if (status.state === 'denied') {
+
+  if (status?.state === 'denied') {
     throw new Error(
       'Local network / Apps on your device access is blocked. Allow it in the browser site settings, then try again.'
     )
   }
 
-  // "prompt" — grant permission first, then open wallet from a new click.
-  await showMwaPermissionSheet({
-    title: 'Allow wallet connections',
-    body: 'Your browser will ask to allow apps on your device. Tap Allow so we can open your Solana wallet.',
-    actionLabel: 'Continue',
-    runOnAction: async () => {
-      const granted = new Promise((resolve, reject) => {
-        const finish = () => {
-          status.onchange = null
-          clearTimeout(timer)
-          if (status.state === 'granted') resolve()
-          else reject(new Error('Allow local network access to connect your wallet.'))
+  let didPromptLna = false
+  if (status?.state === 'prompt') {
+    didPromptLna = true
+    // Grant permission first, then open wallet from a new click.
+    await showMwaPermissionSheet({
+      title: 'Allow wallet connections',
+      body: 'Your browser will ask to allow apps on your device. Tap Allow so we can open your Solana wallet.',
+      actionLabel: 'Continue',
+      runOnAction: async () => {
+        const granted = new Promise((resolve, reject) => {
+          const finish = () => {
+            status.onchange = null
+            clearTimeout(timer)
+            if (status.state === 'granted') resolve()
+            else {
+              reject(
+                new Error(
+                  status.state === 'denied'
+                    ? 'Allow local network access to connect your wallet.'
+                    : 'Local network permission timed out. Tap Join Battle and Allow when prompted.'
+                )
+              )
+            }
+          }
+          status.onchange = finish
+          const timer = setTimeout(finish, LNA_PERMISSION_TIMEOUT_MS)
+        })
+        // Triggers the browser permission dialog while Chrome is still foreground.
+        try {
+          await fetch('http://localhost/', { mode: 'no-cors', cache: 'no-store' })
+        } catch {
+          // expected — we only need the permission side-effect
         }
-        status.onchange = finish
-        const timer = setTimeout(finish, 120000)
-      })
-      // Triggers the browser permission dialog while Chrome is still foreground.
-      try {
-        await fetch('http://localhost/', { mode: 'no-cors', cache: 'no-store' })
-      } catch {
-        // expected — we only need the permission side-effect
-      }
-      await granted
-    },
-  })
+        await granted
+      },
+    })
+  }
 
-  if (!runAfterGranted) return
-  return showMwaPermissionSheet({
-    title: 'Ready to connect',
-    body: 'Permission granted. Open your wallet to authorize the battle entry payment.',
-    actionLabel: 'Open Wallet',
-    runOnAction: runAfterGranted,
-  })
+  // Always open the wallet from an explicit tap when:
+  // - we just finished the LNA prompt flow, or
+  // - the page was backgrounded (user activation / association often stale)
+  // Otherwise reuse the Join Battle click as the trusted gesture.
+  if (didPromptLna || needsFreshGesture) {
+    return showMwaPermissionSheet({
+      title: didPromptLna ? 'Ready to connect' : 'Open your wallet',
+      body: didPromptLna
+        ? 'Permission granted. Open your wallet to authorize the battle entry payment.'
+        : 'Authorize the battle entry payment in your Solana wallet.',
+      actionLabel: 'Open Wallet',
+      runOnAction: runAfterGranted,
+    })
+  }
+
+  return runAfterGranted()
 }
 
 /**
@@ -421,63 +496,69 @@ export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAM
   } catch {}
 
   // Finish Local Network / Apps-on-device permission, then launch the wallet
-  // from the "Open Wallet" click so the two prompts never race.
+  // from a trusted click so the two prompts never race.
   const result = await ensureLoopbackNetworkAccess(async () => {
-    return transact(async wallet => {
-      // authorize (reuses the cached token to skip the approval screen when valid)
-      let auth
-      try {
-        auth = await wallet.authorize({
-          chain: SOLANA_CHAIN,
-          identity: MWA_APP_IDENTITY,
-          auth_token: cachedAuthToken || undefined,
+    return withTimeout(
+      transact(async wallet => {
+        // authorize (reuses the cached token to skip the approval screen when valid)
+        let auth
+        try {
+          auth = await wallet.authorize({
+            chain: SOLANA_CHAIN,
+            identity: MWA_APP_IDENTITY,
+            auth_token: cachedAuthToken || undefined,
+          })
+        } catch (err) {
+          if (!cachedAuthToken) throw err
+          // stale/revoked token — clear cache and authorize fresh in this session
+          clearMwaAuthToken()
+          cachedAuthToken = null
+          auth = await wallet.authorize({
+            chain: SOLANA_CHAIN,
+            identity: MWA_APP_IDENTITY,
+          })
+        }
+        try {
+          localStorage.setItem(MWA_AUTH_TOKEN_KEY, auth.auth_token)
+        } catch {}
+
+        // MWA returns addresses as base64-encoded public key bytes
+        const addressBytes = Uint8Array.from(atob(auth.accounts[0].address), c => c.charCodeAt(0))
+        const fromPubkey = new PublicKey(addressBytes)
+
+        const {
+          context: { slot: minContextSlot },
+          value: { blockhash, lastValidBlockHeight },
+        } = await connection.getLatestBlockhashAndContext('confirmed')
+
+        const message = new TransactionMessage({
+          payerKey: fromPubkey,
+          recentBlockhash: blockhash,
+          instructions: [
+            SystemProgram.transfer({
+              fromPubkey,
+              toPubkey,
+              lamports,
+            }),
+          ],
+        }).compileToV0Message()
+        const transaction = new VersionedTransaction(message)
+
+        const signatures = await wallet.signAndSendTransactions({
+          transactions: [transaction],
+          minContextSlot,
         })
-      } catch (err) {
-        if (!cachedAuthToken) throw err
-        // stale/revoked token — fall back to a fresh authorization
-        auth = await wallet.authorize({
-          chain: SOLANA_CHAIN,
-          identity: MWA_APP_IDENTITY,
-        })
-      }
-      try {
-        localStorage.setItem(MWA_AUTH_TOKEN_KEY, auth.auth_token)
-      } catch {}
 
-      // MWA returns addresses as base64-encoded public key bytes
-      const addressBytes = Uint8Array.from(atob(auth.accounts[0].address), c => c.charCodeAt(0))
-      const fromPubkey = new PublicKey(addressBytes)
-
-      const {
-        context: { slot: minContextSlot },
-        value: { blockhash, lastValidBlockHeight },
-      } = await connection.getLatestBlockhashAndContext('confirmed')
-
-      const message = new TransactionMessage({
-        payerKey: fromPubkey,
-        recentBlockhash: blockhash,
-        instructions: [
-          SystemProgram.transfer({
-            fromPubkey,
-            toPubkey,
-            lamports,
-          }),
-        ],
-      }).compileToV0Message()
-      const transaction = new VersionedTransaction(message)
-
-      const signatures = await wallet.signAndSendTransactions({
-        transactions: [transaction],
-        minContextSlot,
-      })
-
-      return {
-        signature: signatures[0],
-        walletPubkey: fromPubkey.toBase58(),
-        blockhash,
-        lastValidBlockHeight,
-      }
-    })
+        return {
+          signature: signatures[0],
+          walletPubkey: fromPubkey.toBase58(),
+          blockhash,
+          lastValidBlockHeight,
+        }
+      }),
+      MWA_SESSION_TIMEOUT_MS,
+      'Wallet connection timed out. Tap Join Battle to try again.'
+    )
   })
 
   try {
