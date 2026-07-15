@@ -216,8 +216,8 @@ async function ensureLoopbackNetworkAccess(runAfterGranted) {
     )
   }
 
-  // "prompt" — grant permission first, then open wallet from a new click.
-  await showMwaPermissionSheet({
+  // "prompt" — ask for permission, then open wallet selection immediately.
+  return showMwaPermissionSheet({
     title: 'Allow wallet connections',
     body: 'Your browser will ask to allow apps on your device. Tap Allow so we can open your Solana wallet.',
     actionLabel: 'Continue',
@@ -239,15 +239,9 @@ async function ensureLoopbackNetworkAccess(runAfterGranted) {
         // expected — we only need the permission side-effect
       }
       await granted
+      if (!runAfterGranted) return
+      return runAfterGranted()
     },
-  })
-
-  if (!runAfterGranted) return
-  return showMwaPermissionSheet({
-    title: 'Ready to connect',
-    body: 'Permission granted. Open your wallet to authorize the battle entry payment.',
-    actionLabel: 'Open Wallet',
-    runOnAction: runAfterGranted,
   })
 }
 
