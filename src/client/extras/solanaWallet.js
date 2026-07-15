@@ -70,6 +70,188 @@ export function isMwaSupported() {
 }
 
 /**
+ * Chrome/Android now gates MWA's localhost WebSocket behind Local Network /
+ * "Apps on your device" permission. If we open the wallet before that is
+ * granted, the system prompt and wallet race and the session fails.
+ *
+ * Flow matches @solana-mobile/wallet-standard-mobile:
+ * 1) query permission  2) if prompt, show Continue → fetch localhost to
+ * trigger the browser prompt while we're still foreground  3) wait for
+ * grant  4) require a fresh click before returning so `transact()` can
+ * launch the wallet from a trusted gesture.
+ */
+async function queryLoopbackPermission() {
+  if (typeof navigator === 'undefined' || !navigator.permissions?.query) return null
+  for (const name of ['loopback-network', 'local-network-access', 'local-network']) {
+    try {
+      return await navigator.permissions.query({ name })
+    } catch {
+      // name not recognized in this browser
+    }
+  }
+  return null
+}
+
+function showMwaPermissionSheet({ title, body, actionLabel, runOnAction }) {
+  return new Promise((resolve, reject) => {
+    const overlay = document.createElement('div')
+    overlay.setAttribute('data-mwa-lna', '1')
+    overlay.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:10050',
+      'display:flex',
+      'align-items:center',
+      'justify-content:center',
+      'padding:1.25rem',
+      'box-sizing:border-box',
+      'background:rgba(4,6,10,0.72)',
+      'backdrop-filter:blur(2px)',
+      'font-family:ui-monospace,SF Mono,Menlo,Consolas,monospace',
+    ].join(';')
+
+    const card = document.createElement('div')
+    card.style.cssText = [
+      'width:min(22rem,100%)',
+      'padding:1.25rem 1.3rem 1.15rem',
+      'border-radius:0.35rem',
+      'border:1px solid rgba(212,175,95,0.35)',
+      'background:linear-gradient(180deg,rgba(18,20,26,0.98),rgba(10,12,16,0.99))',
+      'color:rgba(240,240,240,0.95)',
+      'box-shadow:0 18px 48px rgba(0,0,0,0.55)',
+    ].join(';')
+
+    const kicker = document.createElement('div')
+    kicker.textContent = 'WALLET ACCESS'
+    kicker.style.cssText =
+      'font-size:0.65rem;letter-spacing:0.16em;color:rgba(212,175,95,0.9);margin-bottom:0.4rem'
+
+    const heading = document.createElement('div')
+    heading.textContent = title
+    heading.style.cssText =
+      'font-size:1.15rem;font-weight:700;letter-spacing:0.03em;color:#f5e6c8;margin-bottom:0.55rem'
+
+    const text = document.createElement('div')
+    text.textContent = body
+    text.style.cssText =
+      'font-size:0.78rem;line-height:1.45;color:rgba(255,255,255,0.7);margin-bottom:1.1rem'
+
+    const actions = document.createElement('div')
+    actions.style.cssText = 'display:flex;gap:0.5rem'
+
+    const cancelBtn = document.createElement('button')
+    cancelBtn.type = 'button'
+    cancelBtn.textContent = 'Cancel'
+    cancelBtn.style.cssText = [
+      'flex:0 0 auto',
+      'padding:0.7rem 0.9rem',
+      'border-radius:0.25rem',
+      'border:1px solid rgba(255,255,255,0.18)',
+      'background:rgba(255,255,255,0.04)',
+      'color:rgba(255,255,255,0.8)',
+      'font:inherit',
+      'font-size:0.78rem',
+      'cursor:pointer',
+    ].join(';')
+
+    const actionBtn = document.createElement('button')
+    actionBtn.type = 'button'
+    actionBtn.textContent = actionLabel
+    actionBtn.style.cssText = [
+      'flex:1 1 auto',
+      'padding:0.7rem 0.9rem',
+      'border-radius:0.25rem',
+      'border:1px solid rgba(251,191,36,0.45)',
+      'background:rgba(251,191,36,0.14)',
+      'color:#fbbf24',
+      'font:inherit',
+      'font-size:0.78rem',
+      'font-weight:700',
+      'letter-spacing:0.04em',
+      'cursor:pointer',
+    ].join(';')
+
+    const cleanup = () => overlay.remove()
+
+    cancelBtn.onclick = () => {
+      cleanup()
+      reject(new Error('Wallet connection cancelled'))
+    }
+    actionBtn.onclick = async () => {
+      actionBtn.disabled = true
+      cancelBtn.disabled = true
+      try {
+        // Keep runOnAction inside this click so Chrome still treats wallet
+        // launch as a trusted user gesture.
+        const result = runOnAction ? await runOnAction() : undefined
+        cleanup()
+        resolve(result)
+      } catch (err) {
+        cleanup()
+        reject(err)
+      }
+    }
+
+    actions.append(cancelBtn, actionBtn)
+    card.append(kicker, heading, text, actions)
+    overlay.append(card)
+    document.body.append(overlay)
+  })
+}
+
+/**
+ * Ensure Local Network / Apps-on-device permission is granted.
+ * When a follow-up wallet launch is needed, pass `runAfterGranted` — it is
+ * invoked from the "Open Wallet" click (trusted gesture).
+ */
+async function ensureLoopbackNetworkAccess(runAfterGranted) {
+  const status = await queryLoopbackPermission()
+  if (!status || status.state === 'granted') {
+    // Already allowed (or API unsupported) — open wallet on the current path.
+    return runAfterGranted ? runAfterGranted() : undefined
+  }
+  if (status.state === 'denied') {
+    throw new Error(
+      'Local network / Apps on your device access is blocked. Allow it in the browser site settings, then try again.'
+    )
+  }
+
+  // "prompt" — grant permission first, then open wallet from a new click.
+  await showMwaPermissionSheet({
+    title: 'Allow wallet connections',
+    body: 'Your browser will ask to allow apps on your device. Tap Allow so we can open your Solana wallet.',
+    actionLabel: 'Continue',
+    runOnAction: async () => {
+      const granted = new Promise((resolve, reject) => {
+        const finish = () => {
+          status.onchange = null
+          clearTimeout(timer)
+          if (status.state === 'granted') resolve()
+          else reject(new Error('Allow local network access to connect your wallet.'))
+        }
+        status.onchange = finish
+        const timer = setTimeout(finish, 120000)
+      })
+      // Triggers the browser permission dialog while Chrome is still foreground.
+      try {
+        await fetch('http://localhost/', { mode: 'no-cors', cache: 'no-store' })
+      } catch {
+        // expected — we only need the permission side-effect
+      }
+      await granted
+    },
+  })
+
+  if (!runAfterGranted) return
+  return showMwaPermissionSheet({
+    title: 'Ready to connect',
+    body: 'Permission granted. Open your wallet to authorize the battle entry payment.',
+    actionLabel: 'Open Wallet',
+    runOnAction: runAfterGranted,
+  })
+}
+
+/**
  * Deep links that reopen this page inside a wallet app's built-in dapp
  * browser, where the wallet injects its provider just like a desktop
  * extension. Fallback payment path on phones (works on iOS too).
@@ -238,60 +420,64 @@ export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAM
     cachedAuthToken = localStorage.getItem(MWA_AUTH_TOKEN_KEY)
   } catch {}
 
-  const result = await transact(async wallet => {
-    // authorize (reuses the cached token to skip the approval screen when valid)
-    let auth
-    try {
-      auth = await wallet.authorize({
-        chain: SOLANA_CHAIN,
-        identity: MWA_APP_IDENTITY,
-        auth_token: cachedAuthToken || undefined,
+  // Finish Local Network / Apps-on-device permission, then launch the wallet
+  // from the "Open Wallet" click so the two prompts never race.
+  const result = await ensureLoopbackNetworkAccess(async () => {
+    return transact(async wallet => {
+      // authorize (reuses the cached token to skip the approval screen when valid)
+      let auth
+      try {
+        auth = await wallet.authorize({
+          chain: SOLANA_CHAIN,
+          identity: MWA_APP_IDENTITY,
+          auth_token: cachedAuthToken || undefined,
+        })
+      } catch (err) {
+        if (!cachedAuthToken) throw err
+        // stale/revoked token — fall back to a fresh authorization
+        auth = await wallet.authorize({
+          chain: SOLANA_CHAIN,
+          identity: MWA_APP_IDENTITY,
+        })
+      }
+      try {
+        localStorage.setItem(MWA_AUTH_TOKEN_KEY, auth.auth_token)
+      } catch {}
+
+      // MWA returns addresses as base64-encoded public key bytes
+      const addressBytes = Uint8Array.from(atob(auth.accounts[0].address), c => c.charCodeAt(0))
+      const fromPubkey = new PublicKey(addressBytes)
+
+      const {
+        context: { slot: minContextSlot },
+        value: { blockhash, lastValidBlockHeight },
+      } = await connection.getLatestBlockhashAndContext('confirmed')
+
+      const message = new TransactionMessage({
+        payerKey: fromPubkey,
+        recentBlockhash: blockhash,
+        instructions: [
+          SystemProgram.transfer({
+            fromPubkey,
+            toPubkey,
+            lamports,
+          }),
+        ],
+      }).compileToV0Message()
+      const transaction = new VersionedTransaction(message)
+
+      const signatures = await wallet.signAndSendTransactions({
+        transactions: [transaction],
+        minContextSlot,
       })
-    } catch (err) {
-      if (!cachedAuthToken) throw err
-      // stale/revoked token — fall back to a fresh authorization
-      auth = await wallet.authorize({
-        chain: SOLANA_CHAIN,
-        identity: MWA_APP_IDENTITY,
-      })
-    }
-    try {
-      localStorage.setItem(MWA_AUTH_TOKEN_KEY, auth.auth_token)
-    } catch {}
 
-    // MWA returns addresses as base64-encoded public key bytes
-    const addressBytes = Uint8Array.from(atob(auth.accounts[0].address), c => c.charCodeAt(0))
-    const fromPubkey = new PublicKey(addressBytes)
-
-    const {
-      context: { slot: minContextSlot },
-      value: { blockhash, lastValidBlockHeight },
-    } = await connection.getLatestBlockhashAndContext('confirmed')
-
-    const message = new TransactionMessage({
-      payerKey: fromPubkey,
-      recentBlockhash: blockhash,
-      instructions: [
-        SystemProgram.transfer({
-          fromPubkey,
-          toPubkey,
-          lamports,
-        }),
-      ],
-    }).compileToV0Message()
-    const transaction = new VersionedTransaction(message)
-
-    const signatures = await wallet.signAndSendTransactions({
-      transactions: [transaction],
-      minContextSlot,
+      return {
+        signature: signatures[0],
+        walletPubkey: fromPubkey.toBase58(),
+        blockhash,
+        lastValidBlockHeight,
+      }
     })
-
-    return {
-      signature: signatures[0],
-      walletPubkey: fromPubkey.toBase58(),
-      blockhash,
-      lastValidBlockHeight,
-    }
   })
 
   try {
