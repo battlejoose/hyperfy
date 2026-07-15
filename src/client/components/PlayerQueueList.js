@@ -14,6 +14,7 @@ import {
   onSolanaWalletsChange,
   payEntryFee,
   payEntryFeeMwa,
+  prefetchEntryBlockhash,
 } from '../extras/solanaWallet.js'
 import { QueueArenaRankings } from './ArenaRankings'
 
@@ -292,6 +293,10 @@ export function PlayerQueueList({ world }) {
       setError('Arena payments are not configured')
       return
     }
+
+    // Start the RPC round-trip immediately so the wallet approval can open
+    // without waiting on getLatestBlockhash afterward.
+    prefetchEntryBlockhash().catch(() => {})
 
     const injected = getInjectedSolanaWallets()
     const activeStandard = getConnectedPubkey()

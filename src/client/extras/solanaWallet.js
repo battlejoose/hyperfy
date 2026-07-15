@@ -74,6 +74,57 @@ function getRpcUrl() {
   return globalThis.env?.PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta')
 }
 
+// Reuse one Connection so HTTP keep-alive helps; public RPCs are often the
+// reason the wallet approval UI feels delayed (blockhash fetch blocks it).
+let sharedConnection = null
+function getConnection() {
+  const url = getRpcUrl()
+  if (!sharedConnection || sharedConnection.rpcEndpoint !== url) {
+    sharedConnection = new Connection(url, 'confirmed')
+  }
+  return sharedConnection
+}
+
+// Fresh blockhashes stay valid ~60–90s; we keep a short in-memory cache so Join
+// Battle can open the wallet immediately instead of waiting on RPC first.
+const BLOCKHASH_MAX_AGE_MS = 12000
+let blockhashCache = null // { value, at }
+let blockhashInflight = null
+
+/**
+ * Start (or reuse) a blockhash fetch. Call as soon as the user intends to pay
+ * so the RPC finishes before the wallet UI needs it.
+ */
+export function prefetchEntryBlockhash() {
+  if (blockhashCache && Date.now() - blockhashCache.at < BLOCKHASH_MAX_AGE_MS) {
+    return Promise.resolve(blockhashCache.value)
+  }
+  if (blockhashInflight) return blockhashInflight
+
+  blockhashInflight = getConnection()
+    .getLatestBlockhashAndContext('processed')
+    .then(value => {
+      blockhashCache = { value, at: Date.now() }
+      blockhashInflight = null
+      return value
+    })
+    .catch(err => {
+      blockhashInflight = null
+      throw err
+    })
+  return blockhashInflight
+}
+
+async function takeEntryBlockhash() {
+  const value = await prefetchEntryBlockhash()
+  // If this result sat around too long (slow authorize / sheet), refresh once.
+  if (blockhashCache && Date.now() - blockhashCache.at > BLOCKHASH_MAX_AGE_MS) {
+    blockhashCache = null
+    return prefetchEntryBlockhash()
+  }
+  return value
+}
+
 function isSolanaStandardWallet(wallet) {
   return (
     wallet.chains?.some(chain => chain.startsWith('solana:')) &&
@@ -269,6 +320,10 @@ async function ensureLoopbackNetworkAccess(runAfterGranted) {
   // future callers honest if the flow changes.
   consumeNeedsFreshWalletGesture()
 
+  // Overlap RPC with the permission / Open Wallet UI so blockhash is ready
+  // by the time the wallet association starts.
+  prefetchEntryBlockhash().catch(() => {})
+
   const status = await queryLoopbackPermission()
 
   if (status?.state === 'denied') {
@@ -309,6 +364,7 @@ async function ensureLoopbackNetworkAccess(runAfterGranted) {
         await granted
       },
     })
+    prefetchEntryBlockhash().catch(() => {})
   }
 
   return showMwaPermissionSheet({
@@ -399,14 +455,16 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
   }
   const { wallet, account } = connected
 
-  const connection = new Connection(getRpcUrl(), 'confirmed')
+  const connection = getConnection()
   const fromPubkey = new PublicKey(account.address)
   const toPubkey = new PublicKey(treasuryPubkey)
 
+  // Prefer a prefetched blockhash so Phantom/Solflare can open immediately
+  // instead of waiting on a slow confirmed-commitment RPC round-trip.
   const {
     context: { slot: minContextSlot },
     value: { blockhash, lastValidBlockHeight },
-  } = await connection.getLatestBlockhashAndContext('confirmed')
+  } = await takeEntryBlockhash()
 
   // versioned (v0) transaction — mobile wallets parse these far more
   // reliably than legacy transactions with placeholder signatures
@@ -433,7 +491,7 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
       transaction: serialized,
       // minContextSlot is required by Phantom via Mobile Wallet Adapter —
       // without it the request errors before the approval screen appears
-      options: { commitment: 'confirmed', minContextSlot },
+      options: { commitment: 'processed', minContextSlot },
     })
     signature = bs58.encode(result.signature)
   } else {
@@ -447,13 +505,10 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
     signature = await connection.sendRawTransaction(result.signedTransaction)
   }
 
-  try {
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed')
-  } catch (err) {
-    // we already have the signature — the server verifies on-chain with
-    // retries, so a client-side confirmation hiccup must not lose the payment
-    console.warn('[solana] confirmTransaction failed, continuing with signature:', err)
-  }
+  // Server verifies on-chain — don't block the UI on client confirmation.
+  connection
+    .confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed')
+    .catch(err => console.warn('[solana] confirmTransaction failed, continuing with signature:', err))
 
   return signature
 }
@@ -462,18 +517,17 @@ export async function payEntryFee(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPOR
  * Pay the battle royale entry fee through the Mobile Wallet Adapter protocol
  * (Android). Authorize and sign-and-send both run inside ONE transact session.
  *
- * Speed: kick off getLatestBlockhash in parallel with authorize so the wallet
- * is not sitting idle on a slow RPC before signAndSend appears.
+ * Speed: prefetch blockhash while the Open Wallet sheet is up, then reuse it
+ * inside the session so signAndSend can show immediately after authorize.
  * Reliability: always launch from "Open Wallet"; on failure with a cached
  * auth_token, clear it and retry once with a fresh authorize.
  * Returns { signature, walletPubkey } (both base58).
  */
 export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAMPORTS) {
-  const connection = new Connection(getRpcUrl(), 'confirmed')
+  const connection = getConnection()
   const toPubkey = new PublicKey(treasuryPubkey)
 
-  // Warm the RPC while the user taps through Open Wallet / LNA sheets.
-  connection.getLatestBlockhashAndContext('processed').catch(() => {})
+  prefetchEntryBlockhash().catch(() => {})
 
   const runSession = async ({ useAuthToken }) => {
     let cachedAuthToken = null
@@ -487,10 +541,8 @@ export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAM
 
     return withTimeout(
       transact(async wallet => {
-        // Fetch blockhash in parallel with authorize — waiting until after
-        // authorize is what made the approval screen take so long to appear.
-        const startedAt = Date.now()
-        let blockhashPromise = connection.getLatestBlockhashAndContext('processed')
+        // Keep refreshing the cache in parallel with authorize when needed.
+        prefetchEntryBlockhash().catch(() => {})
 
         let auth
         try {
@@ -515,22 +567,10 @@ export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAM
         const addressBytes = Uint8Array.from(atob(auth.accounts[0].address), c => c.charCodeAt(0))
         const fromPubkey = new PublicKey(addressBytes)
 
-        let blockhashResult
-        try {
-          blockhashResult = await blockhashPromise
-        } catch {
-          blockhashResult = await connection.getLatestBlockhashAndContext('processed')
-        }
-        // If authorize took a long time, refresh so the wallet doesn't reject
-        // a near-expired blockhash.
-        if (Date.now() - startedAt > 8000) {
-          blockhashResult = await connection.getLatestBlockhashAndContext('processed')
-        }
-
         const {
           context: { slot: minContextSlot },
           value: { blockhash, lastValidBlockHeight },
-        } = blockhashResult
+        } = await takeEntryBlockhash()
 
         const message = new TransactionMessage({
           payerKey: fromPubkey,
@@ -571,10 +611,10 @@ export async function payEntryFeeMwa(treasuryPubkey, lamports = BR_ENTRY_FEE_LAM
     // the second join — clear and retry once with a fresh authorize.
     console.warn('[solana] MWA session failed, retrying without cached auth token:', err)
     clearMwaAuthToken()
+    prefetchEntryBlockhash().catch(() => {})
     result = await ensureLoopbackNetworkAccess(() => runSession({ useAuthToken: false }))
   }
 
-  // Server verifies on-chain — don't block the UI on client confirmation.
   connection
     .confirmTransaction(
       {
