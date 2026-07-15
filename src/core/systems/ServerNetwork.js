@@ -98,8 +98,10 @@ export class ServerNetwork extends System {
     this.arenaRemnants = createArenaRemnants()
   }
 
-  init({ db }) {
+  init({ db, ratingsDb }) {
     this.db = db
+    // Persistent ratings store (Postgres on Heroku); falls back to world db locally.
+    this.ratingsDb = ratingsDb || db
   }
 
   async start() {
@@ -258,7 +260,7 @@ export class ServerNetwork extends System {
     const wallet = br.queued.get(playerId)?.wallet
     if (wallet) {
       const name = this.world.entities.get(playerId)?.data?.name
-      applyArenaDeathRating(this.db, wallet, name).catch(err =>
+      applyArenaDeathRating(this.ratingsDb, wallet, name).catch(err =>
         console.error('[arena-rating] death update failed:', err)
       )
     }
@@ -294,7 +296,7 @@ export class ServerNetwork extends System {
       }
 
       if (wallet) {
-        applyArenaWinRating(this.db, wallet, winnerName).catch(err =>
+        applyArenaWinRating(this.ratingsDb, wallet, winnerName).catch(err =>
           console.error('[arena-rating] win update failed:', err)
         )
         // Everyone sees the victory sheet immediately; payout status streams in after.
@@ -476,7 +478,7 @@ export class ServerNetwork extends System {
       const wallet = br.queued.get(attackerId)?.wallet
       if (wallet) {
         const name = this.world.entities.get(attackerId)?.data?.name
-        applyArenaKillRating(this.db, wallet, name).catch(err =>
+        applyArenaKillRating(this.ratingsDb, wallet, name).catch(err =>
           console.error('[arena-rating] kill update failed:', err)
         )
       }
@@ -685,7 +687,7 @@ export class ServerNetwork extends System {
 
       // Keep arena rating username in sync when this account already has a wallet
       if (user.wallet_pubkey) {
-        upsertWalletProfile(this.db, user.wallet_pubkey, socket.player.data.name).catch(err =>
+        upsertWalletProfile(this.ratingsDb, user.wallet_pubkey, socket.player.data.name).catch(err =>
           console.error('[arena-rating] wallet profile upsert failed:', err)
         )
       }
@@ -754,7 +756,7 @@ export class ServerNetwork extends System {
       entry.wallet = walletPubkey
     }
 
-    upsertWalletProfile(this.db, walletPubkey, socket.player.data.name).catch(err =>
+    upsertWalletProfile(this.ratingsDb, walletPubkey, socket.player.data.name).catch(err =>
       console.error('[arena-rating] wallet profile upsert failed:', err)
     )
 

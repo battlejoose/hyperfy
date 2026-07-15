@@ -14,7 +14,7 @@ function isPostgresUri(uri) {
   return typeof uri === 'string' && (uri.startsWith('postgres://') || uri.startsWith('postgresql://'))
 }
 
-async function ensureArenaRatingsTable(db) {
+export async function ensureArenaRatingsTable(db) {
   const exists = await db.schema.hasTable('arena_ratings')
   if (exists) return
   console.log('[db] creating arena_ratings table')

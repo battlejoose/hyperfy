@@ -15,7 +15,7 @@ Disconnect while still alive in a paid battle counts as a death.
 
 ## Storage
 
-Table `arena_ratings` (SQLite by default; Postgres only when `DB_URI` is an explicit postgres URL):
+Table `arena_ratings`:
 
 | Column | Notes |
 |--------|--------|
@@ -26,6 +26,15 @@ Table `arena_ratings` (SQLite by default; Postgres only when `DB_URI` is an expl
 | `updated_at` | Last mutation time |
 
 Identity for ratings is the **wallet**, not the session user UUID. `users.wallet_pubkey` still links the current session for payments.
+
+Ratings use a **separate DB connection** from the world ([`ratingsDb.js`](../src/server/ratingsDb.js)):
+
+| Environment | Ratings store |
+|-------------|----------------|
+| Heroku (`DYNO` + `DATABASE_URL`) | Postgres schema `arena_ratings` (override with `RATINGS_DB_URI` / `RATINGS_DB_SCHEMA`) |
+| Local / no Postgres URL | Same as world DB (SQLite) |
+
+The world DB stays on SQLite by default so `ASSETS=local` never loads a foreign Postgres world with missing hashed assets. Only the ratings table lives in Heroku Postgres, so rankings survive dyno restarts.
 
 ## Hooks ([`ServerNetwork.js`](../src/core/systems/ServerNetwork.js))
 
@@ -47,20 +56,20 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 - Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)
 - Proximo title clip stops when the arena becomes ready
 - Battle Royale victory: server broadcasts `brVictory` to everyone when a match ends (`pending` → `complete`/`failed`). Client shows a shared victory sheet with winner name, abbreviated wallet, payout amount, a progress bar/spinner while the Solana payout is pending, then the tx hash + Solscan link when confirmed ([`BattleRoyaleVictory.js`](../src/client/components/BattleRoyaleVictory.js)). The old winner-only chat “You won X SOL!” message is removed.
-- Android MWA entry payments call `ensureLoopbackNetworkAccess()` first ([`solanaWallet.js`](../src/client/extras/solanaWallet.js)): if Chrome still needs Local Network / “Apps on your device” permission, the user grants it (via a Continue sheet + `fetch('http://localhost')`) before the wallet app is opened, so the permission prompt no longer races the wallet.
+- Android MWA entry payments call `ensureLoopbackNetworkAccess()` first ([`solanaWallet.js`](../src/client/extras/solanaWallet.js)): Continue → browser Allow → Select wallet on one sheet, so Local Network permission is granted before MWA connects.
 
 ## Heroku / database
 
-Ratings work on SQLite or Postgres. **Do not auto-bind Heroku `DATABASE_URL`.**
-
-The first rating deploy did that and silently loaded a different Postgres world DB, which referenced hashed sky/terrain assets that are not on the dyno — that is what blacked out the arena.
-
 | Config | Behavior |
 |--------|----------|
-| `DB_URI=local` (or non-postgres) | SQLite in `{WORLD}/db.sqlite` — **same as before ratings** |
-| `DB_URI=postgres://…` | Postgres (set this explicitly to your Heroku `DATABASE_URL` value if you want Postgres) |
+| World `DB_URI=local` (default) | SQLite world DB — arena assets stay correct with `ASSETS=local` |
+| Ratings (automatic on Heroku) | Uses `DATABASE_URL` Postgres in schema `arena_ratings` only |
+| `RATINGS_DB_URI` | Optional explicit ratings Postgres URL |
+| `RATINGS_DB_SCHEMA` | Optional schema name (default `arena_ratings`) |
 
-On Heroku dynos, Postgres connections enable SSL automatically when `DYNO` is set. Migrations (including `arena_ratings`) run on boot.
+**Do not** point the world `DB_URI` at Heroku `DATABASE_URL` unless you intend the whole world to live in that Postgres. That once loaded stale world rows with hashed sky/terrain assets missing from the dyno and blacked out the arena.
+
+Attach the Heroku Postgres addon (`DATABASE_URL`). No extra config is required for ratings persistence — boot logs should show: `arena ratings using Postgres schema "arena_ratings"`.
 
 ## Code map
 
@@ -68,5 +77,6 @@ On Heroku dynos, Postgres connections enable SSL automatically when `DYNO` is se
 |------|------|
 | [`src/core/extras/arenaRating.js`](../src/core/extras/arenaRating.js) | Delta constants |
 | [`src/core/extras/arenaRatingService.js`](../src/core/extras/arenaRatingService.js) | Knex helpers |
-| [`src/server/db.js`](../src/server/db.js) | Migration + DB_URI selection (no DATABASE_URL auto-switch) |
+| [`src/server/db.js`](../src/server/db.js) | World DB migration + DB_URI selection |
+| [`src/server/ratingsDb.js`](../src/server/ratingsDb.js) | Separate ratings DB (Heroku Postgres / local fallback) |
 | [`src/server/index.js`](../src/server/index.js) | Leaderboard HTTP route |

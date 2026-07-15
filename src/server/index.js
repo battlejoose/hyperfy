@@ -14,6 +14,7 @@ import multipart from '@fastify/multipart'
 import { createServerWorld } from '../core/createServerWorld'
 import { initSolanaPayments } from '../core/extras/solanaPayments.js'
 import { getDB } from './db'
+import { getRatingsDB } from './ratingsDb'
 import { Storage } from './Storage'
 import { assets } from './assets'
 import { collections } from './collections'
@@ -80,6 +81,9 @@ await collections.init({ rootDir, worldDir })
 
 // init db
 const db = await getDB({ worldDir })
+// Ratings use a separate Postgres store on Heroku so they survive restarts
+// without pointing the world DB at DATABASE_URL (that blacked out the arena).
+const ratingsDb = await getRatingsDB(db)
 
 // init Solana payments (treasury pubkey exposed to client via PUBLIC_ env prefix)
 process.env.PUBLIC_SOLANA_TREASURY_PUBKEY = initSolanaPayments(db)
@@ -100,6 +104,7 @@ await world.init({
   assetsDir: assets.dir,
   assetsUrl: assets.url,
   db,
+  ratingsDb,
   assets,
   storage,
   collections: collections.list,
@@ -190,9 +195,9 @@ fastify.get('/api/arena/leaderboard', async (req, reply) => {
   try {
     const { getByWallet, getLeaderboard } = await import('../core/extras/arenaRatingService.js')
     const limit = req.query?.limit
-    const players = await getLeaderboard(db, limit)
+    const players = await getLeaderboard(ratingsDb, limit)
     const wallet = typeof req.query?.wallet === 'string' ? req.query.wallet : null
-    const you = wallet ? await getByWallet(db, wallet) : null
+    const you = wallet ? await getByWallet(ratingsDb, wallet) : null
     return {
       players: players.map(row => ({
         wallet: row.wallet_pubkey,
