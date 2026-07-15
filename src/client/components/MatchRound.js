@@ -4,7 +4,7 @@ import { createNode } from '../../core/extras/createNode'
 
 const COUNTDOWN_SECONDS = 10
 const HORNS_AT_SECONDS = 6
-const SPEECH_TAIL_SECONDS = 4
+const SPEECH_TAIL_SECONDS = 5
 
 const TIMER_CLAP_SRC = 'asset://timerclap.mp3'
 const HORNS_SRC = 'asset://horns.mp3'
