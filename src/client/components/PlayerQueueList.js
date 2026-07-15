@@ -8,7 +8,6 @@ import {
   getConnectedPubkey,
   getInjectedSolanaWallets,
   getTreasuryPubkey,
-  getWalletBrowserLinks,
   isMobileUserAgent,
   isMwaSupported,
   isUserRejection,
@@ -282,10 +281,7 @@ export function PlayerQueueList({ world }) {
         return
       }
       console.warn('[solana] MWA payment failed:', err)
-      // offer the wallet in-app browser as a fallback path
-      setError(err.message || 'Wallet payment failed')
-      setNotice('Having trouble? Open the game inside your wallet app instead.')
-      setWalletChoices(getWalletBrowserLinks().map(({ name, url }) => ({ type: 'link', name, url })))
+      setError(err.message || 'Wallet payment failed. Tap Join Battle to try again.')
     }
   }
 
@@ -310,26 +306,24 @@ export function PlayerQueueList({ world }) {
       return
     }
 
-    // Android Chrome without an injected provider: always MWA
-    if (isMwaSupported() && injected.length === 0) {
-      await payWithMwa()
-      return
-    }
-
-    // wallets injected into the page (extension or wallet in-app browser)
+    // Injected providers (desktop extension or wallet in-app browser)
     if (injected.length === 1) {
       await connectAndPay(injected[0].name)
       return
     }
     if (injected.length > 1) {
-      setWalletChoices(injected.map(({ name, icon }) => ({ type: 'wallet', name, icon })))
+      setWalletChoices(injected.map(({ name, icon }) => ({ name, icon })))
       return
     }
 
-    // other phones (iOS): reopen the game inside the wallet app's browser
+    // Android Chrome: Mobile Wallet Adapter (native wallet apps)
+    if (isMwaSupported()) {
+      await payWithMwa()
+      return
+    }
+
     if (isMobileUserAgent()) {
-      setNotice('Choose your wallet app — the game will reopen inside it so you can pay securely.')
-      setWalletChoices(getWalletBrowserLinks().map(({ name, url }) => ({ type: 'link', name, url })))
+      setError('Open this game in Chrome on Android with Phantom or Solflare installed to join the battle.')
       return
     }
 
@@ -778,30 +772,17 @@ export function PlayerQueueList({ world }) {
               ) : walletChoices ? (
                 <div className='arena-wallet-list'>
                   <div className='arena-wallet-list-title'>Choose a wallet</div>
-                  {walletChoices.map(({ type, name, icon, url }) =>
-                    type === 'link' ? (
-                      <button
-                        key={name}
-                        type='button'
-                        className='arena-wallet-option'
-                        onClick={() => {
-                          window.location.href = url
-                        }}
-                      >
-                        <span>Open in {name}</span>
-                      </button>
-                    ) : (
-                      <button
-                        key={name}
-                        type='button'
-                        className='arena-wallet-option'
-                        onClick={() => connectAndPay(name)}
-                      >
-                        {icon ? <img src={icon} alt='' /> : null}
-                        <span>{name}</span>
-                      </button>
-                    )
-                  )}
+                  {walletChoices.map(({ name, icon }) => (
+                    <button
+                      key={name}
+                      type='button'
+                      className='arena-wallet-option'
+                      onClick={() => connectAndPay(name)}
+                    >
+                      {icon ? <img src={icon} alt='' /> : null}
+                      <span>{name}</span>
+                    </button>
+                  ))}
                   <button type='button' className='arena-wallet-cancel' onClick={() => setWalletChoices(null)}>
                     Cancel
                   </button>
