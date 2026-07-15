@@ -3,7 +3,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { BARRIZER_IDS } from './arenaFireFx.js'
 
-export const ARENA_GENERAL_SRC = 'asset://general.glb'
+export const ARENA_GENERAL_SRC = 'asset://proximomodel.glb'
 const IDLE_CLIP_NAME = 'Idle_11'
 const GENERAL_Y_OFFSET = 3.2
 const GENERAL_SCALE = 1.4
