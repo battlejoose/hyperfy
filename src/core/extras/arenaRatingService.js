@@ -11,9 +11,9 @@ function nowIso() {
   return moment().toISOString()
 }
 
-/** UTC calendar day key — daily board resets at UTC midnight. */
-export function utcDayKey(when = moment.utc()) {
-  return moment.utc(when).format('YYYY-MM-DD')
+/** UTC hour key — hourly board resets at the top of each UTC hour. */
+export function ratingPeriodKey(when = moment.utc()) {
+  return moment.utc(when).format('YYYY-MM-DDTHH')
 }
 
 function normalizeUsername(username) {
@@ -21,9 +21,9 @@ function normalizeUsername(username) {
   return name.slice(0, 24) || 'Gladiator'
 }
 
-function freshDailyFields(today = utcDayKey()) {
+function freshDailyFields(period = ratingPeriodKey()) {
   return {
-    daily_day: today,
+    daily_day: period,
     daily_rating: ARENA_START_RATING,
     daily_kills: 0,
     daily_deaths: 0,
@@ -53,15 +53,15 @@ async function ensureRow(db, walletPubkey, username) {
 }
 
 /**
- * Lazy wipe: if the UTC day rolled, reset this wallet's daily rating to 1000
- * with zeroed daily K/D/W before applying today's event.
+ * Lazy wipe: if the UTC hour rolled, reset this wallet's hourly rating to 1000
+ * with zeroed hourly K/D/W before applying this period's event.
  */
 async function ensureDailyPeriod(db, walletPubkey) {
   const row = await db('arena_ratings').where('wallet_pubkey', walletPubkey).first()
   if (!row) return
-  const today = utcDayKey()
-  if (row.daily_day === today && row.daily_rating != null) return
-  await db('arena_ratings').where('wallet_pubkey', walletPubkey).update(freshDailyFields(today))
+  const period = ratingPeriodKey()
+  if (row.daily_day === period && row.daily_rating != null) return
+  await db('arena_ratings').where('wallet_pubkey', walletPubkey).update(freshDailyFields(period))
 }
 
 export async function upsertWalletProfile(db, walletPubkey, username) {
@@ -143,22 +143,22 @@ export async function getLeaderboard(db, limit = 25) {
   return db('arena_ratings').orderBy('rating', 'desc').limit(safeLimit)
 }
 
-/** Today's UTC daily ratings (everyone starts at 1000 when the day rolls). */
+/** Current UTC hour ratings (everyone starts at 1000 when the hour rolls). */
 export async function getDailyLeaderboard(db, limit = 25) {
   const safeLimit = Math.max(1, Math.min(100, Number(limit) || 25))
-  const today = utcDayKey()
+  const period = ratingPeriodKey()
   return db('arena_ratings')
-    .where('daily_day', today)
+    .where('daily_day', period)
     .whereNotNull('daily_rating')
     .orderBy('daily_rating', 'desc')
     .limit(safeLimit)
 }
 
-/** Map a DB row to the API shape. Daily board uses today's wiped rating + stats. */
+/** Map a DB row to the API shape. Hourly board uses this hour's wiped rating + stats. */
 export function toLeaderboardPlayer(row, { daily = false } = {}) {
   if (!row) return null
-  const today = utcDayKey()
-  const dailyActive = row.daily_day === today && row.daily_rating != null
+  const period = ratingPeriodKey()
+  const dailyActive = row.daily_day === period && row.daily_rating != null
   if (daily) {
     return {
       wallet: row.wallet_pubkey,

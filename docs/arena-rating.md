@@ -23,14 +23,14 @@ Table `arena_ratings`:
 | `username` | Last known display name at wallet connect |
 | `rating` | Current arena rating (all-time) |
 | `kills` / `deaths` / `wins` | Lifetime paid-BR stats only |
-| `daily_day` | UTC calendar day (`YYYY-MM-DD`) for the current daily board |
-| `daily_rating` | Today's rating (starts at 1000 each UTC day; same kill/win/death deltas) |
-| `daily_kills` / `daily_deaths` / `daily_wins` | Today's paid-BR stats only |
+| `daily_day` | Current hourly period key (`YYYY-MM-DDTHH` UTC) for the rotating board |
+| `daily_rating` | This hour’s rating (starts at 1000 each UTC hour; same kill/win/death deltas) |
+| `daily_kills` / `daily_deaths` / `daily_wins` | This hour’s paid-BR stats only |
 | `updated_at` | Last mutation time |
 
 Identity for ratings is the **wallet**, not the session user UUID. `users.wallet_pubkey` still links the current session for payments.
 
-**Daily board:** a parallel rating that uses the same deltas as all-time. When the UTC day rolls, the next paid-BR event for a wallet **resets** that wallet to `daily_rating = 1000` and zero daily K/D/W before applying the event (lazy wipe). Rows from prior days are excluded from the daily leaderboard. Resets at **UTC midnight**.
+**Hourly board:** a parallel rating that uses the same deltas as all-time. When the UTC hour rolls, the next paid-BR event for a wallet **resets** that wallet to `daily_rating = 1000` and zero hourly K/D/W before applying the event (lazy wipe). Rows from prior hours are excluded from the hourly leaderboard. Resets at the **top of each UTC hour**.
 
 Ratings use a **separate DB connection** from the world ([`ratingsDb.js`](../src/server/ratingsDb.js)):
 
@@ -56,8 +56,8 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 
 - `GET /api/arena/leaderboard?limit=25&wallet=<optional>&period=all|daily` → `{ period, resetsAt, players, you }`
   - `period=all` (default): all-time `rating` + lifetime K/D/W
-  - `period=daily`: today’s UTC `daily_rating` (starts at 1000 each day, same deltas) + daily K/D/W; `resetsAt` is next UTC midnight
-- Client: **All Time** / **Daily** tabs on the title-screen rankings and the in-game Rankings popup
+  - `period=daily`: current UTC hour’s `daily_rating` (starts at 1000 each hour, same deltas) + hourly K/D/W; `resetsAt` is the next UTC hour
+- Client: **All Time** / **Hourly** tabs on the title-screen rankings and the in-game Rankings popup
   ([`ArenaRankings.js`](../src/client/components/ArenaRankings.js) / [`TitleScreen.js`](../src/client/components/TitleScreen.js) / [`PlayerQueueList.js`](../src/client/components/PlayerQueueList.js))
 - Leaderboard fetch uses `PUBLIC_API_URL` correctly when it already ends in `/api` (e.g. `https://host/api/arena/leaderboard`)
 - Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)

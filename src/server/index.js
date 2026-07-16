@@ -204,12 +204,21 @@ fastify.get('/api/arena/leaderboard', async (req, reply) => {
     return {
       period: daily ? 'daily' : 'all',
       resetsAt: daily
-        ? // next UTC midnight
-          new Date(Date.UTC(
-            new Date().getUTCFullYear(),
-            new Date().getUTCMonth(),
-            new Date().getUTCDate() + 1
-          )).toISOString()
+        ? (() => {
+            // next UTC hour boundary
+            const now = new Date()
+            return new Date(
+              Date.UTC(
+                now.getUTCFullYear(),
+                now.getUTCMonth(),
+                now.getUTCDate(),
+                now.getUTCHours() + 1,
+                0,
+                0,
+                0
+              )
+            ).toISOString()
+          })()
         : null,
       players: players.map(row => toLeaderboardPlayer(row, { daily })),
       you: toLeaderboardPlayer(youRow, { daily }),

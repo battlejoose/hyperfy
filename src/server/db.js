@@ -39,7 +39,7 @@ export async function ensureArenaRatingsTable(db) {
   await ensureArenaDailyColumns(db)
 }
 
-/** Parallel daily rating (starts at 1000, same deltas; lazy-wiped each UTC day). */
+/** Parallel hourly rating (starts at 1000, same deltas; lazy-wiped each UTC hour). */
 export async function ensureArenaDailyColumns(db) {
   if (!(await db.schema.hasColumn('arena_ratings', 'daily_day'))) {
     await db.schema.table('arena_ratings', table => {
@@ -554,7 +554,7 @@ const migrations = [
   async db => {
     await ensureArenaRatingsTable(db)
   },
-  // Daily peak rating columns for the 24h (UTC day) leaderboard
+  // Hourly rating columns for the rotating (1h UTC) leaderboard
   async db => {
     await ensureArenaRatingsTable(db)
   },

@@ -58,10 +58,10 @@ function formatResetsIn(resetsAt) {
   if (!resetsAt) return null
   const ms = new Date(resetsAt).getTime() - Date.now()
   if (!Number.isFinite(ms) || ms <= 0) return 'resets soon'
-  const hours = Math.floor(ms / 3600000)
-  const mins = Math.floor((ms % 3600000) / 60000)
-  if (hours >= 1) return `resets in ${hours}h ${mins}m`
-  return `resets in ${mins}m`
+  const mins = Math.floor(ms / 60000)
+  const secs = Math.floor((ms % 60000) / 1000)
+  if (mins >= 1) return `resets in ${mins}m ${secs}s`
+  return `resets in ${secs}s`
 }
 
 /** Shared rankings table + status used on title screen and in-game HUD. */
@@ -79,7 +79,7 @@ export function ArenaRankingsPanel({
   const empty =
     emptyMessage ||
     (period === 'daily'
-      ? 'No daily rankings yet. Play a paid battle royale today.'
+      ? 'No hourly rankings yet. Play a paid battle royale this hour.'
       : 'No rated fighters yet. Enter the arena and play a paid battle royale.')
   return (
     <>
@@ -121,7 +121,7 @@ export function ArenaRankingsPanel({
         <div className='rank-you'>
           {you.rating != null
             ? `You: ${you.rating} rating · ${you.kills}K / ${you.deaths}D · ${you.wins} wins`
-            : 'You: unranked today'}
+            : 'You: unranked this hour'}
         </div>
       )}
     </>
@@ -143,7 +143,7 @@ function RankPeriodTabs({ period, onChange }) {
         className={`rank-tab${period === 'daily' ? ' active' : ''}`}
         onClick={() => onChange('daily')}
       >
-        Daily
+        Hourly
       </button>
     </div>
   )
@@ -358,7 +358,7 @@ export function TitleArenaRankings() {
         <div className='rank-you'>
           {you.rating != null
             ? `You: ${you.rating} rating · ${you.kills}K / ${you.deaths}D · ${you.wins} wins`
-            : 'You: unranked today'}
+            : 'You: unranked this hour'}
         </div>
       )}
     </div>
@@ -581,7 +581,7 @@ export function QueueArenaRankings() {
               error={error}
               limit={25}
               period={period}
-              emptyMessage={period === 'daily' ? 'No daily rankings yet.' : 'No rated fighters yet.'}
+              emptyMessage={period === 'daily' ? 'No hourly rankings yet.' : 'No rated fighters yet.'}
             />
           </div>
           {you && period === 'all' && you.rating != null && (
@@ -593,7 +593,7 @@ export function QueueArenaRankings() {
             <div className='rank-you'>
               {you.rating != null
                 ? `You: ${you.rating} · ${you.kills}K/${you.deaths}D · ${you.wins}W`
-                : 'You: unranked today'}
+                : 'You: unranked this hour'}
             </div>
           )}
         </div>
