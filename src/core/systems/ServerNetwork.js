@@ -457,6 +457,52 @@ export class ServerNetwork extends System {
     this.endBattleRoyale(winnerId)
   }
 
+  broadcastVictory(patch = {}) {
+    if (!this.activeVictory) return
+    this.activeVictory = { ...this.activeVictory, ...patch }
+    if (patch.betting) {
+      this.activeVictory.betting = patch.betting
+    }
+    this.send('brVictory', this.activeVictory)
+  }
+
+  updateBettingWinnerPayout(playerId, { status, signature }) {
+    const betting = this.activeVictory?.betting
+    if (!betting?.winners?.length) return
+    const winners = betting.winners.map(row =>
+      row.playerId === playerId ? { ...row, status, signature: signature || null } : row
+    )
+    const pending = winners.some(r => r.status === 'pending')
+    const failed = winners.some(r => r.status === 'failed')
+    this.broadcastVictory({
+      betting: {
+        ...betting,
+        winners,
+        status: pending ? 'pending' : failed ? 'failed' : 'complete',
+      },
+    })
+  }
+
+  startBettingPayouts(betting) {
+    if (!betting || betting.outcome !== 'paid' || !betting.winners?.length) return
+    for (const row of betting.winners) {
+      const lamports = row.shareLamports || Math.floor((row.shareSol || 0) * LAMPORTS_PER_SOL)
+      sendPayout(row.wallet, lamports, row.playerId, 'bet_win')
+        .then(signature => {
+          if (!signature) {
+            console.error('[solana] Bet payout did not complete for', row.playerId)
+            this.updateBettingWinnerPayout(row.playerId, { status: 'failed', signature: null })
+            return
+          }
+          this.updateBettingWinnerPayout(row.playerId, { status: 'complete', signature })
+        })
+        .catch(err => {
+          console.error('[solana] Bet payout failed:', row.playerId, err)
+          this.updateBettingWinnerPayout(row.playerId, { status: 'failed', signature: null })
+        })
+    }
+  }
+
   payEventWinner(winnerId, eventLabel, betting = null) {
     const br = this.battleRoyale
     const payoutLamports = this.getWinnerPayoutLamports()
@@ -472,41 +518,40 @@ export class ServerNetwork extends System {
     const winnerName = winnerPlayer?.data?.name || 'A gladiator'
     this.announce(`${winnerName} wins the ${eventLabel} and takes ${payoutSol} SOL!`)
 
-    const victoryBase = {
+    this.activeVictory = {
       winnerId,
       winnerName,
       wallet: wallet || null,
       payoutSol,
       eventLabel,
       betting: betting || null,
+      status: wallet ? 'pending' : 'failed',
+      signature: null,
     }
+    this.send('brVictory', this.activeVictory)
 
     if (wallet) {
       applyArenaWinRating(this.ratingsDb, wallet, winnerName).catch(err =>
         console.error('[arena-rating] win update failed:', err)
       )
-      this.send('brVictory', {
-        ...victoryBase,
-        status: 'pending',
-        signature: null,
-      })
       sendPayout(wallet, payoutLamports, winnerId, 'br_win')
         .then(signature => {
           if (!signature) {
             console.error(`[solana] ${eventLabel} payout did not complete for`, winnerId)
-            this.send('brVictory', { ...victoryBase, status: 'failed', signature: null })
+            this.broadcastVictory({ status: 'failed', signature: null })
             return
           }
-          this.send('brVictory', { ...victoryBase, status: 'complete', signature })
+          this.broadcastVictory({ status: 'complete', signature })
         })
         .catch(err => {
           console.error(`[solana] ${eventLabel} payout failed:`, err)
-          this.send('brVictory', { ...victoryBase, status: 'failed', signature: null })
+          this.broadcastVictory({ status: 'failed', signature: null })
         })
     } else {
       console.error(`[solana] ${eventLabel} winner has no wallet on file:`, winnerId)
-      this.send('brVictory', { ...victoryBase, status: 'failed', signature: null })
     }
+
+    this.startBettingPayouts(betting)
   }
 
   endBattleRoyale(winnerId) {
@@ -784,6 +829,7 @@ export class ServerNetwork extends System {
       this.announce('No winning bets this round — the betting pot goes to the arena.')
       return {
         outcome: 'no_winners',
+        status: 'complete',
         potSol: pot / LAMPORTS_PER_SOL,
         payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
         houseFeePercent: BR_HOUSE_FEE_PERCENT,
@@ -801,6 +847,7 @@ export class ServerNetwork extends System {
     if (share <= 0) {
       return {
         outcome: 'no_winners',
+        status: 'complete',
         potSol: pot / LAMPORTS_PER_SOL,
         payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
         houseFeePercent: BR_HOUSE_FEE_PERCENT,
@@ -815,20 +862,21 @@ export class ServerNetwork extends System {
 
     this.announce(`${winners.length} bettor${winners.length === 1 ? '' : 's'} split ${shareSol} SOL each on the champion.`)
     const winnerRows = winners.map(([playerId, bet]) => {
-      sendPayout(bet.wallet, share, playerId, 'bet_win').catch(err =>
-        console.error('[solana] Bet payout failed:', playerId, err)
-      )
       const entity = this.world.entities.get(playerId)
       return {
         playerId,
         name: entity?.data?.name || 'Bettor',
         wallet: bet.wallet,
         shareSol,
+        shareLamports: share,
+        status: 'pending',
+        signature: null,
       }
     })
 
     return {
       outcome: 'paid',
+      status: 'pending',
       potSol: pot / LAMPORTS_PER_SOL,
       payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
       houseFeePercent: BR_HOUSE_FEE_PERCENT,
