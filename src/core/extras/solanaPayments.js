@@ -8,7 +8,7 @@ import {
 } from '@solana/web3.js'
 import { derivePath } from 'ed25519-hd-key'
 import { mnemonicToSeedSync, validateMnemonic } from 'bip39'
-import { BET_STAKE_LAMPORTS, BR_ENTRY_FEE_LAMPORTS } from './solanaConfig.js'
+import { BET_STAKE_LAMPORTS, BR_ENTRY_FEE_LAMPORTS, MARKET_MIN_LAMPORTS } from './solanaConfig.js'
 
 const DEFAULT_DERIVATION_PATH = "m/44'/501'/0'/0'"
 
@@ -238,6 +238,31 @@ export async function findRecentBetPayment({ walletPubkey, playerId, maxAgeSecon
     type: 'bet',
     label: 'bet',
     maxAgeSeconds,
+    attempts,
+    delayMs,
+  })
+}
+
+/** Verify a variable-amount prediction-market buy payment to the treasury. */
+export async function verifyMarketBuyPayment({
+  signature,
+  walletPubkey,
+  playerId,
+  lamports,
+  attempts = 6,
+  delayMs = 3000,
+}) {
+  const amount = Number(lamports)
+  if (!Number.isFinite(amount) || amount < MARKET_MIN_LAMPORTS) {
+    throw new Error('Buy amount too small')
+  }
+  return verifyTreasuryPayment({
+    signature,
+    walletPubkey,
+    playerId,
+    lamports: Math.floor(amount),
+    type: 'market_buy',
+    label: 'market buy',
     attempts,
     delayMs,
   })

@@ -30,6 +30,7 @@ export class ClientNetwork extends System {
     this.matchState = null
     this.tournamentBracket = null
     this.bettingState = null
+    this.marketState = null
     this.bootstrapping = null
   }
 
@@ -177,6 +178,9 @@ export class ClientNetwork extends System {
     if (data.bettingState) {
       this.onBettingState(data.bettingState)
     }
+    if (data.marketState) {
+      this.onMarketState(data.marketState)
+    }
     if (data.arenaRemnants) {
       try {
         replayCorpses(this.world, data.arenaRemnants.corpses)
@@ -288,6 +292,19 @@ export class ClientNetwork extends System {
 
   onPlaceBetResult = data => {
     this.world.emit('placeBetResult', data)
+  }
+
+  onMarketState = data => {
+    this.marketState = data
+    this.world.emit('marketState', data)
+  }
+
+  onMarketBuyResult = data => {
+    this.world.emit('marketBuyResult', data)
+  }
+
+  onMarketSellResult = data => {
+    this.world.emit('marketSellResult', data)
   }
 
   onEntityEvent = event => {

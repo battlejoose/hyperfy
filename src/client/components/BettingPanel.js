@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { css } from '@firebolt-dev/css'
-import { BET_STAKE_LAMPORTS, LAMPORTS_PER_SOL } from '../../core/extras/solanaConfig.js'
+import { LAMPORTS_PER_SOL, MARKET_MIN_LAMPORTS } from '../../core/extras/solanaConfig.js'
 import {
   connectWallet,
   getConnectedPubkey,
@@ -14,120 +14,145 @@ import {
   prefetchEntryBlockhash,
 } from '../extras/solanaWallet.js'
 
-function formatSol(lamports) {
-  return (lamports / LAMPORTS_PER_SOL).toFixed(4).replace(/\.?0+$/, '')
+function formatSol(lamportsOrSol, isLamports = true) {
+  const sol = isLamports ? lamportsOrSol / LAMPORTS_PER_SOL : lamportsOrSol
+  if (typeof sol !== 'number' || !Number.isFinite(sol)) return '—'
+  return sol.toFixed(4).replace(/\.?0+$/, '')
 }
 
-function formatFeeLabel(lamports) {
-  return (lamports / LAMPORTS_PER_SOL).toFixed(2).replace(/^0/, '')
-}
-
-function sharePercent(stakeOnPick, potLamports) {
-  if (!potLamports) return 0
-  return Math.round((stakeOnPick / potLamports) * 100)
+function parseSolInput(text) {
+  const n = Number(String(text).trim())
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.floor(n * LAMPORTS_PER_SOL)
 }
 
 /**
- * Pari-mutuel betting UI shown during the locked 60s window before a paid event.
+ * LMSR prediction-market UI during the locked 60s window.
+ * Buy any amount on multiple fighters; sell positions before the timer ends.
  */
 export function BettingPanel({ world, wallet, setWallet, remaining }) {
-  const [betting, setBetting] = useState(() => world.network?.bettingState)
+  const [market, setMarket] = useState(() => world.network?.marketState)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [walletChoices, setWalletChoices] = useState(null)
   const [selectedPick, setSelectedPick] = useState(null)
+  const [buyAmount, setBuyAmount] = useState('0.01')
+  const [busyPick, setBusyPick] = useState(null)
 
   useEffect(() => {
-    const onBetting = data => setBetting(data)
-    world.on('bettingState', onBetting)
-    if (world.network?.bettingState) onBetting(world.network.bettingState)
-    return () => world.off('bettingState', onBetting)
+    const onMarket = data => setMarket(data)
+    world.on('marketState', onMarket)
+    if (world.network?.marketState) onMarket(world.network.marketState)
+    return () => world.off('marketState', onMarket)
   }, [world])
 
   useEffect(() => {
-    const onResult = data => {
+    const onBuy = data => {
       if (data?.pending) return
       setPending(false)
+      setBusyPick(null)
       if (!data?.ok) {
-        setError(data?.error || 'Bet failed')
+        setError(data?.error || 'Buy failed')
         return
       }
       setError(null)
-      setNotice(data.alreadyBet ? 'You already placed a bet this round.' : 'Bet locked in!')
-      setSelectedPick(data.pickId || null)
+      setNotice(`Bought ${formatSol(data.costSol, false)} SOL of shares`)
     }
-    world.on('placeBetResult', onResult)
-    return () => world.off('placeBetResult', onResult)
+    const onSell = data => {
+      if (data?.status === 'pending') {
+        setNotice('Sell submitted — waiting for payout…')
+        return
+      }
+      setPending(false)
+      setBusyPick(null)
+      if (!data?.ok) {
+        setError(data?.error || 'Sell failed')
+        return
+      }
+      setError(null)
+      if (data.status === 'failed') {
+        setError('Sell payout failed — contact support')
+        return
+      }
+      setNotice(`Sold for ${formatSol(data.proceedsSol, false)} SOL`)
+    }
+    world.on('marketBuyResult', onBuy)
+    world.on('marketSellResult', onSell)
+    return () => {
+      world.off('marketBuyResult', onBuy)
+      world.off('marketSellResult', onSell)
+    }
   }, [world])
 
   useEffect(() => {
     if (!pending) return
     const id = setTimeout(() => {
       setPending(false)
+      setBusyPick(null)
       setError('Wallet request timed out. Try again.')
     }, 50000)
     return () => clearTimeout(id)
   }, [pending])
 
-  const picks = betting?.picks || []
-  const stakes = betting?.stakes || {}
-  const potLamports = betting?.potLamports || 0
-  const stakeLamports = betting?.stakeLamports || BET_STAKE_LAMPORTS
-  const yourPick = betting?.yourBet?.pickId || selectedPick
-  const open = betting?.open !== false
+  const picks = market?.picks || []
+  const probs = market?.probs || {}
+  const collateral = market?.collateralLamports || 0
+  const minLamports = market?.minLamports || MARKET_MIN_LAMPORTS
+  const open = market?.open !== false
+  const positionsByPick = useMemo(() => {
+    const map = {}
+    for (const p of market?.yourPositions || []) map[p.pickId] = p
+    return map
+  }, [market?.yourPositions])
 
-  const payAndBet = async (activeWallet, pickId) => {
+  const payAndBuy = async (activeWallet, pickId, lamports) => {
     setPending(true)
+    setBusyPick(pickId)
     setError(null)
     try {
-      if (!getConnectedPubkey()) {
-        throw new Error('Connect your wallet first')
-      }
-      let signature = null
-      try {
-        signature = await payEntryFee(getTreasuryPubkey(), stakeLamports)
-      } catch (err) {
-        if (isUserRejection(err)) throw err
-        if (/connect your wallet/i.test(err.message || '')) throw err
-        console.warn('[solana] bet pay failed, attempting recovery:', err)
-      }
-      world.network.send(
-        'placeBet',
-        signature
-          ? { signature, wallet: activeWallet, pickId }
-          : { wallet: activeWallet, pickId, recover: true }
-      )
+      if (!getConnectedPubkey()) throw new Error('Connect your wallet first')
+      const signature = await payEntryFee(getTreasuryPubkey(), lamports)
+      world.network.send('marketBuy', { signature, wallet: activeWallet, pickId, lamports })
     } catch (err) {
       setPending(false)
+      setBusyPick(null)
+      if (isUserRejection(err)) {
+        setError('Payment cancelled')
+        return
+      }
       setError(err.message || 'Payment failed')
     }
   }
 
-  const connectAndBet = async (walletName, pickId) => {
+  const connectAndBuy = async (walletName, pickId, lamports) => {
     setWalletChoices(null)
     setPending(true)
+    setBusyPick(pickId)
     try {
       const pubkey = await connectWallet(walletName)
       setWallet(pubkey)
       world.network.send('setSolanaWallet', { wallet: pubkey })
-      await payAndBet(pubkey, pickId)
+      await payAndBuy(pubkey, pickId, lamports)
     } catch (err) {
       setPending(false)
+      setBusyPick(null)
       setError(err.message || 'Wallet connection failed')
     }
   }
 
-  const payBetWithMwa = async pickId => {
+  const payBuyWithMwa = async (pickId, lamports) => {
     setPending(true)
+    setBusyPick(pickId)
     setError(null)
     try {
-      const { signature, walletPubkey } = await payEntryFeeMwa(getTreasuryPubkey(), stakeLamports)
+      const { signature, walletPubkey } = await payEntryFeeMwa(getTreasuryPubkey(), lamports)
       setWallet(walletPubkey)
       world.network.send('setSolanaWallet', { wallet: walletPubkey })
-      world.network.send('placeBet', { signature, wallet: walletPubkey, pickId })
+      world.network.send('marketBuy', { signature, wallet: walletPubkey, pickId, lamports })
     } catch (err) {
       setPending(false)
+      setBusyPick(null)
       if (isUserRejection(err)) {
         setError('Payment cancelled')
         return
@@ -136,11 +161,16 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
     }
   }
 
-  const placeBet = async pickId => {
-    if (!open || yourPick || pending) return
+  const startBuy = async pickId => {
+    if (!open || pending) return
     setError(null)
     setNotice(null)
     setSelectedPick(pickId)
+    const lamports = parseSolInput(buyAmount)
+    if (lamports == null || lamports < minLamports) {
+      setError(`Min buy is ${formatSol(minLamports)} SOL`)
+      return
+    }
     if (!getTreasuryPubkey()) {
       setError('Arena payments are not configured')
       return
@@ -151,22 +181,34 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
     const activeStandard = getConnectedPubkey()
     if (activeStandard) {
       setWallet(activeStandard)
-      await payAndBet(activeStandard, pickId)
+      await payAndBuy(activeStandard, pickId, lamports)
       return
     }
     if (injected.length === 1) {
-      await connectAndBet(injected[0].name, pickId)
+      await connectAndBuy(injected[0].name, pickId, lamports)
       return
     }
     if (injected.length > 1) {
-      setWalletChoices(injected.map(({ name, icon }) => ({ type: 'wallet', name, icon })))
+      setWalletChoices(injected.map(({ name, icon }) => ({ type: 'wallet', name, icon, lamports })))
       return
     }
     if (isMobileUserAgent() && isMwaSupported()) {
-      await payBetWithMwa(pickId)
+      await payBuyWithMwa(pickId, lamports)
       return
     }
     setError('No Solana wallet found')
+  }
+
+  const sellPosition = (pickId, fraction = 1) => {
+    if (!open || pending) return
+    const pos = positionsByPick[pickId]
+    if (!pos?.shares) return
+    const shares = pos.shares * fraction
+    setPending(true)
+    setBusyPick(pickId)
+    setError(null)
+    setNotice(null)
+    world.network.send('marketSell', { pickId, shares })
   }
 
   return (
@@ -196,27 +238,55 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           text-align: center;
           line-height: 1.25;
         }
+        .bet-amount-row {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+          justify-content: center;
+          margin: 0.15rem 0 0.1rem;
+        }
+        .bet-amount-row label {
+          font-size: 0.6rem;
+          color: #5c4033;
+          font-weight: 700;
+          text-transform: uppercase;
+        }
+        .bet-amount-row input {
+          width: 4.5rem;
+          border: 1px solid rgba(61, 40, 23, 0.3);
+          border-radius: 0.25rem;
+          background: rgba(255, 255, 255, 0.65);
+          color: #3d2817;
+          font-size: 0.7rem;
+          padding: 0.2rem 0.35rem;
+          font-variant-numeric: tabular-nums;
+        }
         .bet-list {
           display: flex;
           flex-direction: column;
           gap: 0.28rem;
-          max-height: 9.5rem;
+          max-height: 11rem;
           overflow-y: auto;
           padding-right: 0.15rem;
         }
         .bet-row {
-          display: grid;
-          grid-template-columns: 1fr auto auto;
-          gap: 0.35rem;
-          align-items: center;
-          padding: 0.28rem 0.35rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+          padding: 0.32rem 0.35rem;
           border: 1px solid rgba(61, 40, 23, 0.22);
           border-radius: 0.25rem;
           background: rgba(255, 255, 255, 0.35);
         }
-        .bet-row.yours {
-          border-color: rgba(122, 21, 21, 0.55);
-          background: rgba(122, 21, 21, 0.08);
+        .bet-row.has-pos {
+          border-color: rgba(122, 21, 21, 0.45);
+          background: rgba(122, 21, 21, 0.06);
+        }
+        .bet-row-top {
+          display: grid;
+          grid-template-columns: 1fr auto auto;
+          gap: 0.35rem;
+          align-items: center;
         }
         .bet-name {
           font-size: 0.68rem;
@@ -231,22 +301,37 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           color: #5c4033;
           font-variant-numeric: tabular-nums;
         }
+        .bet-actions {
+          display: flex;
+          gap: 0.25rem;
+          flex-wrap: wrap;
+        }
         .bet-btn {
           border: 1px solid rgba(122, 21, 21, 0.45);
           border-radius: 0.25rem;
           background: rgba(122, 21, 21, 0.12);
           color: #7a1515;
-          font-size: 0.58rem;
+          font-size: 0.55rem;
           font-weight: 800;
           letter-spacing: 0.04em;
           text-transform: uppercase;
-          padding: 0.22rem 0.35rem;
+          padding: 0.2rem 0.32rem;
           cursor: pointer;
           white-space: nowrap;
+        }
+        .bet-btn.sell {
+          border-color: rgba(61, 40, 23, 0.35);
+          background: rgba(255, 255, 255, 0.45);
+          color: #3d2817;
         }
         .bet-btn:disabled {
           opacity: 0.45;
           cursor: default;
+        }
+        .bet-pos {
+          font-size: 0.58rem;
+          color: #5c4033;
+          line-height: 1.3;
         }
         .bet-error {
           font-size: 0.6rem;
@@ -276,21 +361,33 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
       `}
     >
       <div className='bet-head'>
-        <div className='bet-title'>Place your bet</div>
+        <div className='bet-title'>Champion market</div>
         <div className='bet-sub'>
-          {remaining > 0 ? `${remaining}s left` : 'Closing…'} · pot {formatSol(potLamports)} SOL ·{' '}
-          {formatFeeLabel(stakeLamports)} SOL each
+          {remaining > 0 ? `${remaining}s left` : 'Closing…'} · pot {formatSol(collateral)} SOL
         </div>
+      </div>
+
+      <div className='bet-amount-row'>
+        <label htmlFor='mkt-buy-amt'>Buy SOL</label>
+        <input
+          id='mkt-buy-amt'
+          type='number'
+          min={formatSol(minLamports)}
+          step='0.001'
+          value={buyAmount}
+          disabled={!open || pending}
+          onChange={e => setBuyAmount(e.target.value)}
+        />
       </div>
 
       {walletChoices ? (
         <div className='bet-wallet-list'>
-          {walletChoices.map(({ name, icon }) => (
+          {walletChoices.map(({ name, icon, lamports }) => (
             <button
               key={name}
               type='button'
               className='bet-wallet-option'
-              onClick={() => connectAndBet(name, selectedPick)}
+              onClick={() => connectAndBuy(name, selectedPick, lamports)}
             >
               {icon ? <img src={icon} alt='' width={14} height={14} style={{ marginRight: 6 }} /> : null}
               {name}
@@ -303,20 +400,48 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
       ) : (
         <div className='bet-list'>
           {picks.map(pick => {
-            const stakeOnPick = stakes[pick.playerId] || 0
-            const isYours = yourPick === pick.playerId
+            const pct = Math.round((probs[pick.playerId] || 0) * 100)
+            const pos = positionsByPick[pick.playerId]
+            const busy = pending && busyPick === pick.playerId
             return (
-              <div key={pick.playerId} className={`bet-row${isYours ? ' yours' : ''}`}>
-                <span className='bet-name'>{pick.name}</span>
-                <span className='bet-share'>{sharePercent(stakeOnPick, potLamports)}%</span>
-                <button
-                  type='button'
-                  className='bet-btn'
-                  disabled={!open || !!yourPick || pending}
-                  onClick={() => placeBet(pick.playerId)}
-                >
-                  {isYours ? 'Your pick' : pending && selectedPick === pick.playerId ? '…' : 'Bet'}
-                </button>
+              <div key={pick.playerId} className={`bet-row${pos ? ' has-pos' : ''}`}>
+                <div className='bet-row-top'>
+                  <span className='bet-name'>{pick.name}</span>
+                  <span className='bet-share'>{pct}%</span>
+                  <button
+                    type='button'
+                    className='bet-btn'
+                    disabled={!open || pending}
+                    onClick={() => startBuy(pick.playerId)}
+                  >
+                    {busy ? '…' : 'Buy'}
+                  </button>
+                </div>
+                {pos ? (
+                  <>
+                    <div className='bet-pos'>
+                      You: exit ~{formatSol(pos.exitValueSol, false)} SOL
+                    </div>
+                    <div className='bet-actions'>
+                      <button
+                        type='button'
+                        className='bet-btn sell'
+                        disabled={!open || pending}
+                        onClick={() => sellPosition(pick.playerId, 0.5)}
+                      >
+                        Sell ½
+                      </button>
+                      <button
+                        type='button'
+                        className='bet-btn sell'
+                        disabled={!open || pending}
+                        onClick={() => sellPosition(pick.playerId, 1)}
+                      >
+                        Sell all
+                      </button>
+                    </div>
+                  </>
+                ) : null}
               </div>
             )
           })}
@@ -327,7 +452,9 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
       {notice ? <div className='bet-notice'>{notice}</div> : null}
       {error ? <div className='bet-error'>{error}</div> : null}
       {wallet ? (
-        <div className='bet-sub'>Betting as {wallet.slice(0, 4)}…{wallet.slice(-4)}</div>
+        <div className='bet-sub'>
+          Trading as {wallet.slice(0, 4)}…{wallet.slice(-4)}
+        </div>
       ) : null}
     </div>
   )

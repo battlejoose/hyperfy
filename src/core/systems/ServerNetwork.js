@@ -18,11 +18,16 @@ import {
 } from '../extras/arenaRemnants'
 import {
   verifyEntryPayment,
-  verifyBetPayment,
+  verifyMarketBuyPayment,
   findRecentEntryPayment,
-  findRecentBetPayment,
   sendPayout,
 } from '../extras/solanaPayments.js'
+import {
+  applyBuy,
+  applySell,
+  lmsrProbs,
+  positionExitValueSol,
+} from '../extras/lmsrMarket.js'
 import {
   applyDeath as applyArenaDeathRating,
   applyKill as applyArenaKillRating,
@@ -31,12 +36,13 @@ import {
 } from '../extras/arenaRatingService.js'
 import { PublicKey } from '@solana/web3.js'
 import {
-  BET_STAKE_LAMPORTS,
   BETTING_WINDOW_SECONDS,
   BR_ENTRY_FEE_LAMPORTS,
   BR_HOUSE_FEE_PERCENT,
   BR_QUEUE_DURATION_SECONDS,
   LAMPORTS_PER_SOL,
+  LMSR_B,
+  MARKET_MIN_LAMPORTS,
 } from '../extras/solanaConfig.js'
 import {
   completeMatch,
@@ -180,21 +186,43 @@ export class ServerNetwork extends System {
       bracketStatus: null, // 'preview' | 'result' | 'final'
       matchTimerId: null,
       queueLocked: false,
-      betting: new Map(), // bettorPlayerId -> { wallet, pickId, signature }
-      bettingPotLamports: 0,
-      bettingPickIds: [], // queued fighter ids frozen when betting opens
+      bettingPickIds: [], // queued fighter ids frozen when market opens
+      market: null, // LMSR prediction market (see createEmptyMarket)
     }
     this.brTimerId = null
     this.brBettingTimerId = null
     this.startQueuePhase()
   }
 
+  createEmptyMarket(outcomeIds) {
+    const q = new Map()
+    for (const id of outcomeIds) q.set(id, 0)
+    return {
+      b: LMSR_B,
+      outcomeIds: [...outcomeIds],
+      q,
+      collateralLamports: 0,
+      positions: new Map(), // playerId -> Map<pickId, { shares, wallet }>
+    }
+  }
+
   clearBettingState() {
     const br = this.battleRoyale
     br.queueLocked = false
-    br.betting.clear()
-    br.bettingPotLamports = 0
     br.bettingPickIds = []
+    br.market = null
+  }
+
+  marketHasPositions() {
+    const m = this.battleRoyale?.market
+    if (!m) return false
+    if (m.collateralLamports > 0) return true
+    for (const pos of m.positions.values()) {
+      for (const row of pos.values()) {
+        if (row.shares > 0) return true
+      }
+    }
+    return false
   }
 
   startQueuePhase() {
@@ -233,9 +261,10 @@ export class ServerNetwork extends System {
     br.phase = 'betting'
     br.queueLocked = true
     br.bettingPickIds = [...br.queued.keys()]
-    this.announce('Queue locked — 60 seconds to bet on the champion!')
+    br.market = this.createEmptyMarket(br.bettingPickIds)
+    this.announce('Queue locked — 60 seconds to trade the champion market!')
     this.broadcastMatchState()
-    this.broadcastBettingState()
+    this.broadcastMarketState()
   }
 
   flipArenaMode() {
@@ -252,15 +281,15 @@ export class ServerNetwork extends System {
         const label = br.mode === 'tournament' ? 'Tournament' : 'Battle royale'
         this.announce(`${label} needs at least 2 fighters — queue stays open another round.`)
       }
-      if (br.betting.size > 0) {
-        this.refundAllBets('Event cancelled — bets refunded.')
+      if (this.marketHasPositions()) {
+        this.refundMarket('Event cancelled — market positions refunded.')
       }
       // Flip so the next queue advertises the other mode
       this.flipArenaMode()
       this.startQueuePhase()
       return
     }
-    // Betting window closes when the event starts
+    // Market window closes when the event starts
     br.queueLocked = true
     if (br.mode === 'tournament') {
       this.beginTournament()
@@ -297,44 +326,46 @@ export class ServerNetwork extends System {
     this.send('matchState', this.getMatchStatePayload())
   }
 
-  getBettingStakesByPick() {
+  getMarketStatePayload(forPlayerId = null) {
     const br = this.battleRoyale
-    const stakes = {}
-    for (const pickId of br.bettingPickIds) {
-      stakes[pickId] = 0
-    }
-    br.betting.forEach(bet => {
-      stakes[bet.pickId] = (stakes[bet.pickId] || 0) + BET_STAKE_LAMPORTS
-    })
-    return stakes
-  }
+    const m = br?.market
+    if (!br || !m) return null
+    const probs = lmsrProbs(m.q, m.outcomeIds, m.b)
+    const shares = {}
+    for (const id of m.outcomeIds) shares[id] = m.q.get(id) || 0
 
-  getBettingStatePayload(forPlayerId = null) {
-    const br = this.battleRoyale
-    if (!br || (br.phase !== 'betting' && br.betting.size === 0 && !br.bettingPickIds.length)) {
-      return null
+    let yourPositions = []
+    if (forPlayerId && m.positions.has(forPlayerId)) {
+      const pos = m.positions.get(forPlayerId)
+      yourPositions = [...pos.entries()]
+        .filter(([, row]) => row.shares > 1e-12)
+        .map(([pickId, row]) => ({
+          pickId,
+          shares: row.shares,
+          exitValueSol: positionExitValueSol(m.q, m.outcomeIds, m.b, pickId, row.shares),
+        }))
     }
-    const yourBet = forPlayerId && br.betting.has(forPlayerId)
-      ? { pickId: br.betting.get(forPlayerId).pickId }
-      : null
+
     return {
       endsAt: br.endsAt,
-      potLamports: br.bettingPotLamports,
-      stakeLamports: BET_STAKE_LAMPORTS,
       open: br.phase === 'betting',
-      picks: br.bettingPickIds.map(id => this.resolveBracketPlayer(id)).filter(Boolean),
-      stakes: this.getBettingStakesByPick(),
-      yourBet,
+      collateralLamports: m.collateralLamports,
+      minLamports: MARKET_MIN_LAMPORTS,
+      b: m.b,
+      picks: m.outcomeIds.map(id => this.resolveBracketPlayer(id)).filter(Boolean),
+      probs,
+      shares,
+      yourPositions,
     }
   }
 
-  broadcastBettingState() {
+  broadcastMarketState() {
     const br = this.battleRoyale
-    if (!br) return
+    if (!br?.market) return
     this.sockets.forEach(socket => {
       const playerId = socket.player?.data?.id
-      const payload = this.getBettingStatePayload(playerId || null)
-      if (payload) this.sendTo(socket.id, 'bettingState', payload)
+      const payload = this.getMarketStatePayload(playerId || null)
+      if (payload) this.sendTo(socket.id, 'marketState', payload)
     })
   }
 
@@ -556,7 +587,7 @@ export class ServerNetwork extends System {
 
   endBattleRoyale(winnerId) {
     const br = this.battleRoyale
-    const betting = this.settleBets(winnerId)
+    const betting = this.resolveMarket(winnerId)
     this.payEventWinner(winnerId, 'battle royale', betting)
     br.queued.clear()
     br.alive.clear()
@@ -576,8 +607,8 @@ export class ServerNetwork extends System {
 
     if (connectedQueued.length < 2) {
       this.announce('Tournament needs at least 2 connected fighters — queue stays open another round.')
-      if (br.betting.size > 0) {
-        this.refundAllBets('Tournament cancelled — bets refunded.')
+      if (this.marketHasPositions()) {
+        this.refundMarket('Tournament cancelled — market positions refunded.')
       }
       this.flipArenaMode()
       this.startQueuePhase()
@@ -765,7 +796,7 @@ export class ServerNetwork extends System {
     if (br?.phase !== 'tournament') return
     clearTimeout(br.matchTimerId)
     br.matchTimerId = null
-    const betting = this.settleBets(championId)
+    const betting = this.resolveMarket(championId)
     this.payEventWinner(championId, 'tournament', betting)
     br.queued.clear()
     br.alive.clear()
@@ -777,102 +808,148 @@ export class ServerNetwork extends System {
     this.startQueuePhase()
   }
 
-  refundAllBets(message) {
+  /**
+   * Cancel/refund: deterministically sell every position via LMSR, pay proceeds,
+   * then clear market. Returns a victory-style summary when useful.
+   */
+  refundMarket(message) {
     const br = this.battleRoyale
-    if (!br?.betting.size) {
+    const m = br?.market
+    if (!m || !this.marketHasPositions()) {
       this.clearBettingState()
       return null
     }
-    const potLamports = br.bettingPotLamports
-    const totalBets = br.betting.size
     if (message) this.announce(message)
-    const bets = [...br.betting.entries()]
+    const potLamports = m.collateralLamports
+    const refunds = new Map() // playerId -> { wallet, lamports }
+
+    const playerIds = [...m.positions.keys()].sort()
+    for (const playerId of playerIds) {
+      const pos = m.positions.get(playerId)
+      if (!pos) continue
+      const pickIds = [...pos.keys()].sort()
+      for (const pickId of pickIds) {
+        const row = pos.get(pickId)
+        if (!row?.shares) continue
+        const { shares, proceedsSol } = applySell(m.q, m.outcomeIds, m.b, pickId, row.shares)
+        if (!(shares > 0) || !(proceedsSol > 0)) continue
+        let lamports = Math.floor(proceedsSol * LAMPORTS_PER_SOL)
+        lamports = Math.min(lamports, m.collateralLamports)
+        m.collateralLamports -= lamports
+        const prev = refunds.get(playerId) || { wallet: row.wallet, lamports: 0 }
+        prev.lamports += lamports
+        prev.wallet = row.wallet
+        refunds.set(playerId, prev)
+        row.shares = 0
+      }
+    }
+
     this.clearBettingState()
-    for (const [playerId, bet] of bets) {
-      sendPayout(bet.wallet, BET_STAKE_LAMPORTS, playerId, 'bet_refund').catch(err =>
-        console.error('[solana] Bet refund failed:', playerId, err)
+    for (const [playerId, { wallet, lamports }] of refunds) {
+      if (lamports <= 0) continue
+      sendPayout(wallet, lamports, playerId, 'market_sell').catch(err =>
+        console.error('[solana] Market refund failed:', playerId, err)
       )
     }
+
     return {
       outcome: 'refunded',
+      status: 'complete',
       potSol: potLamports / LAMPORTS_PER_SOL,
       payoutPoolSol: potLamports / LAMPORTS_PER_SOL,
       houseFeePercent: BR_HOUSE_FEE_PERCENT,
-      totalBets,
+      totalBets: refunds.size,
       winningBets: 0,
-      shareSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
-      stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+      shareSol: 0,
+      stakeSol: MARKET_MIN_LAMPORTS / LAMPORTS_PER_SOL,
       winners: [],
     }
   }
 
-  /** Settle pari-mutuel bets; returns a summary for the victory UI (or null if none). */
-  settleBets(championId) {
+  /** Resolve LMSR market: winning shareholders split remaining collateral pro-rata. */
+  resolveMarket(championId) {
     const br = this.battleRoyale
-    if (!br?.betting.size) {
+    const m = br?.market
+    if (!m || !this.marketHasPositions()) {
       this.clearBettingState()
       return null
     }
     if (!championId) {
-      return this.refundAllBets('No champion — bets refunded.')
+      return this.refundMarket('No champion — market positions refunded.')
     }
 
-    const allBets = [...br.betting.entries()]
-    const winners = allBets.filter(([, bet]) => bet.pickId === championId)
-    const pot = br.bettingPotLamports
-    const totalBets = allBets.length
+    const pot = m.collateralLamports
     const payoutPool = Math.floor((pot * (100 - BR_HOUSE_FEE_PERCENT)) / 100)
     const pickName = this.resolveBracketPlayer(championId)?.name || 'Champion'
+    const totalWinningShares = m.q.get(championId) || 0
+
+    const holders = []
+    for (const [playerId, pos] of m.positions) {
+      const row = pos.get(championId)
+      if (!row?.shares || row.shares <= 0) continue
+      holders.push({ playerId, shares: row.shares, wallet: row.wallet })
+    }
+
+    // Snapshot holder count before clear
+    let positionCount = 0
+    for (const pos of m.positions.values()) {
+      for (const row of pos.values()) {
+        if (row.shares > 0) positionCount += 1
+      }
+    }
+
     this.clearBettingState()
 
-    if (!winners.length) {
-      this.announce('No winning bets this round — the betting pot goes to the arena.')
+    if (!(totalWinningShares > 0) || !holders.length) {
+      this.announce('No winning market shares — the betting pot goes to the arena.')
       return {
         outcome: 'no_winners',
         status: 'complete',
         potSol: pot / LAMPORTS_PER_SOL,
         payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
         houseFeePercent: BR_HOUSE_FEE_PERCENT,
-        totalBets,
+        totalBets: positionCount,
         winningBets: 0,
         shareSol: 0,
-        stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+        stakeSol: MARKET_MIN_LAMPORTS / LAMPORTS_PER_SOL,
         pickName,
         winners: [],
       }
     }
 
-    const share = Math.floor(payoutPool / winners.length)
-    const shareSol = share / LAMPORTS_PER_SOL
-    if (share <= 0) {
+    const winnerRows = holders.map(h => {
+      const shareLamports = Math.floor((payoutPool * h.shares) / totalWinningShares)
+      const entity = this.world.entities.get(h.playerId)
       return {
-        outcome: 'no_winners',
-        status: 'complete',
-        potSol: pot / LAMPORTS_PER_SOL,
-        payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
-        houseFeePercent: BR_HOUSE_FEE_PERCENT,
-        totalBets,
-        winningBets: winners.length,
-        shareSol: 0,
-        stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
-        pickName,
-        winners: [],
-      }
-    }
-
-    this.announce(`${winners.length} bettor${winners.length === 1 ? '' : 's'} split ${shareSol} SOL each on the champion.`)
-    const winnerRows = winners.map(([playerId, bet]) => {
-      const entity = this.world.entities.get(playerId)
-      return {
-        playerId,
+        playerId: h.playerId,
         name: entity?.data?.name || 'Bettor',
-        wallet: bet.wallet,
-        shareSol,
-        shareLamports: share,
+        wallet: h.wallet,
+        shareSol: shareLamports / LAMPORTS_PER_SOL,
+        shareLamports,
         status: 'pending',
         signature: null,
       }
-    })
+    }).filter(r => r.shareLamports > 0)
+
+    if (!winnerRows.length) {
+      return {
+        outcome: 'no_winners',
+        status: 'complete',
+        potSol: pot / LAMPORTS_PER_SOL,
+        payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
+        houseFeePercent: BR_HOUSE_FEE_PERCENT,
+        totalBets: positionCount,
+        winningBets: 0,
+        shareSol: 0,
+        stakeSol: MARKET_MIN_LAMPORTS / LAMPORTS_PER_SOL,
+        pickName,
+        winners: [],
+      }
+    }
+
+    this.announce(
+      `${winnerRows.length} market winner${winnerRows.length === 1 ? '' : 's'} share ${payoutPool / LAMPORTS_PER_SOL} SOL on ${pickName}.`
+    )
 
     return {
       outcome: 'paid',
@@ -880,13 +957,41 @@ export class ServerNetwork extends System {
       potSol: pot / LAMPORTS_PER_SOL,
       payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
       houseFeePercent: BR_HOUSE_FEE_PERCENT,
-      totalBets,
-      winningBets: winners.length,
-      shareSol,
-      stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+      totalBets: positionCount,
+      winningBets: winnerRows.length,
+      shareSol: winnerRows[0]?.shareSol || 0,
+      stakeSol: MARKET_MIN_LAMPORTS / LAMPORTS_PER_SOL,
       pickName,
       winners: winnerRows,
     }
+  }
+
+  creditMarketPosition(playerId, wallet, pickId, shares) {
+    const m = this.battleRoyale.market
+    if (!m || !(shares > 0)) return
+    let pos = m.positions.get(playerId)
+    if (!pos) {
+      pos = new Map()
+      m.positions.set(playerId, pos)
+    }
+    const prev = pos.get(pickId) || { shares: 0, wallet }
+    prev.shares += shares
+    prev.wallet = wallet
+    pos.set(pickId, prev)
+  }
+
+  debitMarketPosition(playerId, pickId, shares) {
+    const m = this.battleRoyale.market
+    if (!m || !(shares > 0)) return 0
+    const pos = m.positions.get(playerId)
+    if (!pos) return 0
+    const row = pos.get(pickId)
+    if (!row) return 0
+    const sold = Math.min(row.shares, shares)
+    row.shares -= sold
+    if (row.shares <= 1e-12) pos.delete(pickId)
+    if (pos.size === 0) m.positions.delete(playerId)
+    return sold
   }
 
   setPlayerSessionAvatar(player, sessionAvatar) {
@@ -1253,7 +1358,7 @@ export class ServerNetwork extends System {
         scoreboard: this.getScoreboardPayload(),
         matchState: this.getMatchStatePayload(),
         tournamentBracket: this.getTournamentBracketPayload(),
-        bettingState: this.getBettingStatePayload(socket.player?.data?.id),
+        marketState: this.getMarketStatePayload(socket.player?.data?.id),
         arenaRemnants: serializeArenaRemnants(this.arenaRemnants),
       })
 
@@ -1333,7 +1438,7 @@ export class ServerNetwork extends System {
       this.announce(`${name} is locked in for the next ${this.getNextEventLabel()}.`)
     }
     this.broadcastMatchState()
-    if (br.phase === 'betting') this.broadcastBettingState()
+    if (br.phase === 'betting') this.broadcastMarketState()
   }
 
   /**
@@ -1472,97 +1577,165 @@ export class ServerNetwork extends System {
     this.queueVerifiedEntry(socket, playerId, wallet)
   }
 
-  onPlaceBet = async (socket, data) => {
+  onMarketBuy = async (socket, data) => {
     if (!socket.player) return
     const playerId = socket.player.data.id
     const br = this.battleRoyale
+    const m = br.market
 
-    if (br.phase !== 'betting') {
-      this.sendTo(socket.id, 'placeBetResult', { ok: false, error: 'Betting is closed.' })
-      return
-    }
-    if (br.betting.has(playerId)) {
-      this.sendTo(socket.id, 'placeBetResult', {
-        ok: true,
-        alreadyBet: true,
-        pickId: br.betting.get(playerId).pickId,
-      })
+    if (br.phase !== 'betting' || !m) {
+      this.sendTo(socket.id, 'marketBuyResult', { ok: false, error: 'Market is closed.' })
       return
     }
 
     const pickId = data?.pickId
-    const signature = data?.signature
     const wallet = data?.wallet
-    const recover = !!data?.recover
-    if (!pickId || !br.bettingPickIds.includes(pickId)) {
-      this.sendTo(socket.id, 'placeBetResult', { ok: false, error: 'Invalid fighter pick.' })
+    const signature = data?.signature
+    const lamports = Math.floor(Number(data?.lamports) || 0)
+
+    if (!pickId || !m.outcomeIds.includes(pickId)) {
+      this.sendTo(socket.id, 'marketBuyResult', { ok: false, error: 'Invalid fighter pick.' })
       return
     }
-    if (!wallet || (!signature && !recover)) {
-      this.sendTo(socket.id, 'placeBetResult', { ok: false, error: 'Payment required' })
+    if (!wallet || !signature) {
+      this.sendTo(socket.id, 'marketBuyResult', { ok: false, error: 'Payment required' })
+      return
+    }
+    if (lamports < MARKET_MIN_LAMPORTS) {
+      this.sendTo(socket.id, 'marketBuyResult', { ok: false, error: 'Buy amount too small' })
       return
     }
 
-    if (socket.betVerifying) {
-      this.sendTo(socket.id, 'placeBetResult', {
+    if (socket.marketVerifying) {
+      this.sendTo(socket.id, 'marketBuyResult', {
         ok: false,
         pending: true,
-        error: 'Still verifying your bet — hang tight.',
+        error: 'Still verifying your buy — hang tight.',
       })
       return
     }
-    socket.betVerifying = true
+    socket.marketVerifying = true
 
-    let recordedSignature = signature || null
     try {
-      if (signature) {
-        await verifyBetPayment({ signature, walletPubkey: wallet, playerId })
-      } else {
-        const found = await findRecentBetPayment({ walletPubkey: wallet, playerId })
-        if (!found) {
-          throw new Error('No bet payment found for your wallet.')
-        }
-        recordedSignature = found
-      }
+      await verifyMarketBuyPayment({ signature, walletPubkey: wallet, playerId, lamports })
     } catch (err) {
-      console.error('[solana] Bet verification failed:', err)
-      this.sendTo(socket.id, 'placeBetResult', {
+      console.error('[solana] Market buy verification failed:', err)
+      this.sendTo(socket.id, 'marketBuyResult', {
         ok: false,
-        error: err.message || 'Bet verification failed',
+        error: err.message || 'Buy verification failed',
       })
       return
     } finally {
-      socket.betVerifying = false
+      socket.marketVerifying = false
     }
 
-    // Betting may have closed while verifying — still accept the recorded stake
-    if (br.phase !== 'betting') {
-      // Event already started or cancelled: refund immediately
-      sendPayout(wallet, BET_STAKE_LAMPORTS, playerId, 'bet_refund').catch(err =>
-        console.error('[solana] Late bet refund failed:', playerId, err)
+    if (br.phase !== 'betting' || !br.market) {
+      sendPayout(wallet, lamports, playerId, 'market_sell').catch(e =>
+        console.error('[solana] Late market buy refund failed:', playerId, e)
       )
-      this.sendTo(socket.id, 'placeBetResult', {
+      this.sendTo(socket.id, 'marketBuyResult', {
         ok: false,
-        error: 'Betting closed before your payment verified — stake refunded.',
-      })
-      return
-    }
-    if (br.betting.has(playerId)) {
-      sendPayout(wallet, BET_STAKE_LAMPORTS, playerId, 'bet_refund').catch(err =>
-        console.error('[solana] Duplicate bet refund failed:', playerId, err)
-      )
-      this.sendTo(socket.id, 'placeBetResult', {
-        ok: true,
-        alreadyBet: true,
-        pickId: br.betting.get(playerId).pickId,
+        error: 'Market closed before verification — payment refunded.',
       })
       return
     }
 
-    br.betting.set(playerId, { wallet, pickId, signature: recordedSignature })
-    br.bettingPotLamports += BET_STAKE_LAMPORTS
-    this.sendTo(socket.id, 'placeBetResult', { ok: true, pickId })
-    this.broadcastBettingState()
+    const budgetSol = lamports / LAMPORTS_PER_SOL
+    const { shares, costSol } = applyBuy(br.market.q, br.market.outcomeIds, br.market.b, pickId, budgetSol)
+    if (!(shares > 0)) {
+      sendPayout(wallet, lamports, playerId, 'market_sell').catch(e =>
+        console.error('[solana] Zero-share buy refund failed:', playerId, e)
+      )
+      this.sendTo(socket.id, 'marketBuyResult', { ok: false, error: 'Could not fill buy.' })
+      return
+    }
+
+    // Credit full paid lamports as collateral (dust from LMSR ceil stays in pot)
+    br.market.collateralLamports += lamports
+    this.creditMarketPosition(playerId, wallet, pickId, shares)
+    this.sendTo(socket.id, 'marketBuyResult', {
+      ok: true,
+      pickId,
+      shares,
+      costSol,
+      lamports,
+    })
+    this.broadcastMarketState()
+  }
+
+  onMarketSell = async (socket, data) => {
+    if (!socket.player) return
+    const playerId = socket.player.data.id
+    const br = this.battleRoyale
+    const m = br.market
+
+    if (br.phase !== 'betting' || !m) {
+      this.sendTo(socket.id, 'marketSellResult', { ok: false, error: 'Market is closed.' })
+      return
+    }
+
+    const pickId = data?.pickId
+    const sharesReq = Number(data?.shares) || 0
+    if (!pickId || !m.outcomeIds.includes(pickId)) {
+      this.sendTo(socket.id, 'marketSellResult', { ok: false, error: 'Invalid fighter pick.' })
+      return
+    }
+
+    const pos = m.positions.get(playerId)?.get(pickId)
+    if (!pos?.shares || !(sharesReq > 0)) {
+      this.sendTo(socket.id, 'marketSellResult', { ok: false, error: 'No position to sell.' })
+      return
+    }
+
+    const toSell = Math.min(sharesReq, pos.shares)
+    const { shares, proceedsSol } = applySell(m.q, m.outcomeIds, m.b, pickId, toSell)
+    if (!(shares > 0) || !(proceedsSol > 0)) {
+      this.sendTo(socket.id, 'marketSellResult', { ok: false, error: 'Sell produced no proceeds.' })
+      return
+    }
+
+    let lamports = Math.floor(proceedsSol * LAMPORTS_PER_SOL)
+    lamports = Math.min(lamports, m.collateralLamports)
+    if (lamports <= 0) {
+      this.sendTo(socket.id, 'marketSellResult', { ok: false, error: 'Sell produced no proceeds.' })
+      return
+    }
+
+    this.debitMarketPosition(playerId, pickId, shares)
+    m.collateralLamports -= lamports
+    const wallet = pos.wallet
+
+    this.sendTo(socket.id, 'marketSellResult', {
+      ok: true,
+      pickId,
+      shares,
+      proceedsSol: lamports / LAMPORTS_PER_SOL,
+      status: 'pending',
+    })
+    this.broadcastMarketState()
+
+    sendPayout(wallet, lamports, playerId, 'market_sell')
+      .then(signature => {
+        this.sendTo(socket.id, 'marketSellResult', {
+          ok: true,
+          pickId,
+          shares,
+          proceedsSol: lamports / LAMPORTS_PER_SOL,
+          status: signature ? 'complete' : 'failed',
+          signature: signature || null,
+        })
+      })
+      .catch(err => {
+        console.error('[solana] Market sell payout failed:', playerId, err)
+        this.sendTo(socket.id, 'marketSellResult', {
+          ok: true,
+          pickId,
+          shares,
+          proceedsSol: lamports / LAMPORTS_PER_SOL,
+          status: 'failed',
+          signature: null,
+        })
+      })
   }
 
   onPlayerHit = async (socket, data) => {

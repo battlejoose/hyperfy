@@ -472,18 +472,14 @@ export function BattleRoyaleVictory({ world }) {
             <div className='br-victory-grid' style={{ marginBottom: betting.outcome === 'paid' ? '0.75rem' : 0 }}>
               <div className='br-victory-label'>Bet pot</div>
               <div className='br-victory-value accent'>{formatSol(betting.potSol)} SOL</div>
-              <div className='br-victory-label'>Bets</div>
-              <div className='br-victory-value'>
-                {betting.totalBets} × {formatSol(betting.stakeSol)} SOL
-              </div>
+              <div className='br-victory-label'>Positions</div>
+              <div className='br-victory-value'>{betting.totalBets}</div>
               {betting.outcome === 'paid' && (
                 <>
                   <div className='br-victory-label'>Pool paid</div>
                   <div className='br-victory-value accent'>{formatSol(betting.payoutPoolSol)} SOL</div>
                   <div className='br-victory-label'>Winners</div>
-                  <div className='br-victory-value'>
-                    {betting.winningBets} × {formatSol(betting.shareSol)} SOL
-                  </div>
+                  <div className='br-victory-value'>{betting.winningBets}</div>
                 </>
               )}
             </div>
@@ -535,13 +531,11 @@ export function BattleRoyaleVictory({ world }) {
 
             {betting.outcome === 'no_winners' && (
               <div className='br-victory-betting-note'>
-                No bets on {betting.pickName || 'the champion'} — betting pot goes to the arena.
+                No shares on {betting.pickName || 'the champion'} — market pot goes to the arena.
               </div>
             )}
             {betting.outcome === 'refunded' && (
-              <div className='br-victory-betting-note'>
-                Bets refunded ({formatSol(betting.stakeSol)} SOL each).
-              </div>
+              <div className='br-victory-betting-note'>Market positions refunded via exit sales.</div>
             )}
           </div>
         )}
