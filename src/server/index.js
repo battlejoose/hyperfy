@@ -193,30 +193,26 @@ fastify.get('/api/upload-check', async (req, reply) => {
 
 fastify.get('/api/arena/leaderboard', async (req, reply) => {
   try {
-    const { getByWallet, getLeaderboard } = await import('../core/extras/arenaRatingService.js')
+    const { getByWallet, getDailyLeaderboard, getLeaderboard, toLeaderboardPlayer } = await import(
+      '../core/extras/arenaRatingService.js'
+    )
     const limit = req.query?.limit
-    const players = await getLeaderboard(ratingsDb, limit)
+    const daily = req.query?.period === 'daily'
+    const players = daily ? await getDailyLeaderboard(ratingsDb, limit) : await getLeaderboard(ratingsDb, limit)
     const wallet = typeof req.query?.wallet === 'string' ? req.query.wallet : null
-    const you = wallet ? await getByWallet(ratingsDb, wallet) : null
+    const youRow = wallet ? await getByWallet(ratingsDb, wallet) : null
     return {
-      players: players.map(row => ({
-        wallet: row.wallet_pubkey,
-        username: row.username,
-        rating: row.rating,
-        kills: row.kills,
-        deaths: row.deaths,
-        wins: row.wins,
-      })),
-      you: you
-        ? {
-            wallet: you.wallet_pubkey,
-            username: you.username,
-            rating: you.rating,
-            kills: you.kills,
-            deaths: you.deaths,
-            wins: you.wins,
-          }
+      period: daily ? 'daily' : 'all',
+      resetsAt: daily
+        ? // next UTC midnight
+          new Date(Date.UTC(
+            new Date().getUTCFullYear(),
+            new Date().getUTCMonth(),
+            new Date().getUTCDate() + 1
+          )).toISOString()
         : null,
+      players: players.map(row => toLeaderboardPlayer(row, { daily })),
+      you: toLeaderboardPlayer(youRow, { daily }),
     }
   } catch (err) {
     console.error('[arena-rating] leaderboard failed:', err)

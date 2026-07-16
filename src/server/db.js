@@ -16,18 +16,80 @@ function isPostgresUri(uri) {
 
 export async function ensureArenaRatingsTable(db) {
   const exists = await db.schema.hasTable('arena_ratings')
-  if (exists) return
-  console.log('[db] creating arena_ratings table')
-  await db.schema.createTable('arena_ratings', table => {
-    table.string('wallet_pubkey').primary()
-    table.string('username').notNullable()
-    table.integer('rating').notNullable().defaultTo(1000)
-    table.integer('kills').notNullable().defaultTo(0)
-    table.integer('deaths').notNullable().defaultTo(0)
-    table.integer('wins').notNullable().defaultTo(0)
-    table.timestamp('updated_at').notNullable()
-    table.index(['rating'], 'arena_ratings_rating_idx')
-  })
+  if (!exists) {
+    console.log('[db] creating arena_ratings table')
+    await db.schema.createTable('arena_ratings', table => {
+      table.string('wallet_pubkey').primary()
+      table.string('username').notNullable()
+      table.integer('rating').notNullable().defaultTo(1000)
+      table.integer('kills').notNullable().defaultTo(0)
+      table.integer('deaths').notNullable().defaultTo(0)
+      table.integer('wins').notNullable().defaultTo(0)
+      table.string('daily_day').nullable()
+      table.integer('daily_rating').nullable()
+      table.integer('daily_kills').notNullable().defaultTo(0)
+      table.integer('daily_deaths').notNullable().defaultTo(0)
+      table.integer('daily_wins').notNullable().defaultTo(0)
+      table.timestamp('updated_at').notNullable()
+      table.index(['rating'], 'arena_ratings_rating_idx')
+      table.index(['daily_day', 'daily_rating'], 'arena_ratings_daily_idx')
+    })
+    return
+  }
+  await ensureArenaDailyColumns(db)
+}
+
+/** Parallel daily rating (starts at 1000, same deltas; lazy-wiped each UTC day). */
+export async function ensureArenaDailyColumns(db) {
+  if (!(await db.schema.hasColumn('arena_ratings', 'daily_day'))) {
+    await db.schema.table('arena_ratings', table => {
+      table.string('daily_day').nullable()
+    })
+  }
+  if (!(await db.schema.hasColumn('arena_ratings', 'daily_rating'))) {
+    console.log('[db] adding arena_ratings daily rating columns')
+    await db.schema.table('arena_ratings', table => {
+      table.integer('daily_rating').nullable()
+    })
+  }
+  if (!(await db.schema.hasColumn('arena_ratings', 'daily_kills'))) {
+    await db.schema.table('arena_ratings', table => {
+      table.integer('daily_kills').notNullable().defaultTo(0)
+    })
+  }
+  if (!(await db.schema.hasColumn('arena_ratings', 'daily_deaths'))) {
+    await db.schema.table('arena_ratings', table => {
+      table.integer('daily_deaths').notNullable().defaultTo(0)
+    })
+  }
+  if (!(await db.schema.hasColumn('arena_ratings', 'daily_wins'))) {
+    await db.schema.table('arena_ratings', table => {
+      table.integer('daily_wins').notNullable().defaultTo(0)
+    })
+  }
+
+  // Drop the short-lived peak column if an earlier deploy added it
+  if (await db.schema.hasColumn('arena_ratings', 'daily_high_rating')) {
+    console.log('[db] dropping arena_ratings.daily_high_rating')
+    try {
+      await db.schema.table('arena_ratings', table => {
+        table.dropIndex(['daily_day', 'daily_high_rating'], 'arena_ratings_daily_idx')
+      })
+    } catch {
+      // index name/columns may differ
+    }
+    await db.schema.table('arena_ratings', table => {
+      table.dropColumn('daily_high_rating')
+    })
+  }
+
+  try {
+    await db.schema.table('arena_ratings', table => {
+      table.index(['daily_day', 'daily_rating'], 'arena_ratings_daily_idx')
+    })
+  } catch {
+    // index may already exist
+  }
 }
 
 export async function getDB({ worldDir }) {
@@ -489,6 +551,10 @@ const migrations = [
   },
   // Ensure arena_ratings exists even if an older rolled-back deploy advanced config.version
   // past this point without creating the table.
+  async db => {
+    await ensureArenaRatingsTable(db)
+  },
+  // Daily peak rating columns for the 24h (UTC day) leaderboard
   async db => {
     await ensureArenaRatingsTable(db)
   },
