@@ -549,10 +549,12 @@ const queueRankingsCss = css`
 export function QueueArenaRankings() {
   const [open, setOpen] = useState(false)
   const [period, setPeriod] = useState('all')
+  // Prefetch as soon as the queue panel mounts so Rankings isn't stuck on Loading…
+  // after a cold Postgres connect. Poll only while the popup is open.
   const { wallet, players, you, resetsAt, error, loading } = useArenaLeaderboard({
-    enabled: open,
+    enabled: true,
     limit: 25,
-    pollMs: 15000,
+    pollMs: open ? 15000 : 0,
     period,
   })
   const resetLabel = period === 'daily' ? formatResetsIn(resetsAt) : null
