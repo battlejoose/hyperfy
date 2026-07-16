@@ -199,10 +199,13 @@ export function PlayerQueueList({ world }) {
   }, [pending])
 
   const phase = match?.phase ?? 'queue'
-  const isBattle = phase === 'battle'
+  const isPaidEvent = phase === 'battle' || phase === 'tournament'
+  const isTournamentMode = match?.mode === 'tournament'
+  const eventLabel = isTournamentMode ? 'Tournament' : 'Battle Royale'
+  const eventShort = isTournamentMode ? 'Tourney' : 'Battle'
 
-  // during a battle royale the panel is not accessible at all
-  if (isBattle) return null
+  // during a paid event the panel is not accessible at all
+  if (isPaidEvent) return null
   // free-play fighters only see the panel after pressing escape (pointer unlocked)
   if (!isSpectator && pointerLocked) return null
 
@@ -767,13 +770,13 @@ export function PlayerQueueList({ world }) {
               <div className='arena-countdown'>
                 <div className='arena-countdown-words'>
                   <span>Next</span>
-                  <span>Battle</span>
+                  <span>{eventShort}</span>
                 </div>
                 <div className='arena-countdown-colon'>/</div>
                 <div className='arena-countdown-time'>{formatTime(remaining)}</div>
               </div>
               {isQueued ? (
-                <div className='arena-queued'>You are in the battle royale queue!</div>
+                <div className='arena-queued'>You are in the {eventLabel.toLowerCase()} queue!</div>
               ) : walletChoices ? (
                 <div className='arena-wallet-list'>
                   <div className='arena-wallet-list-title'>Choose a wallet</div>
@@ -794,7 +797,9 @@ export function PlayerQueueList({ world }) {
                 </div>
               ) : (
                 <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
-                  {pending ? 'Verifying payment…' : `Join Battle (${formatFeeLabel(BR_ENTRY_FEE_LAMPORTS)} SOL)`}
+                  {pending
+                    ? 'Verifying payment…'
+                    : `Join ${eventShort} (${formatFeeLabel(BR_ENTRY_FEE_LAMPORTS)} SOL)`}
                 </button>
               )}
               {notice ? <div className='arena-notice'>{notice}</div> : null}

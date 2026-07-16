@@ -38,6 +38,7 @@ const names = [
   'joinBattleRoyale',
   'joinBattleRoyaleResult',
   'brVictory',
+  'tournamentBracket',
   'setSolanaWallet',
   'attackCanceled',
   'hitBlocked',

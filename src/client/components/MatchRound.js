@@ -110,7 +110,10 @@ export function MatchRound({ world }) {
 
   if (!match) return null
 
-  if (match.phase === 'battle') {
+  const isTournamentMode = match.mode === 'tournament'
+  const eventLabel = isTournamentMode ? 'Tournament' : 'Battle Royale'
+
+  if (match.phase === 'battle' || match.phase === 'tournament') {
     return (
       <div
         css={css`
@@ -140,8 +143,14 @@ export function MatchRound({ world }) {
           }
         `}
       >
-        <div className='match-battle-label'>Battle Royale</div>
-        <div className='match-battle-alive'>{match.aliveCount ?? 0} fighters remain</div>
+        <div className='match-battle-label'>{eventLabel}</div>
+        <div className='match-battle-alive'>
+          {match.phase === 'tournament'
+            ? match.aliveCount === 2
+              ? 'Duel in progress'
+              : 'Bracket in progress'
+            : `${match.aliveCount ?? 0} fighters remain`}
+        </div>
       </div>
     )
   }
@@ -196,7 +205,7 @@ export function MatchRound({ world }) {
       key={remaining}
     >
       <div className='br-countdown'>
-        <div className='br-countdown-label'>Battle begins</div>
+        <div className='br-countdown-label'>{isTournamentMode ? 'Tournament begins' : 'Battle begins'}</div>
         <div className='br-countdown-num'>{remaining}</div>
       </div>
     </div>

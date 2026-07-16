@@ -21,6 +21,7 @@ import { Scoreboard } from './Scoreboard'
 import { PlayerQueueList } from './PlayerQueueList'
 import { MatchRound } from './MatchRound'
 import { BattleRoyaleVictory } from './BattleRoyaleVictory'
+import { TournamentBracket } from './TournamentBracket'
 import { TITLE_BG_SRC, stopProximoClip } from './TitleScreen'
 
 export function CoreUI({ world }) {
@@ -106,6 +107,7 @@ export function CoreUI({ world }) {
       {<Toast world={world} />}
       {ready && <MatchRound world={world} />}
       {ready && <PlayerQueueList world={world} />}
+      {ready && <TournamentBracket world={world} />}
       {ready && <BattleRoyaleVictory world={world} />}
       {ready && <Scoreboard world={world} />}
       {ready && <ActionsBlock world={world} />}

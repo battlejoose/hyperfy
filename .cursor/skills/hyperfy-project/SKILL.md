@@ -26,7 +26,7 @@ description: >-
 | Server ↔ client networking | `docs/server-client.md` |
 | Character sync & interpolation | `docs/character-sync.md` |
 | Sword combat | `docs/combat.md` |
-| Arena rating (paid BR) | `docs/arena-rating.md` |
+| Arena rating (paid BR / Tournament) | `docs/arena-rating.md` |
 | App scripting (upstream) | `docs/scripting/README.md` |
 
 ## Architecture Summary

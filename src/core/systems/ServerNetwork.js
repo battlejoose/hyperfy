@@ -30,6 +30,15 @@ import {
   BR_QUEUE_DURATION_SECONDS,
   LAMPORTS_PER_SOL,
 } from '../extras/solanaConfig.js'
+import {
+  completeMatch,
+  createBracket,
+  getCurrentMatch,
+  markMatchLive,
+} from '../extras/tournamentBracket.js'
+
+const TOURNAMENT_MATCH_PREP_MS = 4000
+const TOURNAMENT_RESULT_SHOW_MS = 3500
 
 const blockEmotes = [
   Emotes.BLOCK,
@@ -148,15 +157,20 @@ export class ServerNetwork extends System {
   }
 
   initArena() {
-    // Battle royale cycle: a repeating queue period (free-play in the arena, paid
-    // queue signups), then a winner-take-all battle for everyone who queued.
+    // Paid arena cycle: queue period (free-play + paid signups), then either a
+    // battle royale or a 1v1 bracket tournament, alternating each completed event.
     this.battleRoyale = {
-      phase: 'queue', // 'queue' | 'battle'
+      phase: 'queue', // 'queue' | 'battle' | 'tournament'
+      mode: 'br', // upcoming event: 'br' | 'tournament'
       endsAt: 0, // server time (seconds) when the queue period ends
       queued: new Map(), // playerId -> { wallet }
       nextQueued: new Map(), // paid entries verified too late for the current cycle
-      alive: new Set(), // playerIds still standing during a battle
+      alive: new Set(), // fighters currently in the arena fight
       potLamports: 0,
+      bracket: null,
+      currentMatchId: null,
+      bracketStatus: null, // 'preview' | 'result' | 'final'
+      matchTimerId: null,
     }
     this.brTimerId = null
     this.startQueuePhase()
@@ -166,19 +180,51 @@ export class ServerNetwork extends System {
     const br = this.battleRoyale
     br.phase = 'queue'
     br.endsAt = this.getTime() + BR_QUEUE_DURATION_SECONDS
+    br.bracket = null
+    br.currentMatchId = null
+    br.bracketStatus = null
+    br.alive.clear()
+    clearTimeout(br.matchTimerId)
+    br.matchTimerId = null
     // payments that verified after the previous queue closed roll into this one
     br.nextQueued.forEach((entry, playerId) => br.queued.set(playerId, entry))
     br.nextQueued.clear()
     clearTimeout(this.brTimerId)
-    this.brTimerId = setTimeout(() => this.beginBattleRoyale(), BR_QUEUE_DURATION_SECONDS * 1000)
+    this.brTimerId = setTimeout(() => this.beginQueuedEvent(), BR_QUEUE_DURATION_SECONDS * 1000)
     this.broadcastMatchState()
+  }
+
+  flipArenaMode() {
+    const br = this.battleRoyale
+    br.mode = br.mode === 'tournament' ? 'br' : 'tournament'
+  }
+
+  beginQueuedEvent() {
+    const br = this.battleRoyale
+    if (br.queued.size < 2) {
+      if (br.queued.size === 1) {
+        const label = br.mode === 'tournament' ? 'Tournament' : 'Battle royale'
+        this.announce(`${label} needs at least 2 fighters — queue stays open another round.`)
+      }
+      // Do not flip mode on a failed start
+      this.startQueuePhase()
+      return
+    }
+    if (br.mode === 'tournament') {
+      this.beginTournament()
+    } else {
+      this.beginBattleRoyale()
+    }
   }
 
   getMatchStatePayload() {
     const br = this.battleRoyale
-    if (!br) return { phase: 'queue', endsAt: 0, queuedIds: [], potLamports: 0 }
+    if (!br) {
+      return { phase: 'queue', mode: 'br', endsAt: 0, queuedIds: [], potLamports: 0, aliveCount: 0 }
+    }
     return {
       phase: br.phase,
+      mode: br.mode,
       endsAt: br.endsAt,
       queuedIds: [...br.queued.keys()],
       aliveCount: br.alive.size,
@@ -200,17 +246,45 @@ export class ServerNetwork extends System {
     })
   }
 
+  resolveBracketPlayer(playerId) {
+    if (!playerId) return null
+    const br = this.battleRoyale
+    const entity = this.world.entities.get(playerId)
+    return {
+      playerId,
+      name: entity?.data?.name || 'Gladiator',
+      wallet: br.queued.get(playerId)?.wallet || null,
+    }
+  }
+
+  getTournamentBracketPayload() {
+    const br = this.battleRoyale
+    if (!br?.bracket) return null
+    return {
+      status: br.bracketStatus || 'preview',
+      highlightMatchId: br.currentMatchId,
+      rounds: br.bracket.rounds.map(round => ({
+        index: round.index,
+        bye: this.resolveBracketPlayer(round.bye),
+        matches: round.matches.map(match => ({
+          id: match.id,
+          a: this.resolveBracketPlayer(match.a),
+          b: this.resolveBracketPlayer(match.b),
+          winnerId: match.winner,
+          loserId: match.loser,
+          status: match.status,
+        })),
+      })),
+    }
+  }
+
+  broadcastTournamentBracket() {
+    const payload = this.getTournamentBracketPayload()
+    if (payload) this.send('tournamentBracket', payload)
+  }
+
   beginBattleRoyale() {
     const br = this.battleRoyale
-
-    // need at least 2 fighters — otherwise keep the queue open another period
-    if (br.queued.size < 2) {
-      if (br.queued.size === 1) {
-        this.announce('Battle royale needs at least 2 fighters — queue stays open another round.')
-      }
-      this.startQueuePhase()
-      return
-    }
 
     br.phase = 'battle'
     br.endsAt = 0
@@ -253,6 +327,10 @@ export class ServerNetwork extends System {
 
   handleBattleRoyaleElimination(playerId) {
     const br = this.battleRoyale
+    if (br?.phase === 'tournament') {
+      this.handleTournamentElimination(playerId)
+      return
+    }
     if (br?.phase !== 'battle') return
     if (!br.alive.delete(playerId)) return
 
@@ -277,74 +355,270 @@ export class ServerNetwork extends System {
     this.endBattleRoyale(winnerId)
   }
 
-  endBattleRoyale(winnerId) {
+  payEventWinner(winnerId, eventLabel) {
     const br = this.battleRoyale
     const payoutLamports = this.getWinnerPayoutLamports()
     const payoutSol = payoutLamports / LAMPORTS_PER_SOL
 
-    if (winnerId) {
-      const wallet = br.queued.get(winnerId)?.wallet
-      const winnerPlayer = this.world.entities.get(winnerId)
-      const winnerName = winnerPlayer?.data?.name || 'A gladiator'
-      this.announce(`${winnerName} wins the battle royale and takes ${payoutSol} SOL!`)
-
-      const victoryBase = {
-        winnerId,
-        winnerName,
-        wallet: wallet || null,
-        payoutSol,
-      }
-
-      if (wallet) {
-        applyArenaWinRating(this.ratingsDb, wallet, winnerName).catch(err =>
-          console.error('[arena-rating] win update failed:', err)
-        )
-        // Everyone sees the victory sheet immediately; payout status streams in after.
-        this.send('brVictory', {
-          ...victoryBase,
-          status: 'pending',
-          signature: null,
-        })
-        sendPayout(wallet, payoutLamports, winnerId, 'br_win')
-          .then(signature => {
-            if (!signature) {
-              console.error('[solana] Battle royale payout did not complete for', winnerId)
-              this.send('brVictory', {
-                ...victoryBase,
-                status: 'failed',
-                signature: null,
-              })
-              return
-            }
-            this.send('brVictory', {
-              ...victoryBase,
-              status: 'complete',
-              signature,
-            })
-          })
-          .catch(err => {
-            console.error('[solana] Battle royale payout failed:', err)
-            this.send('brVictory', {
-              ...victoryBase,
-              status: 'failed',
-              signature: null,
-            })
-          })
-      } else {
-        console.error('[solana] Battle royale winner has no wallet on file:', winnerId)
-        this.send('brVictory', {
-          ...victoryBase,
-          status: 'failed',
-          signature: null,
-        })
-      }
-    } else {
-      this.announce('The battle royale ended with no one left standing. The pot goes to the arena.')
+    if (!winnerId) {
+      this.announce(`The ${eventLabel} ended with no one left standing. The pot goes to the arena.`)
+      return
     }
 
+    const wallet = br.queued.get(winnerId)?.wallet
+    const winnerPlayer = this.world.entities.get(winnerId)
+    const winnerName = winnerPlayer?.data?.name || 'A gladiator'
+    this.announce(`${winnerName} wins the ${eventLabel} and takes ${payoutSol} SOL!`)
+
+    const victoryBase = {
+      winnerId,
+      winnerName,
+      wallet: wallet || null,
+      payoutSol,
+    }
+
+    if (wallet) {
+      applyArenaWinRating(this.ratingsDb, wallet, winnerName).catch(err =>
+        console.error('[arena-rating] win update failed:', err)
+      )
+      this.send('brVictory', {
+        ...victoryBase,
+        status: 'pending',
+        signature: null,
+      })
+      sendPayout(wallet, payoutLamports, winnerId, 'br_win')
+        .then(signature => {
+          if (!signature) {
+            console.error(`[solana] ${eventLabel} payout did not complete for`, winnerId)
+            this.send('brVictory', { ...victoryBase, status: 'failed', signature: null })
+            return
+          }
+          this.send('brVictory', { ...victoryBase, status: 'complete', signature })
+        })
+        .catch(err => {
+          console.error(`[solana] ${eventLabel} payout failed:`, err)
+          this.send('brVictory', { ...victoryBase, status: 'failed', signature: null })
+        })
+    } else {
+      console.error(`[solana] ${eventLabel} winner has no wallet on file:`, winnerId)
+      this.send('brVictory', { ...victoryBase, status: 'failed', signature: null })
+    }
+  }
+
+  endBattleRoyale(winnerId) {
+    const br = this.battleRoyale
+    this.payEventWinner(winnerId, 'battle royale')
     br.queued.clear()
     br.alive.clear()
     br.potLamports = 0
+    this.flipArenaMode()
+    this.startQueuePhase()
+  }
+
+  beginTournament() {
+    const br = this.battleRoyale
+    const connectedQueued = []
+    this.sockets.forEach(socket => {
+      const player = socket.player
+      if (!player) return
+      if (br.queued.has(player.data.id)) connectedQueued.push(player.data.id)
+    })
+
+    if (connectedQueued.length < 2) {
+      this.announce('Tournament needs at least 2 connected fighters — queue stays open another round.')
+      this.startQueuePhase()
+      return
+    }
+
+    br.phase = 'tournament'
+    br.endsAt = 0
+    br.potLamports = br.queued.size * BR_ENTRY_FEE_LAMPORTS
+    br.alive = new Set()
+    br.bracket = createBracket(connectedQueued)
+    br.currentMatchId = null
+    br.bracketStatus = 'preview'
+
+    // Everyone to stands first; current match fighters are teleported later
+    this.sockets.forEach(socket => {
+      const player = socket.player
+      if (!player) return
+      if (!isSpectatorSessionAvatar(player.data.sessionAvatar) || br.queued.has(player.data.id)) {
+        this.setPlayerSessionAvatar(player, AVATAR_SARACEN)
+        this.teleportPlayerToSpawn(player)
+      }
+    })
+
+    this.broadcastScoreboard()
+    this.broadcastMatchState()
+    this.announce(
+      `Tournament has begun! ${connectedQueued.length} fighters, winner takes ${this.getWinnerPayoutSol()} SOL.`
+    )
+    this.startNextTournamentMatch()
+  }
+
+  isPlayerConnected(playerId) {
+    for (const socket of this.sockets.values()) {
+      if (socket.player?.data?.id === playerId) return true
+    }
+    return false
+  }
+
+  startNextTournamentMatch() {
+    const br = this.battleRoyale
+    if (br?.phase !== 'tournament' || !br.bracket) return
+
+    clearTimeout(br.matchTimerId)
+    br.matchTimerId = null
+
+    let match = getCurrentMatch(br.bracket)
+    if (!match) {
+      this.endTournament(null)
+      return
+    }
+
+    // Auto-resolve if a fighter disconnected before the match
+    while (match) {
+      const aOk = this.isPlayerConnected(match.a)
+      const bOk = this.isPlayerConnected(match.b)
+      if (aOk && bOk) break
+      const winnerId = aOk ? match.a : bOk ? match.b : null
+      const result = completeMatch(br.bracket, match.id, winnerId)
+      if (result.done) {
+        br.bracketStatus = 'final'
+        br.currentMatchId = match.id
+        this.broadcastTournamentBracket()
+        br.matchTimerId = setTimeout(() => this.endTournament(result.championId), TOURNAMENT_RESULT_SHOW_MS)
+        return
+      }
+      match = result.nextMatch
+    }
+
+    if (!match) {
+      this.endTournament(null)
+      return
+    }
+
+    br.currentMatchId = match.id
+    br.bracketStatus = 'preview'
+    this.broadcastTournamentBracket()
+    this.broadcastMatchState()
+
+    const matchId = match.id
+    br.matchTimerId = setTimeout(() => this.launchTournamentMatch(matchId), TOURNAMENT_MATCH_PREP_MS)
+  }
+
+  launchTournamentMatch(matchId) {
+    const br = this.battleRoyale
+    if (br?.phase !== 'tournament' || !br.bracket) return
+    if (br.currentMatchId !== matchId) return
+
+    const match = markMatchLive(br.bracket, matchId)
+    if (!match) {
+      this.startNextTournamentMatch()
+      return
+    }
+
+    // Re-check connectivity at fight time
+    const aOk = this.isPlayerConnected(match.a)
+    const bOk = this.isPlayerConnected(match.b)
+    if (!aOk || !bOk) {
+      const winnerId = aOk ? match.a : bOk ? match.b : null
+      this.finishTournamentMatch(matchId, winnerId)
+      return
+    }
+
+    br.alive = new Set([match.a, match.b])
+
+    this.sockets.forEach(socket => {
+      const player = socket.player
+      if (!player) return
+      const id = player.data.id
+      if (id === match.a || id === match.b) {
+        this.setPlayerSessionAvatar(player, AVATAR_CRUSADER)
+        // Full heal for the duel
+        player.modify({ health: 100 })
+        this.send('entityModified', { id, health: 100 })
+        this.teleportPlayerToSpawn(player)
+      } else if (br.queued.has(id) || !isSpectatorSessionAvatar(player.data.sessionAvatar)) {
+        this.setPlayerSessionAvatar(player, AVATAR_SARACEN)
+        this.teleportPlayerToSpawn(player)
+      }
+    })
+
+    br.bracketStatus = 'preview'
+    this.broadcastTournamentBracket()
+    this.broadcastScoreboard()
+    this.broadcastMatchState()
+
+    const aName = this.resolveBracketPlayer(match.a)?.name
+    const bName = this.resolveBracketPlayer(match.b)?.name
+    this.announce(`${aName} vs ${bName} — fight!`)
+  }
+
+  handleTournamentElimination(playerId) {
+    const br = this.battleRoyale
+    if (br?.phase !== 'tournament') return
+
+    // Waiting bracket player disconnect: ignore until their match; alive only has current pair
+    if (!br.alive.has(playerId)) return
+    if (!br.alive.delete(playerId)) return
+
+    const wallet = br.queued.get(playerId)?.wallet
+    if (wallet) {
+      const name = this.world.entities.get(playerId)?.data?.name
+      applyArenaDeathRating(this.ratingsDb, wallet, name).catch(err =>
+        console.error('[arena-rating] death update failed:', err)
+      )
+    }
+
+    const winnerId = br.alive.size === 1 ? [...br.alive][0] : null
+    br.alive.clear()
+    this.broadcastMatchState()
+    this.finishTournamentMatch(br.currentMatchId, winnerId)
+  }
+
+  finishTournamentMatch(matchId, winnerId) {
+    const br = this.battleRoyale
+    if (br?.phase !== 'tournament' || !br.bracket || !matchId) return
+
+    const result = completeMatch(br.bracket, matchId, winnerId)
+    br.bracketStatus = result.done ? 'final' : 'result'
+    this.broadcastTournamentBracket()
+
+    // Move both fighters to stands after the duel
+    const match = br.bracket.rounds.flatMap(r => r.matches).find(m => m.id === matchId)
+    if (match) {
+      for (const id of [match.a, match.b]) {
+        if (!id) continue
+        const entity = this.world.entities.get(id)
+        if (!entity) continue
+        this.setPlayerSessionAvatar(entity, AVATAR_SARACEN)
+        this.teleportPlayerToSpawn(entity)
+      }
+      this.broadcastScoreboard()
+    }
+
+    clearTimeout(br.matchTimerId)
+    if (result.done) {
+      br.matchTimerId = setTimeout(() => this.endTournament(result.championId), TOURNAMENT_RESULT_SHOW_MS)
+    } else {
+      br.matchTimerId = setTimeout(() => this.startNextTournamentMatch(), TOURNAMENT_RESULT_SHOW_MS)
+    }
+  }
+
+  endTournament(championId) {
+    const br = this.battleRoyale
+    if (br?.phase !== 'tournament') return
+    clearTimeout(br.matchTimerId)
+    br.matchTimerId = null
+    this.payEventWinner(championId, 'tournament')
+    br.queued.clear()
+    br.alive.clear()
+    br.potLamports = 0
+    br.bracket = null
+    br.currentMatchId = null
+    br.bracketStatus = null
+    this.flipArenaMode()
     this.startQueuePhase()
   }
 
@@ -472,9 +746,10 @@ export class ServerNetwork extends System {
     if (victim) victim.deaths += 1
     this.broadcastScoreboard()
 
-    // Paid BR kill rating (free-play arena kills are ignored)
+    // Paid event kill rating (free-play arena kills are ignored)
     const br = this.battleRoyale
-    if (br?.phase === 'battle' && br.queued.has(attackerId) && br.queued.has(targetId)) {
+    const paidPhase = br?.phase === 'battle' || br?.phase === 'tournament'
+    if (paidPhase && br.queued.has(attackerId) && br.queued.has(targetId)) {
       const wallet = br.queued.get(attackerId)?.wallet
       if (wallet) {
         const name = this.world.entities.get(attackerId)?.data?.name
@@ -710,6 +985,7 @@ export class ServerNetwork extends System {
         hasAdminCode: !!process.env.ADMIN_CODE,
         scoreboard: this.getScoreboardPayload(),
         matchState: this.getMatchStatePayload(),
+        tournamentBracket: this.getTournamentBracketPayload(),
         arenaRemnants: serializeArenaRemnants(this.arenaRemnants),
       })
 
@@ -764,6 +1040,17 @@ export class ServerNetwork extends System {
     this.autoRecoverEntryPayment(socket, walletPubkey)
   }
 
+  /** Label for the upcoming paid event (after the current one ends, mode flips). */
+  getNextEventLabel() {
+    const br = this.battleRoyale
+    if (!br) return 'battle royale'
+    if (br.phase === 'queue') {
+      return br.mode === 'tournament' ? 'tournament' : 'battle royale'
+    }
+    // During an event, mode still names the current event; next queue uses the flipped mode
+    return br.mode === 'tournament' ? 'battle royale' : 'tournament'
+  }
+
   /** Put a player whose entry payment is verified into the queue (or the next one if a battle is running). */
   queueVerifiedEntry(socket, playerId, wallet) {
     const br = this.battleRoyale
@@ -774,7 +1061,7 @@ export class ServerNetwork extends System {
       br.nextQueued.set(playerId, { wallet })
       this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true, nextRound: true })
       const name = socket.player?.data?.name || 'A gladiator'
-      this.announce(`${name} is locked in for the next battle royale.`)
+      this.announce(`${name} is locked in for the next ${this.getNextEventLabel()}.`)
     }
     this.broadcastMatchState()
   }
@@ -823,10 +1110,10 @@ export class ServerNetwork extends System {
     if (!socket.player) return
     if (!isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
 
-    if (this.battleRoyale?.phase === 'battle') {
+    if (this.battleRoyale?.phase === 'battle' || this.battleRoyale?.phase === 'tournament') {
       this.sendTo(socket.id, 'enterArenaResult', {
         ok: false,
-        error: 'A battle royale is in progress — wait for the next round.',
+        error: 'A paid event is in progress — wait for the next round.',
       })
       return
     }
@@ -834,15 +1121,15 @@ export class ServerNetwork extends System {
     this.enterArenaAsFighter(socket)
   }
 
-  // free-play fighters can return to the stands (not during a battle royale)
+  // free-play fighters can return to the stands (not during a paid event)
   onLeaveArena = async (socket) => {
     if (!socket.player) return
     if (isSpectatorSessionAvatar(socket.player.data.sessionAvatar)) return
 
-    if (this.battleRoyale?.phase === 'battle') {
+    if (this.battleRoyale?.phase === 'battle' || this.battleRoyale?.phase === 'tournament') {
       this.sendTo(socket.id, 'enterArenaResult', {
         ok: false,
-        error: 'You cannot leave during a battle royale.',
+        error: 'You cannot leave during a paid event.',
       })
       return
     }
