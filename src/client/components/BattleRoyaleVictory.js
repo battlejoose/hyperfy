@@ -286,12 +286,54 @@ export function BattleRoyaleVictory({ world }) {
         .br-victory-link:hover {
           text-decoration: underline;
         }
+
+        .br-victory-betting {
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          margin-top: 0.15rem;
+          margin-bottom: 1.05rem;
+          padding-top: 0.95rem;
+        }
+        .br-victory-betting-title {
+          font-size: 0.65rem;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: rgba(212, 175, 95, 0.9);
+          margin-bottom: 0.65rem;
+        }
+        .br-victory-betting-note {
+          font-size: 0.72rem;
+          color: rgba(255, 255, 255, 0.65);
+          line-height: 1.35;
+          margin-top: 0.35rem;
+        }
+        .br-victory-winners {
+          margin-top: 0.55rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.28rem;
+          max-height: 7.5rem;
+          overflow-y: auto;
+        }
+        .br-victory-winner-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 0.75rem;
+          font-size: 0.72rem;
+          color: rgba(255, 255, 255, 0.85);
+        }
+        .br-victory-winner-row span:last-child {
+          color: #fbbf24;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
       `}
     >
       <div className='br-victory-card'>
         <div className='br-victory-top'>
           <div>
-            <div className='br-victory-kicker'>Battle Royale</div>
+            <div className='br-victory-kicker'>
+              {victory.eventLabel === 'tournament' ? 'Tournament' : 'Battle Royale'}
+            </div>
             <div className='br-victory-title'>Victory</div>
           </div>
           <button type='button' className='br-victory-close' onClick={() => setVictory(null)} aria-label='Close'>
@@ -304,9 +346,58 @@ export function BattleRoyaleVictory({ world }) {
           <div className='br-victory-value accent'>{victory.winnerName || 'Unknown'}</div>
           <div className='br-victory-label'>Wallet</div>
           <div className='br-victory-value'>{abbreviateAddress(victory.wallet)}</div>
-          <div className='br-victory-label'>Payout</div>
+          <div className='br-victory-label'>Champion pot</div>
           <div className='br-victory-value accent'>{formatSol(victory.payoutSol)} SOL</div>
         </div>
+
+        {victory.betting && (
+          <div className='br-victory-betting'>
+            <div className='br-victory-betting-title'>Betting payout</div>
+            <div className='br-victory-grid' style={{ marginBottom: 0 }}>
+              <div className='br-victory-label'>Bet pot</div>
+              <div className='br-victory-value accent'>{formatSol(victory.betting.potSol)} SOL</div>
+              <div className='br-victory-label'>Bets</div>
+              <div className='br-victory-value'>
+                {victory.betting.totalBets} × {formatSol(victory.betting.stakeSol)} SOL
+              </div>
+              {victory.betting.outcome === 'paid' && (
+                <>
+                  <div className='br-victory-label'>Pool paid</div>
+                  <div className='br-victory-value accent'>
+                    {formatSol(victory.betting.payoutPoolSol)} SOL
+                  </div>
+                  <div className='br-victory-label'>Winners</div>
+                  <div className='br-victory-value'>
+                    {victory.betting.winningBets} × {formatSol(victory.betting.shareSol)} SOL
+                  </div>
+                </>
+              )}
+            </div>
+            {victory.betting.outcome === 'paid' && !!victory.betting.winners?.length && (
+              <div className='br-victory-winners'>
+                {victory.betting.winners.map(w => (
+                  <div className='br-victory-winner-row' key={w.playerId || w.wallet}>
+                    <span>
+                      {w.name}
+                      {w.wallet ? ` · ${abbreviateAddress(w.wallet)}` : ''}
+                    </span>
+                    <span>{formatSol(w.shareSol)} SOL</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {victory.betting.outcome === 'no_winners' && (
+              <div className='br-victory-betting-note'>
+                No bets on {victory.betting.pickName || 'the champion'} — betting pot goes to the arena.
+              </div>
+            )}
+            {victory.betting.outcome === 'refunded' && (
+              <div className='br-victory-betting-note'>
+                Bets refunded ({formatSol(victory.betting.stakeSol)} SOL each).
+              </div>
+            )}
+          </div>
+        )}
 
         <div className='br-victory-tx'>
           <div className='br-victory-tx-head'>

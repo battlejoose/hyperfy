@@ -457,7 +457,7 @@ export class ServerNetwork extends System {
     this.endBattleRoyale(winnerId)
   }
 
-  payEventWinner(winnerId, eventLabel) {
+  payEventWinner(winnerId, eventLabel, betting = null) {
     const br = this.battleRoyale
     const payoutLamports = this.getWinnerPayoutLamports()
     const payoutSol = payoutLamports / LAMPORTS_PER_SOL
@@ -477,6 +477,8 @@ export class ServerNetwork extends System {
       winnerName,
       wallet: wallet || null,
       payoutSol,
+      eventLabel,
+      betting: betting || null,
     }
 
     if (wallet) {
@@ -509,8 +511,8 @@ export class ServerNetwork extends System {
 
   endBattleRoyale(winnerId) {
     const br = this.battleRoyale
-    this.payEventWinner(winnerId, 'battle royale')
-    this.settleBets(winnerId)
+    const betting = this.settleBets(winnerId)
+    this.payEventWinner(winnerId, 'battle royale', betting)
     br.queued.clear()
     br.alive.clear()
     br.potLamports = 0
@@ -718,8 +720,8 @@ export class ServerNetwork extends System {
     if (br?.phase !== 'tournament') return
     clearTimeout(br.matchTimerId)
     br.matchTimerId = null
-    this.payEventWinner(championId, 'tournament')
-    this.settleBets(championId)
+    const betting = this.settleBets(championId)
+    this.payEventWinner(championId, 'tournament', betting)
     br.queued.clear()
     br.alive.clear()
     br.potLamports = 0
@@ -734,8 +736,10 @@ export class ServerNetwork extends System {
     const br = this.battleRoyale
     if (!br?.betting.size) {
       this.clearBettingState()
-      return
+      return null
     }
+    const potLamports = br.bettingPotLamports
+    const totalBets = br.betting.size
     if (message) this.announce(message)
     const bets = [...br.betting.entries()]
     this.clearBettingState()
@@ -744,37 +748,96 @@ export class ServerNetwork extends System {
         console.error('[solana] Bet refund failed:', playerId, err)
       )
     }
+    return {
+      outcome: 'refunded',
+      potSol: potLamports / LAMPORTS_PER_SOL,
+      payoutPoolSol: potLamports / LAMPORTS_PER_SOL,
+      houseFeePercent: BR_HOUSE_FEE_PERCENT,
+      totalBets,
+      winningBets: 0,
+      shareSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+      stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+      winners: [],
+    }
   }
 
+  /** Settle pari-mutuel bets; returns a summary for the victory UI (or null if none). */
   settleBets(championId) {
     const br = this.battleRoyale
     if (!br?.betting.size) {
       this.clearBettingState()
-      return
+      return null
     }
     if (!championId) {
-      this.refundAllBets('No champion — bets refunded.')
-      return
+      return this.refundAllBets('No champion — bets refunded.')
     }
 
-    const winners = [...br.betting.entries()].filter(([, bet]) => bet.pickId === championId)
+    const allBets = [...br.betting.entries()]
+    const winners = allBets.filter(([, bet]) => bet.pickId === championId)
     const pot = br.bettingPotLamports
+    const totalBets = allBets.length
     const payoutPool = Math.floor((pot * (100 - BR_HOUSE_FEE_PERCENT)) / 100)
+    const pickName = this.resolveBracketPlayer(championId)?.name || 'Champion'
     this.clearBettingState()
 
     if (!winners.length) {
       this.announce('No winning bets this round — the betting pot goes to the arena.')
-      return
+      return {
+        outcome: 'no_winners',
+        potSol: pot / LAMPORTS_PER_SOL,
+        payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
+        houseFeePercent: BR_HOUSE_FEE_PERCENT,
+        totalBets,
+        winningBets: 0,
+        shareSol: 0,
+        stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+        pickName,
+        winners: [],
+      }
     }
 
     const share = Math.floor(payoutPool / winners.length)
-    if (share <= 0) return
     const shareSol = share / LAMPORTS_PER_SOL
+    if (share <= 0) {
+      return {
+        outcome: 'no_winners',
+        potSol: pot / LAMPORTS_PER_SOL,
+        payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
+        houseFeePercent: BR_HOUSE_FEE_PERCENT,
+        totalBets,
+        winningBets: winners.length,
+        shareSol: 0,
+        stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+        pickName,
+        winners: [],
+      }
+    }
+
     this.announce(`${winners.length} bettor${winners.length === 1 ? '' : 's'} split ${shareSol} SOL each on the champion.`)
-    for (const [playerId, bet] of winners) {
+    const winnerRows = winners.map(([playerId, bet]) => {
       sendPayout(bet.wallet, share, playerId, 'bet_win').catch(err =>
         console.error('[solana] Bet payout failed:', playerId, err)
       )
+      const entity = this.world.entities.get(playerId)
+      return {
+        playerId,
+        name: entity?.data?.name || 'Bettor',
+        wallet: bet.wallet,
+        shareSol,
+      }
+    })
+
+    return {
+      outcome: 'paid',
+      potSol: pot / LAMPORTS_PER_SOL,
+      payoutPoolSol: payoutPool / LAMPORTS_PER_SOL,
+      houseFeePercent: BR_HOUSE_FEE_PERCENT,
+      totalBets,
+      winningBets: winners.length,
+      shareSol,
+      stakeSol: BET_STAKE_LAMPORTS / LAMPORTS_PER_SOL,
+      pickName,
+      winners: winnerRows,
     }
   }
 
