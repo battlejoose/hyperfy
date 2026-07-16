@@ -49,9 +49,19 @@ Table `arena_ratings`:
 | `daily_kills` / `daily_deaths` / `daily_wins` | This hour’s paid-event stats only |
 | `updated_at` | Last mutation time |
 
+Table `arena_last_hour` (frozen previous hour):
+
+| Column | Notes |
+|--------|--------|
+| `wallet_pubkey` | Primary key |
+| `username` / `rating` / `kills` / `deaths` / `wins` | Copy of that hour’s hourly stats at wipe time |
+| `period` | Archived hour key (`YYYY-MM-DDTHH` UTC) |
+
 Identity for ratings is the **wallet**, not the session user UUID. `users.wallet_pubkey` still links the current session for payments.
 
 **Hourly board:** a parallel rating that uses the same deltas as all-time. When the UTC hour rolls, the next paid-event rating write for a wallet **resets** that wallet to `daily_rating = 1000` and zero hourly K/D/W before applying the event (lazy wipe). Rows from prior hours are excluded from the hourly leaderboard. Resets at the **top of each UTC hour**.
+
+**Last Hour board:** before that wipe (and whenever the hourly list is read after a rollover), the previous hour’s top board is copied into `arena_last_hour` and replaced each hour. The UI **Last Hour** tab shows that frozen list.
 
 Ratings use a **separate DB connection** from the world ([`ratingsDb.js`](../src/server/ratingsDb.js)):
 
@@ -75,10 +85,11 @@ DB writes are async with `.catch` so failures never block combat or payouts.
 
 ## API & UI
 
-- `GET /api/arena/leaderboard?limit=25&wallet=<optional>&period=all|daily` → `{ period, resetsAt, players, you }`
+- `GET /api/arena/leaderboard?limit=25&wallet=<optional>&period=all|daily|last` → `{ period, resetsAt, players, you }`
   - `period=all` (default): all-time `rating` + lifetime K/D/W
   - `period=daily`: current UTC hour’s `daily_rating` (starts at 1000 each hour, same deltas) + hourly K/D/W; `resetsAt` is the next UTC hour
-- Client: **All Time** / **Hourly** tabs on the title-screen rankings and the in-game Rankings popup
+  - `period=last`: frozen previous UTC hour board from `arena_last_hour`
+- Client: **All Time** / **Hourly** / **Last Hour** tabs on the title-screen rankings and the in-game Rankings popup
   ([`ArenaRankings.js`](../src/client/components/ArenaRankings.js) / [`TitleScreen.js`](../src/client/components/TitleScreen.js) / [`PlayerQueueList.js`](../src/client/components/PlayerQueueList.js))
 - Leaderboard fetch uses `PUBLIC_API_URL` correctly when it already ends in `/api` (e.g. `https://host/api/arena/leaderboard`)
 - Loading overlay uses the same gladiator title background (`/assets/gladiatorbackground.webp`)

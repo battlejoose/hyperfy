@@ -193,16 +193,36 @@ fastify.get('/api/upload-check', async (req, reply) => {
 
 fastify.get('/api/arena/leaderboard', async (req, reply) => {
   try {
-    const { getByWallet, getDailyLeaderboard, getLeaderboard, toLeaderboardPlayer } = await import(
-      '../core/extras/arenaRatingService.js'
-    )
+    const {
+      getByWallet,
+      getDailyLeaderboard,
+      getLastHourByWallet,
+      getLastHourLeaderboard,
+      getLeaderboard,
+      toLeaderboardPlayer,
+    } = await import('../core/extras/arenaRatingService.js')
     const limit = req.query?.limit
-    const daily = req.query?.period === 'daily'
-    const players = daily ? await getDailyLeaderboard(ratingsDb, limit) : await getLeaderboard(ratingsDb, limit)
+    const periodParam = req.query?.period
+    const daily = periodParam === 'daily'
+    const lastHour = periodParam === 'last'
     const wallet = typeof req.query?.wallet === 'string' ? req.query.wallet : null
-    const youRow = wallet ? await getByWallet(ratingsDb, wallet) : null
+
+    let players
+    let youRow
+    if (lastHour) {
+      players = await getLastHourLeaderboard(ratingsDb, limit)
+      youRow = wallet ? await getLastHourByWallet(ratingsDb, wallet) : null
+    } else if (daily) {
+      players = await getDailyLeaderboard(ratingsDb, limit)
+      youRow = wallet ? await getByWallet(ratingsDb, wallet) : null
+    } else {
+      players = await getLeaderboard(ratingsDb, limit)
+      youRow = wallet ? await getByWallet(ratingsDb, wallet) : null
+    }
+
+    const period = lastHour ? 'last' : daily ? 'daily' : 'all'
     return {
-      period: daily ? 'daily' : 'all',
+      period,
       resetsAt: daily
         ? (() => {
             // next UTC hour boundary
@@ -220,8 +240,8 @@ fastify.get('/api/arena/leaderboard', async (req, reply) => {
             ).toISOString()
           })()
         : null,
-      players: players.map(row => toLeaderboardPlayer(row, { daily })),
-      you: toLeaderboardPlayer(youRow, { daily }),
+      players: players.map(row => toLeaderboardPlayer(row, { daily, lastHour })),
+      you: toLeaderboardPlayer(youRow, { daily, lastHour }),
     }
   } catch (err) {
     console.error('[arena-rating] leaderboard failed:', err)

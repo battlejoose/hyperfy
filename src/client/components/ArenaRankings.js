@@ -22,8 +22,13 @@ export function arenaApiRoot() {
 export function leaderboardUrl(wallet, limit = 25, period = 'all') {
   const params = new URLSearchParams({ limit: String(limit) })
   if (wallet) params.set('wallet', wallet)
-  if (period === 'daily') params.set('period', 'daily')
+  if (period === 'daily' || period === 'last') params.set('period', period)
   return `${arenaApiRoot()}/arena/leaderboard?${params}`
+}
+
+function normalizePeriod(period) {
+  if (period === 'daily' || period === 'last') return period
+  return 'all'
 }
 
 export async function fetchArenaLeaderboard(wallet, limit = 25, period = 'all') {
@@ -40,7 +45,7 @@ export async function fetchArenaLeaderboard(wallet, limit = 25, period = 'all') 
   return {
     players,
     you,
-    period: data.period === 'daily' ? 'daily' : 'all',
+    period: normalizePeriod(data.period),
     resetsAt: data.resetsAt || null,
   }
 }
@@ -80,7 +85,9 @@ export function ArenaRankingsPanel({
     emptyMessage ||
     (period === 'daily'
       ? 'No hourly rankings yet. Play a paid battle royale this hour.'
-      : 'No rated fighters yet. Enter the arena and play a paid battle royale.')
+      : period === 'last'
+        ? 'No last-hour rankings yet. They appear after the first hourly wipe.'
+        : 'No rated fighters yet. Enter the arena and play a paid battle royale.')
   return (
     <>
       {loading && !rows.length && <div className='rank-status'>Loading…</div>}
@@ -117,11 +124,13 @@ export function ArenaRankingsPanel({
           You: {you.rating} rating · {you.kills}K / {you.deaths}D · {you.wins} wins
         </div>
       )}
-      {you && period === 'daily' && (
+      {you && (period === 'daily' || period === 'last') && (
         <div className='rank-you'>
           {you.rating != null
             ? `You: ${you.rating} rating · ${you.kills}K / ${you.deaths}D · ${you.wins} wins`
-            : 'You: unranked this hour'}
+            : period === 'last'
+              ? 'You: unranked last hour'
+              : 'You: unranked this hour'}
         </div>
       )}
     </>
@@ -144,6 +153,13 @@ function RankPeriodTabs({ period, onChange }) {
         onClick={() => onChange('daily')}
       >
         Hourly
+      </button>
+      <button
+        type='button'
+        className={`rank-tab${period === 'last' ? ' active' : ''}`}
+        onClick={() => onChange('last')}
+      >
+        Last Hour
       </button>
     </div>
   )
@@ -232,17 +248,19 @@ const titleRankingsCss = css`
     flex-shrink: 0;
   }
   .rank-tab {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
     border: 1px solid rgba(242, 230, 208, 0.28);
     border-radius: 0.35rem;
     background: rgba(255, 255, 255, 0.04);
     color: rgba(242, 230, 208, 0.72);
-    font-size: 0.65rem;
+    font-size: 0.58rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 0.28rem 0.35rem;
+    padding: 0.28rem 0.2rem;
     cursor: pointer;
+    white-space: nowrap;
     &.active {
       background: rgba(251, 191, 36, 0.16);
       border-color: rgba(251, 191, 36, 0.45);
@@ -354,11 +372,13 @@ export function TitleArenaRankings() {
           You: {you.rating} rating · {you.kills}K / {you.deaths}D · {you.wins} wins
         </div>
       )}
-      {you && period === 'daily' && (
+      {you && (period === 'daily' || period === 'last') && (
         <div className='rank-you'>
           {you.rating != null
             ? `You: ${you.rating} rating · ${you.kills}K / ${you.deaths}D · ${you.wins} wins`
-            : 'You: unranked this hour'}
+            : period === 'last'
+              ? 'You: unranked last hour'
+              : 'You: unranked this hour'}
         </div>
       )}
     </div>
@@ -451,17 +471,19 @@ const queueRankingsCss = css`
     flex-shrink: 0;
   }
   .rank-tab {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
     border: 1px solid rgba(61, 40, 23, 0.3);
     border-radius: 0.3rem;
     background: rgba(255, 255, 255, 0.35);
     color: #5c4033;
-    font-size: 0.62rem;
+    font-size: 0.55rem;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
-    padding: 0.25rem 0.3rem;
+    padding: 0.25rem 0.15rem;
     cursor: pointer;
+    white-space: nowrap;
     &.active {
       background: rgba(122, 21, 21, 0.12);
       border-color: rgba(122, 21, 21, 0.4);
@@ -583,7 +605,13 @@ export function QueueArenaRankings() {
               error={error}
               limit={25}
               period={period}
-              emptyMessage={period === 'daily' ? 'No hourly rankings yet.' : 'No rated fighters yet.'}
+              emptyMessage={
+                period === 'daily'
+                  ? 'No hourly rankings yet.'
+                  : period === 'last'
+                    ? 'No last-hour rankings yet.'
+                    : 'No rated fighters yet.'
+              }
             />
           </div>
           {you && period === 'all' && you.rating != null && (
@@ -591,11 +619,13 @@ export function QueueArenaRankings() {
               You: {you.rating} · {you.kills}K/{you.deaths}D · {you.wins}W
             </div>
           )}
-          {you && period === 'daily' && (
+          {you && (period === 'daily' || period === 'last') && (
             <div className='rank-you'>
               {you.rating != null
                 ? `You: ${you.rating} · ${you.kills}K/${you.deaths}D · ${you.wins}W`
-                : 'You: unranked this hour'}
+                : period === 'last'
+                  ? 'You: unranked last hour'
+                  : 'You: unranked this hour'}
             </div>
           )}
         </div>

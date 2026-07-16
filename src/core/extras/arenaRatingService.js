@@ -16,6 +16,11 @@ export function ratingPeriodKey(when = moment.utc()) {
   return moment.utc(when).format('YYYY-MM-DDTHH')
 }
 
+/** Previous UTC hour key — used for the frozen "Last Hour" board. */
+export function previousRatingPeriodKey(when = moment.utc()) {
+  return moment.utc(when).subtract(1, 'hour').format('YYYY-MM-DDTHH')
+}
+
 function normalizeUsername(username) {
   const name = typeof username === 'string' ? username.trim() : ''
   return name.slice(0, 24) || 'Gladiator'
@@ -29,6 +34,43 @@ function freshDailyFields(period = ratingPeriodKey()) {
     daily_deaths: 0,
     daily_wins: 0,
   }
+}
+
+/**
+ * Freeze the previous UTC hour's hourly board into `arena_last_hour` before
+ * lazy wipes destroy it. Safe to call often — no-ops once that hour is stored.
+ */
+export async function ensureLastHourSnapshot(db) {
+  const prev = previousRatingPeriodKey()
+  const existing = await db('arena_last_hour').select('period').first()
+  if (existing?.period === prev) return
+
+  const rows = await db('arena_ratings')
+    .where('daily_day', prev)
+    .whereNotNull('daily_rating')
+    .orderBy('daily_rating', 'desc')
+    .limit(100)
+
+  await db.transaction(async trx => {
+    // Re-check inside the transaction in case another request already snapshotted
+    const again = await trx('arena_last_hour').select('period').first()
+    if (again?.period === prev) return
+
+    await trx('arena_last_hour').del()
+    if (!rows.length) return
+
+    await trx('arena_last_hour').insert(
+      rows.map(r => ({
+        wallet_pubkey: r.wallet_pubkey,
+        username: r.username,
+        rating: r.daily_rating,
+        kills: r.daily_kills || 0,
+        deaths: r.daily_deaths || 0,
+        wins: r.daily_wins || 0,
+        period: prev,
+      }))
+    )
+  })
 }
 
 async function ensureRow(db, walletPubkey, username) {
@@ -55,12 +97,14 @@ async function ensureRow(db, walletPubkey, username) {
 /**
  * Lazy wipe: if the UTC hour rolled, reset this wallet's hourly rating to 1000
  * with zeroed hourly K/D/W before applying this period's event.
+ * Snapshots the previous hour's board first so "Last Hour" stays available.
  */
 async function ensureDailyPeriod(db, walletPubkey) {
   const row = await db('arena_ratings').where('wallet_pubkey', walletPubkey).first()
   if (!row) return
   const period = ratingPeriodKey()
   if (row.daily_day === period && row.daily_rating != null) return
+  await ensureLastHourSnapshot(db)
   await db('arena_ratings').where('wallet_pubkey', walletPubkey).update(freshDailyFields(period))
 }
 
@@ -147,6 +191,8 @@ export async function getLeaderboard(db, limit = 25) {
 export async function getDailyLeaderboard(db, limit = 25) {
   const safeLimit = Math.max(1, Math.min(100, Number(limit) || 25))
   const period = ratingPeriodKey()
+  // Catch hour rollover even before the first paid event of the new hour
+  await ensureLastHourSnapshot(db)
   return db('arena_ratings')
     .where('daily_day', period)
     .whereNotNull('daily_rating')
@@ -154,9 +200,32 @@ export async function getDailyLeaderboard(db, limit = 25) {
     .limit(safeLimit)
 }
 
+/** Frozen previous UTC hour board (snapshot taken when the hourly list wipes). */
+export async function getLastHourLeaderboard(db, limit = 25) {
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 25))
+  await ensureLastHourSnapshot(db)
+  return db('arena_last_hour').orderBy('rating', 'desc').limit(safeLimit)
+}
+
+export async function getLastHourByWallet(db, walletPubkey) {
+  if (!walletPubkey) return null
+  await ensureLastHourSnapshot(db)
+  return db('arena_last_hour').where('wallet_pubkey', walletPubkey).first()
+}
+
 /** Map a DB row to the API shape. Hourly board uses this hour's wiped rating + stats. */
-export function toLeaderboardPlayer(row, { daily = false } = {}) {
+export function toLeaderboardPlayer(row, { daily = false, lastHour = false } = {}) {
   if (!row) return null
+  if (lastHour) {
+    return {
+      wallet: row.wallet_pubkey,
+      username: row.username,
+      rating: row.rating,
+      kills: row.kills || 0,
+      deaths: row.deaths || 0,
+      wins: row.wins || 0,
+    }
+  }
   const period = ratingPeriodKey()
   const dailyActive = row.daily_day === period && row.daily_rating != null
   if (daily) {

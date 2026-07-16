@@ -34,9 +34,28 @@ export async function ensureArenaRatingsTable(db) {
       table.index(['rating'], 'arena_ratings_rating_idx')
       table.index(['daily_day', 'daily_rating'], 'arena_ratings_daily_idx')
     })
-    return
+  } else {
+    await ensureArenaDailyColumns(db)
   }
-  await ensureArenaDailyColumns(db)
+  await ensureArenaLastHourTable(db)
+}
+
+/** Frozen copy of the previous UTC hour's hourly board (replaced each hour wipe). */
+export async function ensureArenaLastHourTable(db) {
+  const exists = await db.schema.hasTable('arena_last_hour')
+  if (exists) return
+  console.log('[db] creating arena_last_hour table')
+  await db.schema.createTable('arena_last_hour', table => {
+    table.string('wallet_pubkey').primary()
+    table.string('username').notNullable()
+    table.integer('rating').notNullable()
+    table.integer('kills').notNullable().defaultTo(0)
+    table.integer('deaths').notNullable().defaultTo(0)
+    table.integer('wins').notNullable().defaultTo(0)
+    table.string('period').notNullable() // YYYY-MM-DDTHH of the archived hour
+    table.index(['rating'], 'arena_last_hour_rating_idx')
+    table.index(['period'], 'arena_last_hour_period_idx')
+  })
 }
 
 /** Parallel hourly rating (starts at 1000, same deltas; lazy-wiped each UTC hour). */
