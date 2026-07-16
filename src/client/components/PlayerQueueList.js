@@ -17,6 +17,7 @@ import {
   prefetchEntryBlockhash,
 } from '../extras/solanaWallet.js'
 import { QueueArenaRankings } from './ArenaRankings'
+import { BettingPanel } from './BettingPanel'
 
 const SCROLL_SRC = '/assets/scroll.png'
 const LEFT_CLICK_ICON = '/assets/leftclick.png'
@@ -127,11 +128,11 @@ export function PlayerQueueList({ world }) {
     return () => world.off('pointer-lock', onPointerLock)
   }, [world])
 
-  // countdown to the next battle royale
+  // countdown to the next paid event (queue + betting window share endsAt)
   useEffect(() => {
     if (!match) return
     const update = () => {
-      if (match.phase !== 'queue' || !match.endsAt) {
+      if ((match.phase !== 'queue' && match.phase !== 'betting') || !match.endsAt) {
         setRemaining(0)
         return
       }
@@ -199,6 +200,7 @@ export function PlayerQueueList({ world }) {
   }, [pending])
 
   const phase = match?.phase ?? 'queue'
+  const isBetting = phase === 'betting'
   const isPaidEvent = phase === 'battle' || phase === 'tournament'
   const isTournamentMode = match?.mode === 'tournament'
   const eventLabel = isTournamentMode ? 'Tournament' : 'Battle Royale'
@@ -207,7 +209,8 @@ export function PlayerQueueList({ world }) {
   // during a paid event the panel is not accessible at all
   if (isPaidEvent) return null
   // free-play fighters only see the panel after pressing escape (pointer unlocked)
-  if (!isSpectator && pointerLocked) return null
+  // Betting window stays visible so everyone can place a pick
+  if (!isSpectator && pointerLocked && !isBetting) return null
 
   const queuedIds = match?.queuedIds ?? []
   const isQueued = queuedIds.includes(world.network?.id)
@@ -769,13 +772,15 @@ export function PlayerQueueList({ world }) {
             <div className='arena-col-center'>
               <div className='arena-countdown'>
                 <div className='arena-countdown-words'>
-                  <span>Next</span>
-                  <span>{eventShort}</span>
+                  <span>{isBetting ? 'Bets' : 'Next'}</span>
+                  <span>{isBetting ? 'Close' : eventShort}</span>
                 </div>
                 <div className='arena-countdown-colon'>/</div>
                 <div className='arena-countdown-time'>{formatTime(remaining)}</div>
               </div>
-              {isQueued ? (
+              {isBetting ? (
+                <BettingPanel world={world} wallet={wallet} setWallet={setWallet} remaining={remaining} />
+              ) : isQueued ? (
                 <div className='arena-queued'>You are in the {eventLabel.toLowerCase()} queue!</div>
               ) : walletChoices ? (
                 <div className='arena-wallet-list'>
@@ -802,8 +807,8 @@ export function PlayerQueueList({ world }) {
                     : `Join ${eventShort} (${formatFeeLabel(BR_ENTRY_FEE_LAMPORTS)} SOL)`}
                 </button>
               )}
-              {notice ? <div className='arena-notice'>{notice}</div> : null}
-              {error ? <div className='arena-error'>{error}</div> : null}
+              {!isBetting && notice ? <div className='arena-notice'>{notice}</div> : null}
+              {!isBetting && error ? <div className='arena-error'>{error}</div> : null}
             </div>
             <div className='arena-col'>
               {isSpectator ? (

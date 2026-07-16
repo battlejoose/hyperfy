@@ -16,7 +16,13 @@ import {
   createArenaRemnants,
   serializeArenaRemnants,
 } from '../extras/arenaRemnants'
-import { verifyEntryPayment, findRecentEntryPayment, sendPayout } from '../extras/solanaPayments.js'
+import {
+  verifyEntryPayment,
+  verifyBetPayment,
+  findRecentEntryPayment,
+  findRecentBetPayment,
+  sendPayout,
+} from '../extras/solanaPayments.js'
 import {
   applyDeath as applyArenaDeathRating,
   applyKill as applyArenaKillRating,
@@ -25,6 +31,8 @@ import {
 } from '../extras/arenaRatingService.js'
 import { PublicKey } from '@solana/web3.js'
 import {
+  BET_STAKE_LAMPORTS,
+  BETTING_WINDOW_SECONDS,
   BR_ENTRY_FEE_LAMPORTS,
   BR_HOUSE_FEE_PERCENT,
   BR_QUEUE_DURATION_SECONDS,
@@ -160,9 +168,9 @@ export class ServerNetwork extends System {
     // Paid arena cycle: queue period (free-play + paid signups), then either a
     // battle royale or a 1v1 bracket tournament, alternating each completed event.
     this.battleRoyale = {
-      phase: 'queue', // 'queue' | 'battle' | 'tournament'
+      phase: 'queue', // 'queue' | 'betting' | 'battle' | 'tournament'
       mode: 'br', // upcoming event: 'br' | 'tournament'
-      endsAt: 0, // server time (seconds) when the queue period ends
+      endsAt: 0, // server time (seconds) when the queue / betting window ends
       queued: new Map(), // playerId -> { wallet }
       nextQueued: new Map(), // paid entries verified too late for the current cycle
       alive: new Set(), // fighters currently in the arena fight
@@ -171,9 +179,22 @@ export class ServerNetwork extends System {
       currentMatchId: null,
       bracketStatus: null, // 'preview' | 'result' | 'final'
       matchTimerId: null,
+      queueLocked: false,
+      betting: new Map(), // bettorPlayerId -> { wallet, pickId, signature }
+      bettingPotLamports: 0,
+      bettingPickIds: [], // queued fighter ids frozen when betting opens
     }
     this.brTimerId = null
+    this.brBettingTimerId = null
     this.startQueuePhase()
+  }
+
+  clearBettingState() {
+    const br = this.battleRoyale
+    br.queueLocked = false
+    br.betting.clear()
+    br.bettingPotLamports = 0
+    br.bettingPickIds = []
   }
 
   startQueuePhase() {
@@ -186,12 +207,35 @@ export class ServerNetwork extends System {
     br.alive.clear()
     clearTimeout(br.matchTimerId)
     br.matchTimerId = null
+    this.clearBettingState()
     // payments that verified after the previous queue closed roll into this one
     br.nextQueued.forEach((entry, playerId) => br.queued.set(playerId, entry))
     br.nextQueued.clear()
     clearTimeout(this.brTimerId)
-    this.brTimerId = setTimeout(() => this.beginQueuedEvent(), BR_QUEUE_DURATION_SECONDS * 1000)
+    clearTimeout(this.brBettingTimerId)
+    const queueMs = BR_QUEUE_DURATION_SECONDS * 1000
+    const bettingDelayMs = Math.max(0, (BR_QUEUE_DURATION_SECONDS - BETTING_WINDOW_SECONDS) * 1000)
+    this.brBettingTimerId = setTimeout(() => this.tryBeginBettingPhase(), bettingDelayMs)
+    this.brTimerId = setTimeout(() => this.beginQueuedEvent(), queueMs)
     this.broadcastMatchState()
+  }
+
+  tryBeginBettingPhase() {
+    const br = this.battleRoyale
+    if (br?.phase !== 'queue') return
+    if (br.queued.size < 2) return
+    this.beginBettingPhase()
+  }
+
+  beginBettingPhase() {
+    const br = this.battleRoyale
+    if (br.phase !== 'queue' || br.queued.size < 2) return
+    br.phase = 'betting'
+    br.queueLocked = true
+    br.bettingPickIds = [...br.queued.keys()]
+    this.announce('Queue locked — 60 seconds to bet on the champion!')
+    this.broadcastMatchState()
+    this.broadcastBettingState()
   }
 
   flipArenaMode() {
@@ -201,16 +245,23 @@ export class ServerNetwork extends System {
 
   beginQueuedEvent() {
     const br = this.battleRoyale
+    clearTimeout(this.brBettingTimerId)
+    this.brBettingTimerId = null
     if (br.queued.size < 2) {
       if (br.queued.size === 1) {
         const label = br.mode === 'tournament' ? 'Tournament' : 'Battle royale'
         this.announce(`${label} needs at least 2 fighters — queue stays open another round.`)
+      }
+      if (br.betting.size > 0) {
+        this.refundAllBets('Event cancelled — bets refunded.')
       }
       // Flip so the next queue advertises the other mode
       this.flipArenaMode()
       this.startQueuePhase()
       return
     }
+    // Betting window closes when the event starts
+    br.queueLocked = true
     if (br.mode === 'tournament') {
       this.beginTournament()
     } else {
@@ -221,7 +272,15 @@ export class ServerNetwork extends System {
   getMatchStatePayload() {
     const br = this.battleRoyale
     if (!br) {
-      return { phase: 'queue', mode: 'br', endsAt: 0, queuedIds: [], potLamports: 0, aliveCount: 0 }
+      return {
+        phase: 'queue',
+        mode: 'br',
+        endsAt: 0,
+        queuedIds: [],
+        potLamports: 0,
+        aliveCount: 0,
+        queueLocked: false,
+      }
     }
     return {
       phase: br.phase,
@@ -230,11 +289,53 @@ export class ServerNetwork extends System {
       queuedIds: [...br.queued.keys()],
       aliveCount: br.alive.size,
       potLamports: br.queued.size * BR_ENTRY_FEE_LAMPORTS,
+      queueLocked: !!br.queueLocked,
     }
   }
 
   broadcastMatchState() {
     this.send('matchState', this.getMatchStatePayload())
+  }
+
+  getBettingStakesByPick() {
+    const br = this.battleRoyale
+    const stakes = {}
+    for (const pickId of br.bettingPickIds) {
+      stakes[pickId] = 0
+    }
+    br.betting.forEach(bet => {
+      stakes[bet.pickId] = (stakes[bet.pickId] || 0) + BET_STAKE_LAMPORTS
+    })
+    return stakes
+  }
+
+  getBettingStatePayload(forPlayerId = null) {
+    const br = this.battleRoyale
+    if (!br || (br.phase !== 'betting' && br.betting.size === 0 && !br.bettingPickIds.length)) {
+      return null
+    }
+    const yourBet = forPlayerId && br.betting.has(forPlayerId)
+      ? { pickId: br.betting.get(forPlayerId).pickId }
+      : null
+    return {
+      endsAt: br.endsAt,
+      potLamports: br.bettingPotLamports,
+      stakeLamports: BET_STAKE_LAMPORTS,
+      open: br.phase === 'betting',
+      picks: br.bettingPickIds.map(id => this.resolveBracketPlayer(id)).filter(Boolean),
+      stakes: this.getBettingStakesByPick(),
+      yourBet,
+    }
+  }
+
+  broadcastBettingState() {
+    const br = this.battleRoyale
+    if (!br) return
+    this.sockets.forEach(socket => {
+      const playerId = socket.player?.data?.id
+      const payload = this.getBettingStatePayload(playerId || null)
+      if (payload) this.sendTo(socket.id, 'bettingState', payload)
+    })
   }
 
   announce(body) {
@@ -409,6 +510,7 @@ export class ServerNetwork extends System {
   endBattleRoyale(winnerId) {
     const br = this.battleRoyale
     this.payEventWinner(winnerId, 'battle royale')
+    this.settleBets(winnerId)
     br.queued.clear()
     br.alive.clear()
     br.potLamports = 0
@@ -427,6 +529,9 @@ export class ServerNetwork extends System {
 
     if (connectedQueued.length < 2) {
       this.announce('Tournament needs at least 2 connected fighters — queue stays open another round.')
+      if (br.betting.size > 0) {
+        this.refundAllBets('Tournament cancelled — bets refunded.')
+      }
       this.flipArenaMode()
       this.startQueuePhase()
       return
@@ -614,6 +719,7 @@ export class ServerNetwork extends System {
     clearTimeout(br.matchTimerId)
     br.matchTimerId = null
     this.payEventWinner(championId, 'tournament')
+    this.settleBets(championId)
     br.queued.clear()
     br.alive.clear()
     br.potLamports = 0
@@ -622,6 +728,54 @@ export class ServerNetwork extends System {
     br.bracketStatus = null
     this.flipArenaMode()
     this.startQueuePhase()
+  }
+
+  refundAllBets(message) {
+    const br = this.battleRoyale
+    if (!br?.betting.size) {
+      this.clearBettingState()
+      return
+    }
+    if (message) this.announce(message)
+    const bets = [...br.betting.entries()]
+    this.clearBettingState()
+    for (const [playerId, bet] of bets) {
+      sendPayout(bet.wallet, BET_STAKE_LAMPORTS, playerId, 'bet_refund').catch(err =>
+        console.error('[solana] Bet refund failed:', playerId, err)
+      )
+    }
+  }
+
+  settleBets(championId) {
+    const br = this.battleRoyale
+    if (!br?.betting.size) {
+      this.clearBettingState()
+      return
+    }
+    if (!championId) {
+      this.refundAllBets('No champion — bets refunded.')
+      return
+    }
+
+    const winners = [...br.betting.entries()].filter(([, bet]) => bet.pickId === championId)
+    const pot = br.bettingPotLamports
+    const payoutPool = Math.floor((pot * (100 - BR_HOUSE_FEE_PERCENT)) / 100)
+    this.clearBettingState()
+
+    if (!winners.length) {
+      this.announce('No winning bets this round — the betting pot goes to the arena.')
+      return
+    }
+
+    const share = Math.floor(payoutPool / winners.length)
+    if (share <= 0) return
+    const shareSol = share / LAMPORTS_PER_SOL
+    this.announce(`${winners.length} bettor${winners.length === 1 ? '' : 's'} split ${shareSol} SOL each on the champion.`)
+    for (const [playerId, bet] of winners) {
+      sendPayout(bet.wallet, share, playerId, 'bet_win').catch(err =>
+        console.error('[solana] Bet payout failed:', playerId, err)
+      )
+    }
   }
 
   setPlayerSessionAvatar(player, sessionAvatar) {
@@ -988,6 +1142,7 @@ export class ServerNetwork extends System {
         scoreboard: this.getScoreboardPayload(),
         matchState: this.getMatchStatePayload(),
         tournamentBracket: this.getTournamentBracketPayload(),
+        bettingState: this.getBettingStatePayload(socket.player?.data?.id),
         arenaRemnants: serializeArenaRemnants(this.arenaRemnants),
       })
 
@@ -1049,23 +1204,25 @@ export class ServerNetwork extends System {
     if (br.phase === 'queue') {
       return br.mode === 'tournament' ? 'tournament' : 'battle royale'
     }
-    // During an event, mode still names the current event; next queue uses the flipped mode
+    // Betting lock / live event: next queue uses the flipped mode
     return br.mode === 'tournament' ? 'battle royale' : 'tournament'
   }
 
   /** Put a player whose entry payment is verified into the queue (or the next one if a battle is running). */
   queueVerifiedEntry(socket, playerId, wallet) {
     const br = this.battleRoyale
-    if (br.phase === 'queue') {
+    if (br.phase === 'queue' && !br.queueLocked) {
       br.queued.set(playerId, { wallet })
       this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true })
     } else {
+      // Betting lock / live event: roll paid entry into the following queue cycle
       br.nextQueued.set(playerId, { wallet })
       this.sendTo(socket.id, 'joinBattleRoyaleResult', { ok: true, nextRound: true })
       const name = socket.player?.data?.name || 'A gladiator'
       this.announce(`${name} is locked in for the next ${this.getNextEventLabel()}.`)
     }
     this.broadcastMatchState()
+    if (br.phase === 'betting') this.broadcastBettingState()
   }
 
   /**
@@ -1202,6 +1359,99 @@ export class ServerNetwork extends System {
     // the payment is recorded either way, so never drop it: roll it into the
     // next cycle when a battle is underway.
     this.queueVerifiedEntry(socket, playerId, wallet)
+  }
+
+  onPlaceBet = async (socket, data) => {
+    if (!socket.player) return
+    const playerId = socket.player.data.id
+    const br = this.battleRoyale
+
+    if (br.phase !== 'betting') {
+      this.sendTo(socket.id, 'placeBetResult', { ok: false, error: 'Betting is closed.' })
+      return
+    }
+    if (br.betting.has(playerId)) {
+      this.sendTo(socket.id, 'placeBetResult', {
+        ok: true,
+        alreadyBet: true,
+        pickId: br.betting.get(playerId).pickId,
+      })
+      return
+    }
+
+    const pickId = data?.pickId
+    const signature = data?.signature
+    const wallet = data?.wallet
+    const recover = !!data?.recover
+    if (!pickId || !br.bettingPickIds.includes(pickId)) {
+      this.sendTo(socket.id, 'placeBetResult', { ok: false, error: 'Invalid fighter pick.' })
+      return
+    }
+    if (!wallet || (!signature && !recover)) {
+      this.sendTo(socket.id, 'placeBetResult', { ok: false, error: 'Payment required' })
+      return
+    }
+
+    if (socket.betVerifying) {
+      this.sendTo(socket.id, 'placeBetResult', {
+        ok: false,
+        pending: true,
+        error: 'Still verifying your bet — hang tight.',
+      })
+      return
+    }
+    socket.betVerifying = true
+
+    let recordedSignature = signature || null
+    try {
+      if (signature) {
+        await verifyBetPayment({ signature, walletPubkey: wallet, playerId })
+      } else {
+        const found = await findRecentBetPayment({ walletPubkey: wallet, playerId })
+        if (!found) {
+          throw new Error('No bet payment found for your wallet.')
+        }
+        recordedSignature = found
+      }
+    } catch (err) {
+      console.error('[solana] Bet verification failed:', err)
+      this.sendTo(socket.id, 'placeBetResult', {
+        ok: false,
+        error: err.message || 'Bet verification failed',
+      })
+      return
+    } finally {
+      socket.betVerifying = false
+    }
+
+    // Betting may have closed while verifying — still accept the recorded stake
+    if (br.phase !== 'betting') {
+      // Event already started or cancelled: refund immediately
+      sendPayout(wallet, BET_STAKE_LAMPORTS, playerId, 'bet_refund').catch(err =>
+        console.error('[solana] Late bet refund failed:', playerId, err)
+      )
+      this.sendTo(socket.id, 'placeBetResult', {
+        ok: false,
+        error: 'Betting closed before your payment verified — stake refunded.',
+      })
+      return
+    }
+    if (br.betting.has(playerId)) {
+      sendPayout(wallet, BET_STAKE_LAMPORTS, playerId, 'bet_refund').catch(err =>
+        console.error('[solana] Duplicate bet refund failed:', playerId, err)
+      )
+      this.sendTo(socket.id, 'placeBetResult', {
+        ok: true,
+        alreadyBet: true,
+        pickId: br.betting.get(playerId).pickId,
+      })
+      return
+    }
+
+    br.betting.set(playerId, { wallet, pickId, signature: recordedSignature })
+    br.bettingPotLamports += BET_STAKE_LAMPORTS
+    this.sendTo(socket.id, 'placeBetResult', { ok: true, pickId })
+    this.broadcastBettingState()
   }
 
   onPlayerHit = async (socket, data) => {

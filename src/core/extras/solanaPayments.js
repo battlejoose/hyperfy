@@ -8,7 +8,7 @@ import {
 } from '@solana/web3.js'
 import { derivePath } from 'ed25519-hd-key'
 import { mnemonicToSeedSync, validateMnemonic } from 'bip39'
-import { BR_ENTRY_FEE_LAMPORTS } from './solanaConfig.js'
+import { BET_STAKE_LAMPORTS, BR_ENTRY_FEE_LAMPORTS } from './solanaConfig.js'
 
 const DEFAULT_DERIVATION_PATH = "m/44'/501'/0'/0'"
 
@@ -62,11 +62,11 @@ function getAccountKeys(tx) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 /**
- * Check a single confirmed transaction against the entry fee rules.
+ * Check a single confirmed transaction against a fixed treasury transfer amount.
  * Throws 'not found' when the RPC has not seen the tx yet (retryable),
  * or a validation error when the tx exists but is not a valid payment.
  */
-async function checkEntryTx(signature, walletPubkey) {
+async function checkTreasuryPaymentTx(signature, walletPubkey, lamports, label = 'payment') {
   const tx = await connection.getTransaction(signature, {
     commitment: 'confirmed',
     maxSupportedTransactionVersion: 0,
@@ -99,35 +99,43 @@ async function checkEntryTx(signature, walletPubkey) {
   const treasuryDelta = tx.meta.postBalances[treasuryIndex] - tx.meta.preBalances[treasuryIndex]
   const senderDelta = tx.meta.preBalances[senderIndex] - tx.meta.postBalances[senderIndex]
 
-  if (treasuryDelta !== BR_ENTRY_FEE_LAMPORTS) {
-    throw new Error('Incorrect entry fee amount')
+  if (treasuryDelta !== lamports) {
+    throw new Error(`Incorrect ${label} amount`)
   }
-  if (senderDelta < BR_ENTRY_FEE_LAMPORTS) {
-    throw new Error('Sender did not pay entry fee')
+  if (senderDelta < lamports) {
+    throw new Error(`Sender did not pay ${label}`)
   }
 
   return true
 }
 
-async function recordEntryTx(signature, playerId) {
+async function recordSolanaTx(signature, playerId, type) {
   await db('solana_txs').insert({
     signature,
     player_id: playerId,
-    type: 'br_entry',
+    type,
     created_at: new Date().toISOString(),
   })
 }
 
-export async function verifyEntryPayment({ signature, walletPubkey, playerId, attempts = 6, delayMs = 3000 }) {
+async function verifyTreasuryPayment({
+  signature,
+  walletPubkey,
+  playerId,
+  lamports,
+  type,
+  label,
+  attempts = 6,
+  delayMs = 3000,
+}) {
   const existing = await db('solana_txs').where('signature', signature).first()
   if (existing) {
     throw new Error('Transaction already used')
   }
 
-  // the client's RPC node may be ahead of ours — retry while the tx propagates
   for (let attempt = 1; ; attempt++) {
     try {
-      await checkEntryTx(signature, walletPubkey)
+      await checkTreasuryPaymentTx(signature, walletPubkey, lamports, label)
       break
     } catch (err) {
       if (!err.retryable || attempt >= attempts) throw err
@@ -135,17 +143,20 @@ export async function verifyEntryPayment({ signature, walletPubkey, playerId, at
     }
   }
 
-  await recordEntryTx(signature, playerId)
+  await recordSolanaTx(signature, playerId, type)
   return true
 }
 
-/**
- * Recovery path: the player says they paid but the wallet never returned a
- * signature (e.g. the Phantom extension port died mid-flow). Scan the wallet's
- * recent transactions for an unclaimed entry payment to the treasury.
- * Returns the signature when found and recorded, or null.
- */
-export async function findRecentEntryPayment({ walletPubkey, playerId, maxAgeSeconds = 600, attempts = 6, delayMs = 5000 }) {
+async function findRecentTreasuryPayment({
+  walletPubkey,
+  playerId,
+  lamports,
+  type,
+  label,
+  maxAgeSeconds = 600,
+  attempts = 6,
+  delayMs = 5000,
+}) {
   const senderPubkey = new PublicKey(walletPubkey)
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -158,21 +169,78 @@ export async function findRecentEntryPayment({ walletPubkey, playerId, maxAgeSec
         const existing = await db('solana_txs').where('signature', info.signature).first()
         if (existing) continue
         try {
-          await checkEntryTx(info.signature, walletPubkey)
+          await checkTreasuryPaymentTx(info.signature, walletPubkey, lamports, label)
         } catch {
           continue
         }
-        await recordEntryTx(info.signature, playerId)
+        await recordSolanaTx(info.signature, playerId, type)
         return info.signature
       }
     } catch (err) {
-      console.error('[solana] Entry payment recovery scan failed:', err)
+      console.error(`[solana] ${label} recovery scan failed:`, err)
     }
-    // the payment may still be propagating — wait and rescan
     if (attempt < attempts) await sleep(delayMs)
   }
 
   return null
+}
+
+export async function verifyEntryPayment({ signature, walletPubkey, playerId, attempts = 6, delayMs = 3000 }) {
+  return verifyTreasuryPayment({
+    signature,
+    walletPubkey,
+    playerId,
+    lamports: BR_ENTRY_FEE_LAMPORTS,
+    type: 'br_entry',
+    label: 'entry fee',
+    attempts,
+    delayMs,
+  })
+}
+
+/**
+ * Recovery path: the player says they paid but the wallet never returned a
+ * signature (e.g. the Phantom extension port died mid-flow). Scan the wallet's
+ * recent transactions for an unclaimed entry payment to the treasury.
+ * Returns the signature when found and recorded, or null.
+ */
+export async function findRecentEntryPayment({ walletPubkey, playerId, maxAgeSeconds = 600, attempts = 6, delayMs = 5000 }) {
+  return findRecentTreasuryPayment({
+    walletPubkey,
+    playerId,
+    lamports: BR_ENTRY_FEE_LAMPORTS,
+    type: 'br_entry',
+    label: 'entry fee',
+    maxAgeSeconds,
+    attempts,
+    delayMs,
+  })
+}
+
+export async function verifyBetPayment({ signature, walletPubkey, playerId, attempts = 6, delayMs = 3000 }) {
+  return verifyTreasuryPayment({
+    signature,
+    walletPubkey,
+    playerId,
+    lamports: BET_STAKE_LAMPORTS,
+    type: 'bet',
+    label: 'bet',
+    attempts,
+    delayMs,
+  })
+}
+
+export async function findRecentBetPayment({ walletPubkey, playerId, maxAgeSeconds = 600, attempts = 6, delayMs = 5000 }) {
+  return findRecentTreasuryPayment({
+    walletPubkey,
+    playerId,
+    lamports: BET_STAKE_LAMPORTS,
+    type: 'bet',
+    label: 'bet',
+    maxAgeSeconds,
+    attempts,
+    delayMs,
+  })
 }
 
 /** Send lamports from the treasury to a wallet (e.g. the battle royale winner's pot). */

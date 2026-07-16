@@ -79,7 +79,7 @@ export function MatchRound({ world }) {
   useEffect(() => {
     if (!match) return
     const update = () => {
-      if (match.phase !== 'queue' || !match.endsAt) {
+      if ((match.phase !== 'queue' && match.phase !== 'betting') || !match.endsAt) {
         setRemaining(0)
         return
       }
@@ -92,7 +92,10 @@ export function MatchRound({ world }) {
 
   const queuedCount = match?.queuedIds?.length ?? 0
   const countdownActive =
-    match?.phase === 'queue' && queuedCount >= 2 && remaining >= 1 && remaining <= COUNTDOWN_SECONDS
+    (match?.phase === 'queue' || match?.phase === 'betting') &&
+    queuedCount >= 2 &&
+    remaining >= 1 &&
+    remaining <= COUNTDOWN_SECONDS
 
   useEffect(() => {
     if (!countdownActive) return

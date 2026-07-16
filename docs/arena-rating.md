@@ -13,6 +13,16 @@ The arena alternates modes each queue cycle (`ServerNetwork` `battleRoyale.mode`
 - `matchState.mode` is the **upcoming** event during queue (and names the current event while it is live).
 - Join packet name stays `joinBattleRoyale` (less churn); UI copy is mode-aware.
 
+### Winner betting (pari-mutuel)
+
+When the queue countdown hits **60 seconds** and at least 2 fighters are queued:
+
+1. Phase becomes `betting`, the **queue locks** (no new fighters for this event; late entry payments roll into `nextQueued`).
+2. Anyone with a wallet can place **one** fixed stake (`BET_STAKE_LAMPORTS`, default `0.01 SOL`) on any queued fighter (including themselves) to win the **event champion** (BR winner or tournament winner).
+3. Betting pot is separate from the fighter entry pot. After the event, bettors who picked the champion split `bettingPot × (100 − house%) / 100` evenly. No winning picks → pot stays with the arena. Cancelled / no-champion events **refund** stakes.
+
+Packets: `placeBet` / `placeBetResult` / `bettingState`. UI: [`BettingPanel.js`](../src/client/components/BettingPanel.js) in the queue scroll during `phase === 'betting'`.
+
 ### Tournament rules
 
 - Sequential **1v1** matches in the arena (one pair at a time).
@@ -119,7 +129,9 @@ Attach the Heroku Postgres addon (`DATABASE_URL`). No extra config is required f
 | [`src/core/extras/arenaRating.js`](../src/core/extras/arenaRating.js) | Delta constants |
 | [`src/core/extras/arenaRatingService.js`](../src/core/extras/arenaRatingService.js) | Knex helpers |
 | [`src/core/extras/tournamentBracket.js`](../src/core/extras/tournamentBracket.js) | Bracket pairings, byes, advance |
+| [`src/core/extras/solanaConfig.js`](../src/core/extras/solanaConfig.js) | Entry / bet stakes, house %, queue + betting window |
 | [`src/client/components/TournamentBracket.js`](../src/client/components/TournamentBracket.js) | Bracket overlay UI |
+| [`src/client/components/BettingPanel.js`](../src/client/components/BettingPanel.js) | Pari-mutuel bet UI during locked queue |
 | [`src/server/db.js`](../src/server/db.js) | World DB migration + DB_URI selection |
 | [`src/server/ratingsDb.js`](../src/server/ratingsDb.js) | Separate ratings DB (Heroku Postgres / local fallback) |
 | [`src/server/index.js`](../src/server/index.js) | Leaderboard HTTP route |
