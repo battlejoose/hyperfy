@@ -29,7 +29,8 @@ function solscanTxUrl(signature) {
 
 function formatSol(amount) {
   if (typeof amount !== 'number' || !Number.isFinite(amount)) return '—'
-  return amount.toFixed(amount < 1 ? 3 : 2)
+  // 4 decimals matches the queue pot label; toFixed(3) wrongly rounds 0.0285 → 0.029
+  return amount.toFixed(4).replace(/\.?0+$/, '')
 }
 
 export function BattleRoyaleVictory({ world }) {
