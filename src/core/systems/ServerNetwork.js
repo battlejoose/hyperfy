@@ -206,7 +206,8 @@ export class ServerNetwork extends System {
         const label = br.mode === 'tournament' ? 'Tournament' : 'Battle royale'
         this.announce(`${label} needs at least 2 fighters — queue stays open another round.`)
       }
-      // Do not flip mode on a failed start
+      // Flip so the next queue advertises the other mode
+      this.flipArenaMode()
       this.startQueuePhase()
       return
     }
@@ -426,6 +427,7 @@ export class ServerNetwork extends System {
 
     if (connectedQueued.length < 2) {
       this.announce('Tournament needs at least 2 connected fighters — queue stays open another round.')
+      this.flipArenaMode()
       this.startQueuePhase()
       return
     }

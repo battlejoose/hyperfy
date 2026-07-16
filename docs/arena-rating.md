@@ -4,12 +4,12 @@ Wallet-keyed persistent ratings for **paid arena events** (Battle Royale and bra
 
 ## Paid event cycle
 
-The arena alternates modes each **completed** queue cycle (`ServerNetwork` `battleRoyale.mode`):
+The arena alternates modes each queue cycle (`ServerNetwork` `battleRoyale.mode`):
 
 `Battle Royale → Tournament → Battle Royale → …`
 
 - Shared queue: same 5‑minute timer, `0.01 SOL` entry (`BR_ENTRY_FEE_LAMPORTS`), 5% house cut, winner pot payout.
-- If a queue ends with fewer than 2 paid fighters, the queue rolls over and **mode does not flip**.
+- Mode flips after a completed event **and** when a queue timer rolls over without enough fighters (&lt; 2), so the next queue always advertises the other option.
 - `matchState.mode` is the **upcoming** event during queue (and names the current event while it is live).
 - Join packet name stays `joinBattleRoyale` (less churn); UI copy is mode-aware.
 
