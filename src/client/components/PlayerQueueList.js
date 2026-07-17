@@ -378,6 +378,10 @@ export function PlayerQueueList({ world }) {
           gap: 0.35rem;
           padding: 1.05rem 3rem 1.15rem;
         }
+        .arena-panel-content.is-betting {
+          padding-top: calc(1.05rem + 12px);
+          padding-bottom: calc(1.15rem + 12px);
+        }
         .arena-row {
           display: flex;
           align-items: flex-start;
@@ -680,6 +684,10 @@ export function PlayerQueueList({ world }) {
           .arena-panel-content {
             padding: 0.75rem 3.5rem 0.9rem;
           }
+          .arena-panel-content.is-betting {
+            padding-top: calc(0.75rem + 12px);
+            padding-bottom: calc(0.9rem + 12px);
+          }
           .arena-row {
             gap: 0.35rem;
             width: 100%;
@@ -770,7 +778,7 @@ export function PlayerQueueList({ world }) {
     >
       <div className='arena-panel'>
         <img className='arena-scroll' src={SCROLL_SRC} alt='' />
-        <div className='arena-panel-content'>
+        <div className={`arena-panel-content${isBetting ? ' is-betting' : ''}`}>
           <div className='arena-row'>
             <div className='arena-col arena-col-left'>
               {wallet ? <div className='arena-wallet-label'>{truncateAddress(wallet)}</div> : null}

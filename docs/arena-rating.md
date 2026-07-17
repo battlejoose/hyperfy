@@ -20,7 +20,7 @@ When the queue countdown hits **60 seconds** and at least 2 fighters are queued:
 1. Phase becomes `betting`, the **queue locks** (no new fighters for this event; late entry payments roll into `nextQueued`).
 2. A custodial multi-outcome **LMSR** market opens on the queued fighters (`LMSR_B` liquidity, min buy `MARKET_MIN_LAMPORTS` = 0.01 SOL).
 3. Anyone can **buy** any SOL amount of shares on one or more fighters, and **sell** (leave) positions before the timer hits 0 — exit price follows the live AMM (can be above/below cost). Each buy/sell **resets the market timer to 60 seconds**.
-4. **1 share** is defined per market as the LMSR quantity that costs the min buy (**0.01 SOL**) on an empty book. UI **bet value** is `round(100 × cost of 1 share now ÷ cost of the first share)` (first share = **100%**).
+4. **1 share** is defined per market as the LMSR quantity that costs the min buy (**0.01 SOL**) on an empty book. UI **bet value** is `round(100 × cost of 1 share now ÷ cost of the first share)` (first share = **100%**). The market table also shows each fighter’s **all-time arena rating** and **total SOL** bet on them.
 5. At event end, remaining collateral (after house cut) is paid **pro-rata** to holders of the champion’s shares. No winning shares → pot to the arena. Cancel / no champion → positions unwound via LMSR sells and refunded.
 
 Packets: `marketBuy` / `marketBuyResult` / `marketSell` / `marketSellResult` / `marketState`. Math: [`lmsrMarket.js`](../src/core/extras/lmsrMarket.js). UI: [`BettingPanel.js`](../src/client/components/BettingPanel.js).

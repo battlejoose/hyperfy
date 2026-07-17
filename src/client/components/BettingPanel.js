@@ -242,39 +242,76 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
         .bet-amount-row {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.4rem;
           justify-content: center;
-          margin: 0.15rem 0 0.1rem;
+          margin: 0.2rem auto 0.15rem;
+          padding: 0.28rem 0.55rem;
+          width: fit-content;
+          border: 1px solid rgba(122, 21, 21, 0.4);
+          border-radius: 0.3rem;
+          background: rgba(255, 255, 255, 0.55);
         }
         .bet-amount-row label {
-          font-size: 0.6rem;
-          color: #5c4033;
-          font-weight: 700;
+          font-size: 0.62rem;
+          color: #7a1515;
+          font-weight: 800;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
+          text-shadow: 0 0 0 #7a1515;
+          -webkit-text-stroke: 0.35px rgba(122, 21, 21, 0.35);
         }
         .bet-amount-row input {
           width: 4.5rem;
-          border: 1px solid rgba(61, 40, 23, 0.3);
+          border: 1.5px solid rgba(122, 21, 21, 0.45);
           border-radius: 0.25rem;
-          background: rgba(255, 255, 255, 0.65);
+          background: rgba(255, 255, 255, 0.9);
           color: #3d2817;
-          font-size: 0.7rem;
-          padding: 0.2rem 0.35rem;
+          font-size: 0.74rem;
+          font-weight: 700;
+          padding: 0.22rem 0.35rem;
           font-variant-numeric: tabular-nums;
+        }
+        .bet-amount-row input:focus {
+          outline: none;
+          border-color: rgba(122, 21, 21, 0.75);
+          box-shadow: 0 0 0 1px rgba(122, 21, 21, 0.2);
         }
         .bet-list {
           display: flex;
           flex-direction: column;
-          gap: 0.28rem;
-          max-height: 11rem;
+          gap: 0.2rem;
+          max-height: 12rem;
           overflow-y: auto;
           padding-right: 0.15rem;
+          width: 100%;
+        }
+        .bet-cols {
+          display: grid;
+          grid-template-columns: minmax(0, 1.4fr) 3.2rem 3.6rem 4.2rem auto;
+          gap: 0.3rem;
+          align-items: center;
+          width: 100%;
+        }
+        .bet-cols-head {
+          padding: 0 0.2rem 0.1rem;
+        }
+        .bet-cols-head span {
+          font-size: 0.48rem;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #5c4033;
+          opacity: 0.9;
+          white-space: nowrap;
+        }
+        .bet-cols-head .bet-col-num {
+          text-align: right;
         }
         .bet-row {
           display: flex;
           flex-direction: column;
-          gap: 0.25rem;
-          padding: 0.32rem 0.35rem;
+          gap: 0.22rem;
+          padding: 0.28rem 0.3rem;
           border: 1px solid rgba(61, 40, 23, 0.22);
           border-radius: 0.25rem;
           background: rgba(255, 255, 255, 0.35);
@@ -283,12 +320,6 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           border-color: rgba(122, 21, 21, 0.45);
           background: rgba(122, 21, 21, 0.06);
         }
-        .bet-row-top {
-          display: grid;
-          grid-template-columns: 1fr auto auto;
-          gap: 0.35rem;
-          align-items: center;
-        }
         .bet-name {
           font-size: 0.68rem;
           font-weight: 700;
@@ -296,39 +327,19 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
         }
-        .bet-value {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 0.05rem;
-          min-width: 5.5rem;
-        }
-        .bet-value-label {
-          font-size: 0.48rem;
+        .bet-col-num {
+          font-size: 0.68rem;
           font-weight: 700;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          color: #5c4033;
-          opacity: 0.85;
-        }
-        .bet-value-row {
-          display: flex;
-          align-items: baseline;
-          gap: 0.35rem;
+          color: #3d2817;
+          font-variant-numeric: tabular-nums;
+          text-align: right;
           white-space: nowrap;
         }
-        .bet-value-pct {
-          font-size: 0.68rem;
+        .bet-col-num.pct {
           font-weight: 800;
           color: #7a1515;
-          font-variant-numeric: tabular-nums;
-        }
-        .bet-value-stake {
-          font-size: 0.58rem;
-          font-weight: 700;
-          color: #5c4033;
-          font-variant-numeric: tabular-nums;
         }
         .bet-actions {
           display: flex;
@@ -428,6 +439,15 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
         </div>
       ) : (
         <div className='bet-list'>
+          {picks.length ? (
+            <div className='bet-cols bet-cols-head'>
+              <span>Gladiator</span>
+              <span className='bet-col-num'>Rating</span>
+              <span className='bet-col-num'>Bet value</span>
+              <span className='bet-col-num'>Total bets</span>
+              <span />
+            </div>
+          ) : null}
           {picks.map(pick => {
             const pct = betValues[pick.playerId] ?? 100
             const totalBet = stakeSol[pick.playerId] || 0
@@ -435,15 +455,11 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
             const busy = pending && busyPick === pick.playerId
             return (
               <div key={pick.playerId} className={`bet-row${pos ? ' has-pos' : ''}`}>
-                <div className='bet-row-top'>
+                <div className='bet-cols'>
                   <span className='bet-name'>{pick.name}</span>
-                  <div className='bet-value'>
-                    <span className='bet-value-label'>Bet value</span>
-                    <span className='bet-value-row'>
-                      <span className='bet-value-pct'>{pct}%</span>
-                      <span className='bet-value-stake'>{formatSol(totalBet, false)} SOL</span>
-                    </span>
-                  </div>
+                  <span className='bet-col-num'>{pick.rating ?? '—'}</span>
+                  <span className='bet-col-num pct'>{pct}%</span>
+                  <span className='bet-col-num'>{formatSol(totalBet, false)} SOL</span>
                   <button
                     type='button'
                     className='bet-btn'

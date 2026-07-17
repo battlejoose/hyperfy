@@ -34,8 +34,10 @@ import {
   applyDeath as applyArenaDeathRating,
   applyKill as applyArenaKillRating,
   applyWin as applyArenaWinRating,
+  getByWallet as getArenaRatingByWallet,
   upsertWalletProfile,
 } from '../extras/arenaRatingService.js'
+import { ARENA_START_RATING } from '../extras/arenaRating.js'
 import { PublicKey } from '@solana/web3.js'
 import {
   BETTING_WINDOW_SECONDS,
@@ -212,6 +214,7 @@ export class ServerNetwork extends System {
       q,
       shareUnit,
       stakeLamports,
+      ratings: new Map(), // playerId -> all-time arena rating
       collateralLamports: 0,
       positions: new Map(), // playerId -> Map<pickId, { shares (raw LMSR), wallet }>
     }
@@ -297,6 +300,33 @@ export class ServerNetwork extends System {
     this.announce('Queue locked — 60 seconds to trade the champion market!')
     this.broadcastMatchState()
     this.broadcastMarketState()
+    this.loadMarketPickRatings()
+      .then(() => this.broadcastMarketState())
+      .catch(err => console.error('[arena-rating] market pick ratings failed:', err))
+  }
+
+  /** All-time arena rating per queued fighter for the betting UI. */
+  async loadMarketPickRatings() {
+    const br = this.battleRoyale
+    const m = br?.market
+    if (!m) return
+    const ratings = new Map()
+    await Promise.all(
+      m.outcomeIds.map(async playerId => {
+        const wallet = br.queued.get(playerId)?.wallet
+        if (!wallet) {
+          ratings.set(playerId, ARENA_START_RATING)
+          return
+        }
+        try {
+          const row = await getArenaRatingByWallet(this.ratingsDb, wallet)
+          ratings.set(playerId, row?.rating ?? ARENA_START_RATING)
+        } catch {
+          ratings.set(playerId, ARENA_START_RATING)
+        }
+      })
+    )
+    m.ratings = ratings
   }
 
   flipArenaMode() {
@@ -390,7 +420,16 @@ export class ServerNetwork extends System {
       minLamports: MARKET_MIN_LAMPORTS,
       shareUnit: m.shareUnit,
       b: m.b,
-      picks: m.outcomeIds.map(id => this.resolveBracketPlayer(id)).filter(Boolean),
+      picks: m.outcomeIds
+        .map(id => {
+          const pick = this.resolveBracketPlayer(id)
+          if (!pick) return null
+          return {
+            ...pick,
+            rating: m.ratings?.get(id) ?? ARENA_START_RATING,
+          }
+        })
+        .filter(Boolean),
       probs,
       betValues,
       stakeSol,
