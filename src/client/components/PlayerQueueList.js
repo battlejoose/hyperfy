@@ -405,6 +405,12 @@ export function PlayerQueueList({ world }) {
           gap: 0.28rem;
           padding-top: 0;
         }
+        .arena-betting-wrap {
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          align-self: stretch;
+        }
         .arena-countdown {
           display: flex;
           flex-direction: row;
@@ -704,6 +710,10 @@ export function PlayerQueueList({ world }) {
             min-width: 0;
             max-width: 8.5rem;
           }
+          .arena-betting-wrap {
+            width: 100%;
+            max-width: 100%;
+          }
           .arena-countdown-words {
             font-size: 0.55rem;
             letter-spacing: 0.02em;
@@ -778,11 +788,10 @@ export function PlayerQueueList({ world }) {
                 <div className='arena-countdown-colon'>/</div>
                 <div className='arena-countdown-time'>{formatTime(remaining)}</div>
               </div>
-              {isBetting ? (
-                <BettingPanel world={world} wallet={wallet} setWallet={setWallet} remaining={remaining} />
-              ) : isQueued ? (
+              {!isBetting && isQueued ? (
                 <div className='arena-queued'>You are in the {eventLabel.toLowerCase()} queue!</div>
-              ) : walletChoices ? (
+              ) : null}
+              {!isBetting && walletChoices ? (
                 <div className='arena-wallet-list'>
                   <div className='arena-wallet-list-title'>Choose a wallet</div>
                   {walletChoices.map(({ name, icon }) => (
@@ -800,13 +809,14 @@ export function PlayerQueueList({ world }) {
                     Cancel
                   </button>
                 </div>
-              ) : (
+              ) : null}
+              {!isBetting && !isQueued && !walletChoices ? (
                 <button type='button' className='arena-enter' onClick={joinBattleRoyale} disabled={pending}>
                   {pending
                     ? 'Verifying payment…'
                     : `Join ${eventShort} (${formatFeeLabel(BR_ENTRY_FEE_LAMPORTS)} SOL)`}
                 </button>
-              )}
+              ) : null}
               {!isBetting && notice ? <div className='arena-notice'>{notice}</div> : null}
               {!isBetting && error ? <div className='arena-error'>{error}</div> : null}
             </div>
@@ -854,6 +864,11 @@ export function PlayerQueueList({ world }) {
               </div>
             </div>
           </div>
+          {isBetting ? (
+            <div className='arena-betting-wrap'>
+              <BettingPanel world={world} wallet={wallet} setWallet={setWallet} remaining={remaining} />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
