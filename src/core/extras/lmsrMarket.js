@@ -109,13 +109,26 @@ export function positionExitValueSol(qMap, outcomeIds, b, pickId, shares) {
 }
 
 /**
- * Bet-value index per outcome: cost of the next 1 share vs cost of the first
- * share at an empty market (that first share = 100% for every fighter).
+ * LMSR Δq such that buying that many shares of any outcome on an empty market
+ * costs ~`budgetSol` (the min buy). That quantity is defined as **1 share**.
  */
-export function nextShareValuePercents(qMap, outcomeIds, b, unit = 1) {
+export function starterShareUnit(outcomeIds, b, budgetSol) {
+  if (!outcomeIds?.length || !(b > 0) || !(budgetSol > 0)) return 1
+  const empty = new Map()
+  for (const id of outcomeIds) empty.set(id, 0)
+  const unit = sharesForBuyBudget(empty, outcomeIds, b, outcomeIds[0], budgetSol)
+  return unit > 0 ? unit : 1
+}
+
+/**
+ * Bet-value index: cost of **1 share now** vs cost of the **first share** on an empty
+ * market (that first share = 100%). Share unit is sized so open cost ≈ min buy.
+ */
+export function oneShareValuePercents(qMap, outcomeIds, b, shareUnit) {
   const empty = new Map()
   for (const id of outcomeIds) empty.set(id, 0)
   const out = {}
+  const unit = shareUnit > 0 ? shareUnit : 1
   for (const id of outcomeIds) {
     const first = buyCostSol(empty, outcomeIds, b, id, unit)
     const next = buyCostSol(qMap, outcomeIds, b, id, unit)

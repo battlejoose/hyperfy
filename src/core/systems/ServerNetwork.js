@@ -26,8 +26,9 @@ import {
   applyBuy,
   applySell,
   lmsrProbs,
-  nextShareValuePercents,
+  oneShareValuePercents,
   positionExitValueSol,
+  starterShareUnit,
 } from '../extras/lmsrMarket.js'
 import {
   applyDeath as applyArenaDeathRating,
@@ -197,14 +198,34 @@ export class ServerNetwork extends System {
 
   createEmptyMarket(outcomeIds) {
     const q = new Map()
-    for (const id of outcomeIds) q.set(id, 0)
+    const stakeLamports = new Map() // net SOL (lamports) currently bet on each fighter
+    for (const id of outcomeIds) {
+      q.set(id, 0)
+      stakeLamports.set(id, 0)
+    }
+    const minSol = MARKET_MIN_LAMPORTS / LAMPORTS_PER_SOL
+    // 1 share := LMSR quantity that costs the min buy (~0.01 SOL) on an empty market
+    const shareUnit = starterShareUnit(outcomeIds, LMSR_B, minSol)
     return {
       b: LMSR_B,
       outcomeIds: [...outcomeIds],
       q,
+      shareUnit,
+      stakeLamports,
       collateralLamports: 0,
-      positions: new Map(), // playerId -> Map<pickId, { shares, wallet }>
+      positions: new Map(), // playerId -> Map<pickId, { shares (raw LMSR), wallet }>
     }
+  }
+
+  /** Convert raw LMSR shares ↔ UI shares (1 UI share ≈ min buy at market open). */
+  toUiShares(raw, m = this.battleRoyale?.market) {
+    const u = m?.shareUnit || 1
+    return u > 0 ? raw / u : raw
+  }
+
+  toRawShares(ui, m = this.battleRoyale?.market) {
+    const u = m?.shareUnit || 1
+    return ui * u
   }
 
   /** Restart the 60s market window after any buy/sell. */
@@ -342,10 +363,12 @@ export class ServerNetwork extends System {
     const m = br?.market
     if (!br || !m) return null
     const probs = lmsrProbs(m.q, m.outcomeIds, m.b)
-    const betValues = nextShareValuePercents(m.q, m.outcomeIds, m.b)
+    const betValues = oneShareValuePercents(m.q, m.outcomeIds, m.b, m.shareUnit)
     const shares = {}
+    const stakeSol = {}
     for (const id of m.outcomeIds) {
-      shares[id] = m.q.get(id) || 0
+      shares[id] = this.toUiShares(m.q.get(id) || 0, m)
+      stakeSol[id] = (m.stakeLamports?.get(id) || 0) / LAMPORTS_PER_SOL
     }
 
     let yourPositions = []
@@ -355,7 +378,7 @@ export class ServerNetwork extends System {
         .filter(([, row]) => row.shares > 1e-12)
         .map(([pickId, row]) => ({
           pickId,
-          shares: row.shares,
+          shares: this.toUiShares(row.shares, m),
           exitValueSol: positionExitValueSol(m.q, m.outcomeIds, m.b, pickId, row.shares),
         }))
     }
@@ -365,10 +388,12 @@ export class ServerNetwork extends System {
       open: br.phase === 'betting',
       collateralLamports: m.collateralLamports,
       minLamports: MARKET_MIN_LAMPORTS,
+      shareUnit: m.shareUnit,
       b: m.b,
       picks: m.outcomeIds.map(id => this.resolveBracketPlayer(id)).filter(Boolean),
       probs,
       betValues,
+      stakeSol,
       shares,
       yourPositions,
     }
@@ -1667,11 +1692,13 @@ export class ServerNetwork extends System {
 
     // Credit full paid lamports as collateral (dust from LMSR ceil stays in pot)
     br.market.collateralLamports += lamports
+    const prevStake = br.market.stakeLamports.get(pickId) || 0
+    br.market.stakeLamports.set(pickId, prevStake + lamports)
     this.creditMarketPosition(playerId, wallet, pickId, shares)
     this.sendTo(socket.id, 'marketBuyResult', {
       ok: true,
       pickId,
-      shares,
+      shares: this.toUiShares(shares, br.market),
       costSol,
       lamports,
     })
@@ -1691,7 +1718,8 @@ export class ServerNetwork extends System {
     }
 
     const pickId = data?.pickId
-    const sharesReq = Number(data?.shares) || 0
+    // Client sends UI shares (1 share ≈ min buy at open); convert to raw LMSR Δq
+    const sharesReq = this.toRawShares(Number(data?.shares) || 0, m)
     if (!pickId || !m.outcomeIds.includes(pickId)) {
       this.sendTo(socket.id, 'marketSellResult', { ok: false, error: 'Invalid fighter pick.' })
       return
@@ -1719,12 +1747,15 @@ export class ServerNetwork extends System {
 
     this.debitMarketPosition(playerId, pickId, shares)
     m.collateralLamports -= lamports
+    const prevStake = m.stakeLamports.get(pickId) || 0
+    m.stakeLamports.set(pickId, Math.max(0, prevStake - lamports))
     const wallet = pos.wallet
 
+    const uiShares = this.toUiShares(shares, m)
     this.sendTo(socket.id, 'marketSellResult', {
       ok: true,
       pickId,
-      shares,
+      shares: uiShares,
       proceedsSol: lamports / LAMPORTS_PER_SOL,
       status: 'pending',
     })
@@ -1736,7 +1767,7 @@ export class ServerNetwork extends System {
         this.sendTo(socket.id, 'marketSellResult', {
           ok: true,
           pickId,
-          shares,
+          shares: uiShares,
           proceedsSol: lamports / LAMPORTS_PER_SOL,
           status: signature ? 'complete' : 'failed',
           signature: signature || null,
@@ -1747,7 +1778,7 @@ export class ServerNetwork extends System {
         this.sendTo(socket.id, 'marketSellResult', {
           ok: true,
           pickId,
-          shares,
+          shares: uiShares,
           proceedsSol: lamports / LAMPORTS_PER_SOL,
           status: 'failed',
           signature: null,

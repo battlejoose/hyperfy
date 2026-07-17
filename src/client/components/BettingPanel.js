@@ -97,6 +97,7 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
 
   const picks = market?.picks || []
   const betValues = market?.betValues || {}
+  const stakeSol = market?.stakeSol || {}
   const collateral = market?.collateralLamports || 0
   const minLamports = market?.minLamports || MARKET_MIN_LAMPORTS
   const open = market?.open !== false
@@ -301,7 +302,7 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           flex-direction: column;
           align-items: flex-end;
           gap: 0.05rem;
-          min-width: 3.4rem;
+          min-width: 5.5rem;
         }
         .bet-value-label {
           font-size: 0.48rem;
@@ -311,10 +312,22 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           color: #5c4033;
           opacity: 0.85;
         }
+        .bet-value-row {
+          display: flex;
+          align-items: baseline;
+          gap: 0.35rem;
+          white-space: nowrap;
+        }
         .bet-value-pct {
           font-size: 0.68rem;
           font-weight: 800;
           color: #7a1515;
+          font-variant-numeric: tabular-nums;
+        }
+        .bet-value-stake {
+          font-size: 0.58rem;
+          font-weight: 700;
+          color: #5c4033;
           font-variant-numeric: tabular-nums;
         }
         .bet-actions {
@@ -417,6 +430,7 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
         <div className='bet-list'>
           {picks.map(pick => {
             const pct = betValues[pick.playerId] ?? 100
+            const totalBet = stakeSol[pick.playerId] || 0
             const pos = positionsByPick[pick.playerId]
             const busy = pending && busyPick === pick.playerId
             return (
@@ -425,7 +439,10 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
                   <span className='bet-name'>{pick.name}</span>
                   <div className='bet-value'>
                     <span className='bet-value-label'>Bet value</span>
-                    <span className='bet-value-pct'>{pct}%</span>
+                    <span className='bet-value-row'>
+                      <span className='bet-value-pct'>{pct}%</span>
+                      <span className='bet-value-stake'>{formatSol(totalBet, false)} SOL</span>
+                    </span>
                   </div>
                   <button
                     type='button'
