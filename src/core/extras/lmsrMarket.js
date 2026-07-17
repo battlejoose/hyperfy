@@ -107,3 +107,19 @@ export function applySell(qMap, outcomeIds, b, pickId, shares) {
 export function positionExitValueSol(qMap, outcomeIds, b, pickId, shares) {
   return sellProceedsSol(qMap, outcomeIds, b, pickId, shares)
 }
+
+/**
+ * Bet-value index per outcome: cost of the next 1 share vs cost of the first
+ * share at an empty market (that first share = 100% for every fighter).
+ */
+export function nextShareValuePercents(qMap, outcomeIds, b, unit = 1) {
+  const empty = new Map()
+  for (const id of outcomeIds) empty.set(id, 0)
+  const out = {}
+  for (const id of outcomeIds) {
+    const first = buyCostSol(empty, outcomeIds, b, id, unit)
+    const next = buyCostSol(qMap, outcomeIds, b, id, unit)
+    out[id] = first > 0 ? Math.round((100 * next) / first) : 100
+  }
+  return out
+}

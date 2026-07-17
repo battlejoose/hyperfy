@@ -37,7 +37,7 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
   const [notice, setNotice] = useState(null)
   const [walletChoices, setWalletChoices] = useState(null)
   const [selectedPick, setSelectedPick] = useState(null)
-  const [buyAmount, setBuyAmount] = useState('0.01')
+  const [buyAmount, setBuyAmount] = useState('0.01') // matches MARKET_MIN_LAMPORTS
   const [busyPick, setBusyPick] = useState(null)
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
   }, [pending])
 
   const picks = market?.picks || []
-  const probs = market?.probs || {}
+  const betValues = market?.betValues || {}
   const collateral = market?.collateralLamports || 0
   const minLamports = market?.minLamports || MARKET_MIN_LAMPORTS
   const open = market?.open !== false
@@ -296,9 +296,25 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           text-overflow: ellipsis;
           white-space: nowrap;
         }
-        .bet-share {
-          font-size: 0.6rem;
+        .bet-value {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 0.05rem;
+          min-width: 3.4rem;
+        }
+        .bet-value-label {
+          font-size: 0.48rem;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
           color: #5c4033;
+          opacity: 0.85;
+        }
+        .bet-value-pct {
+          font-size: 0.68rem;
+          font-weight: 800;
+          color: #7a1515;
           font-variant-numeric: tabular-nums;
         }
         .bet-actions {
@@ -373,7 +389,7 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
           id='mkt-buy-amt'
           type='number'
           min={formatSol(minLamports)}
-          step='0.001'
+          step='0.01'
           value={buyAmount}
           disabled={!open || pending}
           onChange={e => setBuyAmount(e.target.value)}
@@ -400,14 +416,17 @@ export function BettingPanel({ world, wallet, setWallet, remaining }) {
       ) : (
         <div className='bet-list'>
           {picks.map(pick => {
-            const pct = Math.round((probs[pick.playerId] || 0) * 100)
+            const pct = betValues[pick.playerId] ?? 100
             const pos = positionsByPick[pick.playerId]
             const busy = pending && busyPick === pick.playerId
             return (
               <div key={pick.playerId} className={`bet-row${pos ? ' has-pos' : ''}`}>
                 <div className='bet-row-top'>
                   <span className='bet-name'>{pick.name}</span>
-                  <span className='bet-share'>{pct}%</span>
+                  <div className='bet-value'>
+                    <span className='bet-value-label'>Bet value</span>
+                    <span className='bet-value-pct'>{pct}%</span>
+                  </div>
                   <button
                     type='button'
                     className='bet-btn'

@@ -26,6 +26,7 @@ import {
   applyBuy,
   applySell,
   lmsrProbs,
+  nextShareValuePercents,
   positionExitValueSol,
 } from '../extras/lmsrMarket.js'
 import {
@@ -206,6 +207,16 @@ export class ServerNetwork extends System {
     }
   }
 
+  /** Restart the 60s market window after any buy/sell. */
+  extendMarketTimer() {
+    const br = this.battleRoyale
+    if (br?.phase !== 'betting') return
+    br.endsAt = this.getTime() + BETTING_WINDOW_SECONDS
+    clearTimeout(this.brTimerId)
+    this.brTimerId = setTimeout(() => this.beginQueuedEvent(), BETTING_WINDOW_SECONDS * 1000)
+    this.broadcastMatchState()
+  }
+
   clearBettingState() {
     const br = this.battleRoyale
     br.queueLocked = false
@@ -331,8 +342,11 @@ export class ServerNetwork extends System {
     const m = br?.market
     if (!br || !m) return null
     const probs = lmsrProbs(m.q, m.outcomeIds, m.b)
+    const betValues = nextShareValuePercents(m.q, m.outcomeIds, m.b)
     const shares = {}
-    for (const id of m.outcomeIds) shares[id] = m.q.get(id) || 0
+    for (const id of m.outcomeIds) {
+      shares[id] = m.q.get(id) || 0
+    }
 
     let yourPositions = []
     if (forPlayerId && m.positions.has(forPlayerId)) {
@@ -354,6 +368,7 @@ export class ServerNetwork extends System {
       b: m.b,
       picks: m.outcomeIds.map(id => this.resolveBracketPlayer(id)).filter(Boolean),
       probs,
+      betValues,
       shares,
       yourPositions,
     }
@@ -1660,6 +1675,7 @@ export class ServerNetwork extends System {
       costSol,
       lamports,
     })
+    this.extendMarketTimer()
     this.broadcastMarketState()
   }
 
@@ -1712,6 +1728,7 @@ export class ServerNetwork extends System {
       proceedsSol: lamports / LAMPORTS_PER_SOL,
       status: 'pending',
     })
+    this.extendMarketTimer()
     this.broadcastMarketState()
 
     sendPayout(wallet, lamports, playerId, 'market_sell')
