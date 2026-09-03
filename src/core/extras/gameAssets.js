@@ -1,6 +1,5 @@
 import { AVATAR_CRUSADER, AVATAR_SARACEN } from './playerAvatars'
 import { ARENA_SRC, loadArenaEnvironment } from './arenaEnvironment'
-import { ARENA_FIRE_SRC } from './arenaFireFx.js'
 import { ARENA_GENERAL_SRC } from './arenaGeneral.js'
 import { clearPrefetch } from './assetPrefetch'
 import { BLOOD_SPLATTER_SRC } from './bloodEffects'
@@ -13,7 +12,6 @@ export function queueClientGamePreloads(world, data) {
 
   // Arena GLB is loaded first in prepareClientGameAssets — omit it here so it
   // is not raced against every other large download.
-  loader.preload('model', ARENA_FIRE_SRC)
   loader.preload('model', ARENA_GENERAL_SRC)
   loader.preload('model', SWORD_SRC)
   loader.preload('avatar', AVATAR_CRUSADER)

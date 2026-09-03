@@ -4,9 +4,11 @@ import { addArenaFireFx, clearArenaFireFx } from './arenaFireFx.js'
 import { addArenaGeneral } from './arenaGeneral.js'
 import { addArenaCrowd, clearArenaCrowd } from './arenaCrowd.js'
 
-// meshopt + WebP, textures capped at 1024 (was 34MB raw / 13MB v1 with 2K
-// textures that OOM'd WebGL). New filename busts the immutable asset cache.
-export const ARENA_SRC = 'asset://arena-rome-v2.glb'
+// Procedurally generated in-house colosseum (see scripts/colosseum/build.mjs).
+// Heavy use of node instancing keeps it ~4MB with WebP textures at <=1024.
+// Bump the filename whenever the model is regenerated — the asset cache is
+// immutable, so a new name is what busts it.
+export const ARENA_SRC = 'asset://colosseum-v1.glb'
 
 /** Separates gladiator floor (inside) from spectator ring (outside). */
 export const ARENA_RING_WALL_RADIUS = 12.2
